@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<PluginManifest xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>mamba.TorchDiscordSync</Name>
+  <Guid>e2c1b3a2-1f44-4c8f-b1f7-7a9b0c6d3f12</Guid>
+  <Version>0.1.0</Version>
+  <Description>
+    Synchronizes Space Engineers player factions with Discord and maintains a SQLite mapping.
+  </Description>
+  <Author>mamba</Author>
+</PluginManifest>

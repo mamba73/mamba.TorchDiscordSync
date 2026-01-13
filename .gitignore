@@ -1,0 +1,18 @@
+# Build artifacts
+bin/
+obj/
+*.zip
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Dependencies
+Dependencies/*.dll
+
+# Logs
+*.log
+
+# Config
+*.config

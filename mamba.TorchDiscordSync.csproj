@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>mamba.TorchDiscordSync</AssemblyName>
+    <RootNamespace>mamba.TorchDiscordSync</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <OutputPath>bin\Debug\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Torch">
+      <HintPath>Dependencies\Torch.dll</HintPath>
+    </Reference>
+    <Reference Include="Torch.API">
+      <HintPath>Dependencies\Torch.API.dll</HintPath>
+    </Reference>
+    <Reference Include="Sandbox.Game">
+      <HintPath>Dependencies\Sandbox.Game.dll</HintPath>
+    </Reference>
+    <Reference Include="Sandbox.Common">
+      <HintPath>Dependencies\Sandbox.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="VRage.Game">
+      <HintPath>Dependencies\VRage.Game.dll</HintPath>
+    </Reference>
+    <Reference Include="VRage.Library">
+      <HintPath>Dependencies\VRage.Library.dll</HintPath>
+    </Reference>
+    <Reference Include="VRage.Math">
+      <HintPath>Dependencies\VRage.Math.dll</HintPath>
+    </Reference>
+    <Reference Include="VRage">
+      <HintPath>Dependencies\VRage.dll</HintPath>
+    </Reference>
+    <Reference Include="NLog">
+      <HintPath>Dependencies\NLog.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

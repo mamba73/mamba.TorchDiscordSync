@@ -1,0 +1,31 @@
+mamba.TorchDiscordSync/
+├── Config/
+│   └── PluginConfig.cs
+├── Dependencies/
+│   ├── NLog.dll
+│   ├── Sandbox.Common.dll
+│   ├── Sandbox.Game.dll
+│   ├── Torch.API.dll
+│   ├── Torch.dll
+│   ├── VRage.dll
+│   ├── VRage.Game.dll
+│   ├── VRage.Library.dll
+│   └── VRage.Math.dll
+├── LICENSE
+├── Models/
+│   ├── FactionModel.cs
+│   ├── FactionPlayerModel.cs
+│   └── PlayerModel.cs
+├── Plugin/
+│   └── MambaTorchDiscordSyncPlugin.cs
+├── README_ENG.md
+├── README_HRV.md
+├── Services/
+│   ├── DatabaseService.cs
+│   ├── DiscordService.cs
+│   └── FactionSyncService.cs
+├── Utils/
+│   └── ChatUtils.cs
+├── build.bat
+├── manifest.xml
+└── mamba.TorchDiscordSync.csproj
