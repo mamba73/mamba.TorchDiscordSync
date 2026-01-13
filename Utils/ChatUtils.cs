@@ -1,7 +1,13 @@
+using System;
+
 namespace mamba.TorchDiscordSync.Utils
 {
     public static class ChatUtils
     {
-        // stub methods, e.g. SendMessage
+        // Placeholder for future Torch chat commands
+        public static void SendServerMessage(string message)
+        {
+            Console.WriteLine($"[CHAT] {message}");
+        }
     }
 }

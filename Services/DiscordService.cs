@@ -1,9 +1,13 @@
+using System;
 
-// DiscordService.cs
 namespace mamba.TorchDiscordSync.Services
 {
     public class DiscordService
     {
-        public void SyncRolesAndChannels() { /* stub */ }
+        // Placeholder for future Discord API integration
+        public void SendLog(string message)
+        {
+            Console.WriteLine($"[DISCORD LOG] {message}");
+        }
     }
 }
