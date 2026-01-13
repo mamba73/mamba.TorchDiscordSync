@@ -1,10 +1,15 @@
-public class PlayerModel
+using System;
+
+namespace mamba.TorchDiscordSync.Models
 {
-    public long PlayerId { get; set; }
-    public string OriginalName { get; set; } = ""; // Discord nickname prije synca
-    public string CurrentName { get; set; } = "";  // [TAG] OriginalName
-    public long? SteamId { get; set; }
-    public DateTime? CreatedAt { get; set; }
-    public DateTime? UpdatedAt { get; set; }
-    public DateTime? DeletedAt { get; set; } // soft delete, undo
+    public class PlayerModel
+    {
+        public ulong SteamId { get; set; }
+        public string OriginalNick { get; set; }
+        public string SyncedNick { get; set; }
+
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public DateTime? DeletedAt { get; set; }
+    }
 }

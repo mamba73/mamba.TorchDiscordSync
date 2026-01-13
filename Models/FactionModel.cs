@@ -1,11 +1,17 @@
-public class FactionModel
+using System;
+using System.Collections.Generic;
+
+namespace mamba.TorchDiscordSync.Models
 {
-    public long FactionId { get; set; }
-    public string Tag { get; set; } = "";
-    public string Name { get; set; } = "";
-    // Leader SteamID još uvijek može postojati, ali nije potreban za Discord
-    public long? LeaderSteamId { get; set; }
-    public DateTime? CreatedAt { get; set; }
-    public DateTime? UpdatedAt { get; set; }
-    public DateTime? DeletedAt { get; set; } // optional soft delete
+    public class FactionModel
+    {
+        public int FactionId { get; set; }
+        public string Tag { get; set; }
+        public string Name { get; set; }
+        public List<ulong> Members { get; set; } = new List<ulong>();
+
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public DateTime? DeletedAt { get; set; }
+    }
 }

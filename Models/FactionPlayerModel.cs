@@ -1,8 +1,14 @@
-public class FactionPlayerModel
+using System;
+
+namespace mamba.TorchDiscordSync.Models
 {
-    public long PlayerId { get; set; }
-    public long FactionId { get; set; }
-    public DateTime? CreatedAt { get; set; }
-    public DateTime? UpdatedAt { get; set; }
-    public DateTime? DeletedAt { get; set; } // soft delete
+    public class FactionPlayerModel
+    {
+        public int FactionId { get; set; }
+        public ulong PlayerSteamId { get; set; }
+
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public DateTime? DeletedAt { get; set; }
+    }
 }
