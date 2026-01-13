@@ -22,7 +22,8 @@ namespace mamba.TorchDiscordSync.Plugin
         {
             base.Init(torch);
 
-            _config = new PluginConfig("PluginConfig.xml");
+            _config = PluginConfig.Load();
+            // _config = new PluginConfig("TorchDiscordSync.cfg");
             _db = new DatabaseService("data/se.db");
             _discord = new DiscordService();
             _syncService = new FactionSyncService(_db, _discord);

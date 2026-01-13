@@ -1,9 +1,10 @@
 using System;
-using System.Xml;
+using System.IO;
+using System.Xml.Serialization;
 
 namespace mamba.TorchDiscordSync.Config
 {
-    // Handles plugin configuration stored in XML
+    [Serializable]
     public class PluginConfig
     {
         public string DiscordToken { get; set; }
@@ -11,23 +12,39 @@ namespace mamba.TorchDiscordSync.Config
         public int SyncIntervalSeconds { get; set; }
         public bool Debug { get; set; }
 
-        private string _filePath;
+        private static string ConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TorchDiscordSync.cfg");
 
-        public PluginConfig(string filePath)
+        public static PluginConfig Load()
         {
-            _filePath = filePath;
-            Load();
+            if (!File.Exists(ConfigPath))
+            {
+                // File does not exist → create default
+                var defaultConfig = new PluginConfig
+                {
+                    DiscordToken = "YOUR_DISCORD_BOT_TOKEN",
+                    GuildID = 0,
+                    SyncIntervalSeconds = 60,
+                    Debug = true
+                };
+
+                defaultConfig.Save(); // automatski kreiraj datoteku
+                return defaultConfig;
+            }
+
+            XmlSerializer serializer = new XmlSerializer(typeof(PluginConfig));
+            using (FileStream fs = new FileStream(ConfigPath, FileMode.Open))
+            {
+                return (PluginConfig)serializer.Deserialize(fs);
+            }
         }
 
-        public void Load()
+        public void Save()
         {
-            XmlDocument doc = new XmlDocument();
-            doc.Load(_filePath);
-
-            DiscordToken = doc.SelectSingleNode("/PluginConfig/DiscordToken")?.InnerText;
-            GuildID = ulong.Parse(doc.SelectSingleNode("/PluginConfig/GuildID")?.InnerText ?? "0");
-            SyncIntervalSeconds = int.Parse(doc.SelectSingleNode("/PluginConfig/SyncIntervalSeconds")?.InnerText ?? "60");
-            Debug = bool.Parse(doc.SelectSingleNode("/PluginConfig/Debug")?.InnerText ?? "false");
+            XmlSerializer serializer = new XmlSerializer(typeof(PluginConfig));
+            using (FileStream fs = new FileStream(ConfigPath, FileMode.Create))
+            {
+                serializer.Serialize(fs, this);
+            }
         }
     }
 }
