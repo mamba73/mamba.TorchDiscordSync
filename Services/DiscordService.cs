@@ -1,20 +1,23 @@
 using System;
-using mamba.TorchDiscordSync.Models;
 
 namespace mamba.TorchDiscordSync.Services
 {
-    // Placeholder for Discord API integration
     public class DiscordService
     {
-        public void SendLog(string message)
+        private readonly string _token;
+        private readonly ulong _guildId;
+
+        public DiscordService() { }
+
+        public DiscordService(string token, ulong guildId)
         {
-            Console.WriteLine("[DISCORD LOG] " + message);
+            _token = token;
+            _guildId = guildId;
         }
 
-        public void UpdateNickname(PlayerModel player, string tag)
+        public void SendLog(string message)
         {
-            player.SyncedNick = "[" + tag + "] " + player.OriginalNick;
-            SendLog("Updated nick for " + player.OriginalNick + " -> " + player.SyncedNick);
+            Console.WriteLine("[DISCORD] " + message);
         }
     }
 }

@@ -12,13 +12,12 @@ namespace mamba.TorchDiscordSync.Config
         public int SyncIntervalSeconds { get; set; }
         public bool Debug { get; set; }
 
-        private static string ConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TorchDiscordSync.cfg");
+        private static string ConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MambaTorchDiscordSync.cfg");
 
         public static PluginConfig Load()
         {
             if (!File.Exists(ConfigPath))
             {
-                // File does not exist → create default
                 var defaultConfig = new PluginConfig
                 {
                     DiscordToken = "YOUR_DISCORD_BOT_TOKEN",
@@ -27,7 +26,7 @@ namespace mamba.TorchDiscordSync.Config
                     Debug = true
                 };
 
-                defaultConfig.Save(); // automatski kreiraj datoteku
+                defaultConfig.Save();
                 return defaultConfig;
             }
 

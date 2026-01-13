@@ -4,33 +4,31 @@ using mamba.TorchDiscordSync.Models;
 
 namespace mamba.TorchDiscordSync.Services
 {
-    // Handles syncing factions with Discord and database
     public class FactionSyncService
     {
-        private DatabaseService _db;
-        private DiscordService _discord;
+        private readonly DatabaseService _db;
+        private readonly DiscordService _discord;
 
-        public FactionSyncService(DatabaseService db, DiscordService discord = null)
+        public FactionSyncService(DatabaseService db, DiscordService discord)
         {
             _db = db;
-            _discord = discord ?? new DiscordService();
+            _discord = discord;
         }
 
         public void SyncFactions(List<FactionModel> factions, List<PlayerModel> players)
         {
             foreach (var faction in factions)
             {
-                faction.CreatedAt = DateTime.UtcNow;
-                faction.UpdatedAt = DateTime.UtcNow;
                 _db.SaveFaction(faction);
+                _discord.SendLog($"Faction {faction.Tag} saved");
+            }
 
-                foreach (var player in players)
-                {
-                    player.CreatedAt = DateTime.UtcNow;
-                    player.UpdatedAt = DateTime.UtcNow;
-                    _discord.UpdateNickname(player, faction.Tag);
-                    _db.SavePlayer(player);
-                }
+            foreach (var player in players)
+            {
+                var factionTag = factions.Find(f => f.FactionID == player.FactionID)?.Tag ?? "UNK";
+                player.SyncedNick = $"[{factionTag}] {player.OriginalNick}";
+                _db.SavePlayer(player);
+                _discord.SendLog($"Player {player.SyncedNick} saved");
             }
         }
     }

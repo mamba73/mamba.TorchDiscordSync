@@ -23,9 +23,8 @@ namespace mamba.TorchDiscordSync.Plugin
             base.Init(torch);
 
             _config = PluginConfig.Load();
-            // _config = new PluginConfig("TorchDiscordSync.cfg");
-            _db = new DatabaseService("data/se.db");
-            _discord = new DiscordService();
+            _db = new DatabaseService("data/MambaTorchDiscordSync.db"); // automatski kreira folder i db
+            _discord = new DiscordService(_config.DiscordToken, _config.GuildID);
             _syncService = new FactionSyncService(_db, _discord);
 
             var sessionManager = torch.Managers.GetManager<ITorchSessionManager>();
@@ -43,7 +42,7 @@ namespace mamba.TorchDiscordSync.Plugin
 
             var players = new List<PlayerModel>
             {
-                new PlayerModel { SteamID = 12345678901234567, OriginalNick = "mamba" }
+                new PlayerModel { SteamID = 12345678901234567, OriginalNick = "mamba", FactionID = 1 }
             };
 
             var factions = new List<FactionModel>
