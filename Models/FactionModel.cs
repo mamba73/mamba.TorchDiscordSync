@@ -1,14 +1,20 @@
 using System;
+using System.Collections.Generic;
 
 namespace mamba.TorchDiscordSync.Models
 {
     public class FactionModel
     {
-        public long FactionID { get; set; }             // SE faction ID
-        public string Tag { get; set; }                 // 3-char tag
-        public string Name { get; set; }                // Faction name
-        public DateTime CreatedAt { get; set; }         // When created in DB
-        public DateTime UpdatedAt { get; set; }         // Last sync
-        public DateTime? DeletedAt { get; set; }        // Soft delete
+        public long FactionID { get; set; }
+        public string Tag { get; set; }
+        public string Name { get; set; }
+        public List<PlayerModel> Members { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+
+        public FactionModel()
+        {
+            Members = new List<PlayerModel>();
+        }
     }
 }

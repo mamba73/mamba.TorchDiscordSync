@@ -1,69 +1,52 @@
-# mamba.TorchDiscordSync
-
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+# mamba.TorchDiscordSync Plugin for Space Engineers (Torch Server)
 
 Author: mamba  
-Current Version: 0.1.0  
+Version: 1.0.0  
 Torch Version: 1.3.1.328-master  
 Space Engineers Version: 1.208.15
 
 ## Overview
-This plugin synchronizes **Space Engineers player factions** with a Discord server.
+This plugin synchronizes Space Engineers factions and player nicknames with Discord, automatically prefixing nicknames with faction tags and keeping everything logged. All members in a faction get the same Discord permissions. Leaders do not get special Discord roles.  
 
-Key Features:
-- Creates Discord roles per player faction
-- Creates private text/forum channels per faction
-- Synchronizes player nicknames: `[TAG] OriginalNick`
-- Tracks changes safely in a local SQLite database
-- Logging all changes and events
+## Features
+- Faction and player mapping
+- `[TAG] originalNick` nickname sync
+- Discord role and channel creation for factions
+- SQLite database for persistent mapping
+- Configurable via XML (PluginConfig.xml)
+- Logging of changes and sync operations
+- Commands for force sync, cleanup, and status
+- Compatible with C# 4.6 and .NET Framework 4.8
 
-**Status:** 🚧 Initial Buildable Version
+## File Structure
+mamba.TorchDiscordSync/
+├── Config/
+│   └── PluginConfig.cs
+├── Dependencies/
+│   ├── NLog.dll
+│   ├── Sandbox.Common.dll
+│   ├── Sandbox.Game.dll
+│   ├── System.Data.SQLite.dll
+│   ├── Torch.API.dll
+│   ├── Torch.dll
+│   ├── VRage.dll
+│   ├── VRage.Game.dll
+│   ├── VRage.Library.dll
+│   └── VRage.Math.dll
+├── LICENSE
+├── Models/
+│   ├── FactionModel.cs
+│   ├── FactionPlayerModel.cs
+│   └── PlayerModel.cs
+├── Plugin/
+│   └── MambaTorchDiscordSyncPlugin.cs
+├── Services/
+│   ├── DatabaseService.cs
+│   ├── DiscordService.cs
+│   └── FactionSyncService.cs
+├── Utils/
+│   └── ChatUtils.cs
+├── build.bat
+├── manifest.xml
+└── mamba.TorchDiscordSync.csproj
 
----
-
-## Build & Installation
-
-1. Clone the repository:
-
-    git clone git@github.com:mamba73/mamba.TorchDiscordSync.git
-    cd mamba.TorchDiscordSync
-
-2. Make sure you have the required **Dependencies/** DLLs for Torch server.
-
-3. Build the plugin:
-```bash
-    ./build.bat
-```
-
-4. After build, the DLL will be in `bin/Release/OfflineStaticProtection.dll`.  
-   The zip `OfflineStaticProtection.zip` can be uploaded to your Torch plugins folder.
-
----
-
-## Configuration
-Configure in `Config/PluginConfig.cs` or via config JSON once implemented.
-
-Key options:
-- Discord token
-- Guild ID
-- Sync interval
-- Debug mode
-- Security / admin SteamID whitelist
-
----
-
-## Database
-SQLite stores:
-- Current faction-role-channel mapping
-- Player original & synced nicknames
-- Timestamps for created_at / updated_at / soft delete (deleted_at)
-
-Event logs (player join/leave, nickname changes, Discord role/channel creation) are **only written to log files**, not database.
-
----
-
-## Future Features
-- Multi-server support
-- Auto-cleanup of unused roles/channels
-- Undo / rollback of nickname and Discord object changes
-- Extended security (SteamID + Discord admin whitelist)

@@ -4,10 +4,11 @@ namespace mamba.TorchDiscordSync.Models
 {
     public class FactionPlayerModel
     {
-        public long FactionID { get; set; }            // Faction ID
-        public ulong PlayerSteamID { get; set; }       // Player SteamID
-        public DateTime CreatedAt { get; set; }        // When assigned
-        public DateTime UpdatedAt { get; set; }        // Last sync
-        public DateTime? DeletedAt { get; set; }       // Soft delete
+        public long FactionID { get; set; }
+        public long SteamID { get; set; }
+        public string OriginalNick { get; set; }
+        public string SyncedNick { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
     }
 }

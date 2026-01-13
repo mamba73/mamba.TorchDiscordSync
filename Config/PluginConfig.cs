@@ -1,13 +1,33 @@
+using System;
+using System.Xml;
+
 namespace mamba.TorchDiscordSync.Config
 {
+    // Handles plugin configuration stored in XML
     public class PluginConfig
     {
-        public bool Debug { get; set; } = true;             // Enable verbose logging
-        public int SyncIntervalSeconds { get; set; } = 60; // Frequency of SE → DB sync
-        public string DbFile { get; set; } = "data/se.db"; // SQLite file path
-        // Discord settings for future
         public string DiscordToken { get; set; }
         public ulong GuildID { get; set; }
-        public ulong CategoryID { get; set; }
+        public int SyncIntervalSeconds { get; set; }
+        public bool Debug { get; set; }
+
+        private string _filePath;
+
+        public PluginConfig(string filePath)
+        {
+            _filePath = filePath;
+            Load();
+        }
+
+        public void Load()
+        {
+            XmlDocument doc = new XmlDocument();
+            doc.Load(_filePath);
+
+            DiscordToken = doc.SelectSingleNode("/PluginConfig/DiscordToken")?.InnerText;
+            GuildID = ulong.Parse(doc.SelectSingleNode("/PluginConfig/GuildID")?.InnerText ?? "0");
+            SyncIntervalSeconds = int.Parse(doc.SelectSingleNode("/PluginConfig/SyncIntervalSeconds")?.InnerText ?? "60");
+            Debug = bool.Parse(doc.SelectSingleNode("/PluginConfig/Debug")?.InnerText ?? "false");
+        }
     }
 }
