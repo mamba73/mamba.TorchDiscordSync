@@ -18,8 +18,7 @@ mamba.TorchDiscordSync/
 │   └── PlayerModel.cs
 ├── Plugin/
 │   └── MambaTorchDiscordSyncPlugin.cs
-├── README_ENG.md
-├── README_HRV.md
+├── README.md
 ├── Services/
 │   ├── DatabaseService.cs
 │   ├── DiscordService.cs
@@ -27,5 +26,8 @@ mamba.TorchDiscordSync/
 ├── Utils/
 │   └── ChatUtils.cs
 ├── build.bat
+├── doc/
+│   ├── idejni_projekt_ENG.md
+│   └── idejni_projekt_HRV.md
 ├── manifest.xml
 └── mamba.TorchDiscordSync.csproj

@@ -9,82 +9,61 @@ Space Engineers Version: 1.208.15
 
 ## Overview
 This plugin synchronizes **Space Engineers player factions** with a Discord server.
-It creates:
-- Discord roles per faction
-- Discord text/forums channels per faction
-- Tracks faction → Discord mapping in a SQLite database
+
+Key Features:
+- Creates Discord roles per player faction
+- Creates private text/forum channels per faction
+- Synchronizes player nicknames: `[TAG] OriginalNick`
+- Tracks changes safely in a local SQLite database
+- Logging all changes and events
 
 **Status:** 🚧 Initial Buildable Version
 
 ---
 
-## File Structure
+## Build & Installation
 
-```
-mamba.TorchDiscordSync/
-├── Config/
-│   └── PluginConfig.cs
-├── Dependencies/
-│   ├── NLog.dll
-│   ├── Sandbox.Common.dll
-│   ├── Sandbox.Game.dll
-│   ├── Torch.API.dll
-│   ├── Torch.dll
-│   ├── VRage.dll
-│   ├── VRage.Game.dll
-│   ├── VRage.Library.dll
-│   └── VRage.Math.dll
-├── LICENSE
-├── Models/
-│   ├── FactionModel.cs
-│   ├── FactionPlayerModel.cs
-│   └── PlayerModel.cs
-├── Plugin/
-│   └── MambaTorchDiscordSyncPlugin.cs
-├── README_ENG.md
-├── README_HRV.md
-├── Services/
-│   ├── DatabaseService.cs
-│   ├── DiscordService.cs
-│   └── FactionSyncService.cs
-├── Utils/
-│   └── ChatUtils.cs
-├── build.bat
-├── manifest.xml
-└── mamba.TorchDiscordSync.csproj
-```
+1. Clone the repository:
 
+    git clone git@github.com:mamba73/mamba.TorchDiscordSync.git
+    cd mamba.TorchDiscordSync
 
----
+2. Make sure you have the required **Dependencies/** DLLs for Torch server.
 
-## Next Steps
-- Implement faction parsing and SteamID mapping
-- Sync roles/channels to Discord
-- Track changes and update database
-- Add commands for safe delete/undo
-- Implement debug mode and logging
-
----
-
-## How to Build
-1. Open terminal in plugin root directory
-2. Run:
-
+3. Build the plugin:
 ```bash
-./build.bat
+    ./build.bat
 ```
 
-## Dependencies
-
-NLog.dll
-Torch.API.dll
-Torch.dll
-Sandbox.Common.dll
-Sandbox.Game.dll
-VRage.Game.dll
-VRage.Library.dll
-VRage.Math.dll
-VRage.dll
-
+4. After build, the DLL will be in `bin/Release/OfflineStaticProtection.dll`.  
+   The zip `OfflineStaticProtection.zip` can be uploaded to your Torch plugins folder.
 
 ---
+
+## Configuration
+Configure in `Config/PluginConfig.cs` or via config JSON once implemented.
+
+Key options:
+- Discord token
+- Guild ID
+- Sync interval
+- Debug mode
+- Security / admin SteamID whitelist
+
+---
+
+## Database
+SQLite stores:
+- Current faction-role-channel mapping
+- Player original & synced nicknames
+- Timestamps for created_at / updated_at / soft delete (deleted_at)
+
+Event logs (player join/leave, nickname changes, Discord role/channel creation) are **only written to log files**, not database.
+
+---
+
+## Future Features
+- Multi-server support
+- Auto-cleanup of unused roles/channels
+- Undo / rollback of nickname and Discord object changes
+- Extended security (SteamID + Discord admin whitelist)

@@ -1,103 +1,66 @@
-# mamba.TorchDiscordSync
-
-Author: mamba  
-Current Version: 0.1.0  
-Torch Version: 1.3.1.328-master  
-Space Engineers Version: 1.208.15
-
-## Overview
-This plugin synchronizes **Space Engineers player factions** with a Discord server.
-It provides:
-- Discord roles per faction
-- Discord text/forum channels per faction
-- Tracks faction → Discord mapping in SQLite
-
-**Status:** 🚧 Initial buildable skeleton
-
----
+# Project Idea: mamba.TorchDiscordSync
 
 ## 1) Torch / Space Engineers module
-**Purpose**  
-Handles all interactions with the SE server via Torch API.
+**Purpose:** interact with SE server via Torch API.
 
-**Key responsibilities**  
-- **Session lifecycle**: hook into `ITorchSessionManager.SessionStateChanged`, react only to `TorchSessionState.Loaded`.  
-- **Faction reader**: read all factions, tag, name, leader, members (SteamID).  
-- **Change detection**: periodic scan, compare with previous snapshot, detect new/deleted factions, membership changes, leader changes.  
-- **Output**: `FactionModel` object → Core Sync Layer.
-
----
+**Responsibilities:**
+- Session lifecycle
+    - Hook on ITorchSessionManager.SessionStateChanged
+    - React only on TorchSessionState.Loaded
+- Faction reader
+    - Fetch all factions from SE world
+    - Read: Faction ID, Tag, Name, Leader SteamID, Members SteamID
+- Change detection
+    - Periodic scan (e.g., every 60s)
+    - Detect new/deleted factions, member changes, leader changes
+- Output: normalized `FactionModel` object
 
 ## 2) Core Sync / Orchestration module
-**Purpose**  
-Central brain of the plugin, knows nothing about Torch or Discord.
+**Purpose:** central brain, connects data, does not call Torch or Discord directly.
 
-**Key responsibilities**  
-- **State management**: stores last known faction state, decides what has changed.  
-- **Rules engine**: rules like (each faction → role/channel, leader → special role).  
-- **Dispatch**: calls Discord module and Database module based on detected changes.  
-
----
+**Responsibilities:**
+- State management
+    - Keeps last known faction state
+    - Decides what changed
+- Rules engine
+    - Every faction → Discord role
+    - Every faction → Discord channel
+    - Nickname: `[TAG] OriginalNick`
+- Dispatch
+    - Actions → Discord module
+    - Changes → Database module
 
 ## 3) Discord module
-**Purpose**  
-Handles all Discord API communication.
+**Purpose:** communicate with Discord API.
 
-**Key responsibilities**  
-- **Connection**: initialize bot, safe reconnect.  
-- **Role management**: create/delete role, assign/remove for members.  
-- **Channel management**: create text/forum channels, set permissions, rename/archive if faction changes.  
-- **Idempotent behaviour**: safe to repeat operations.
-
----
+**Responsibilities:**
+- Connection: bot initialization, safe reconnect
+- Role management: create/delete roles
+- Channel management: create/delete channels, set permissions
+- Nickname sync: `[TAG] OriginalNick`, undo / rollback
+- Idempotent behaviour: safe repeated operations
 
 ## 4) Database (SQLite) module
-**Purpose**  
-Persist data across server restarts.
+**Purpose:** persist data.
 
-**Key responsibilities**  
-- **Schema**:
-  - Map: FactionID → DiscordRoleID, FactionID → DiscordChannelID
-  - Tables:
-    - `factions` (faction_id, tag, name, is_player_faction)
-    - `players` (player_id, name, steam_id)
-    - `faction_player` (player_id, faction_id)
-    - `discord_roles` (faction_id, role_id)
-    - `discord_channels` (faction_id, channel_id, channel_name)
-- **Read / Write**: load mappings at startup, save after each sync
-- **Safety**: single connection instance, lock around write operations
-
----
+**Responsibilities:**
+- Schema: FactionID → DiscordRoleID, FactionID → DiscordChannelID, Player nick mapping
+- Read / Write: load on startup, save after sync
+- Soft delete fields: `DeletedAt` for undo
+- Single SQLite connection, thread-safe
 
 ## 5) Security / Permissions module
-**Purpose**  
-Prevent abuse and control who can manage the plugin.
-
-**Key responsibilities**
-- SteamID whitelist (authorized admins)
-- Validate before critical Torch commands
-- Optional Discord admin role mapping
-- Anti-abuse can be disabled if Debug = true
-
----
+- SteamID whitelist
+- Check before executing commands (Torch / Discord)
+- Anti-abuse active only in production (Debug = false)
 
 ## 6) Commands module (Torch chat / console)
-**Purpose**  
-Manage the plugin without server restart.
-
-**Example commands**
-- `/tds sync` → Force full resync
-- `/tds cleanup` → Remove orphaned roles/channels
-- `/tds status` → Show current sync state
-- `/tds reload` → Reload config + database
-
----
+- `/tds sync` – force full resync
+- `/tds cleanup` – remove orphaned roles/channels
+- `/tds status` – show current sync state
+- `/tds reload` – reload config + database
 
 ## 7) Config module
-**Purpose**  
-Centralized configuration without hardcoding.
-
-**Content**
 - Discord token
 - Guild ID
 - Sync interval
@@ -106,41 +69,7 @@ Centralized configuration without hardcoding.
 
 ---
 
-## Database Models (C#)
-```csharp
-// FactionModel.cs
-public class FactionModel
-{
-    public int FactionId { get; set; }
-    public string Tag { get; set; }
-    public string Name { get; set; }
-    public bool IsPlayerFaction { get; set; }
-    public List<ulong> MembersSteamIds { get; set; } = new List<ulong>();
-}
-
-// PlayerModel.cs
-public class PlayerModel
-{
-    public long PlayerId { get; set; } // PlayerID in SE
-    public string Name { get; set; }
-    public ulong SteamId { get; set; }
-}
-
-// FactionPlayerModel.cs
-public class FactionPlayerModel
-{
-    public long PlayerId { get; set; }
-    public int? FactionId { get; set; }
-}
-```
-
-## Final Note
-This design:
-- Strictly separates responsibilities
-- Prevents “spaghetti plugin”
-- Torch module stays stable
-- Discord module can evolve independently
-- Database remains simple
-
-➡️ Long-term maintainable Torch plugin
-
+**Note:**  
+All changes (nicknames, role/channel, timestamps) are logged.  
+Database stores only state for undo / rollback.  
+Discord nickname format: `[TAG] OriginalNick`.
