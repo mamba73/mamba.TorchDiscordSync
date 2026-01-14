@@ -19,6 +19,7 @@ This plugin synchronizes Space Engineers factions and player nicknames with Disc
 - Compatible with C# 4.6 and .NET Framework 4.8
 
 ## File Structure
+```
 mamba.TorchDiscordSync/
 ├── Config/
 │   └── PluginConfig.cs
@@ -26,13 +27,18 @@ mamba.TorchDiscordSync/
 │   ├── NLog.dll
 │   ├── Sandbox.Common.dll
 │   ├── Sandbox.Game.dll
-│   ├── System.Data.SQLite.dll
 │   ├── Torch.API.dll
 │   ├── Torch.dll
 │   ├── VRage.dll
 │   ├── VRage.Game.dll
 │   ├── VRage.Library.dll
 │   └── VRage.Math.dll
+├── doc/
+│   ├── idejni_projekt_ENG.md
+│   └── idejni_projekt_HRV.md
+├── Instance/
+│   └── mambaTorchDiscordSync/
+│       └── MambaTorchDiscordSyncData.xml      ← save data
 ├── LICENSE
 ├── Models/
 │   ├── FactionModel.cs
@@ -40,6 +46,7 @@ mamba.TorchDiscordSync/
 │   └── PlayerModel.cs
 ├── Plugin/
 │   └── MambaTorchDiscordSyncPlugin.cs
+├── README.md
 ├── Services/
 │   ├── DatabaseService.cs
 │   ├── DiscordService.cs
@@ -50,3 +57,4 @@ mamba.TorchDiscordSync/
 ├── manifest.xml
 └── mamba.TorchDiscordSync.csproj
 
+```
