@@ -10,6 +10,8 @@ obj/
 
 # Dependencies
 Dependencies/*.dll
+Dependencies/*
+Dependencies/
 
 # Logs
 *.log

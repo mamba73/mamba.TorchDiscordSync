@@ -21,8 +21,10 @@ This plugin synchronizes Space Engineers factions and player nicknames with Disc
 ## File Structure
 ```
 mamba.TorchDiscordSync/
-├── Config/
-│   └── PluginConfig.cs
+├─ Config/
+│  └─ PluginConfig.cs
+├─ data/
+│  └─ MambaTorchDiscordSync.cfg
 ├── Dependencies/
 │   ├── NLog.dll
 │   ├── Sandbox.Common.dll
@@ -33,28 +35,31 @@ mamba.TorchDiscordSync/
 │   ├── VRage.Game.dll
 │   ├── VRage.Library.dll
 │   └── VRage.Math.dll
-├── doc/
-│   ├── idejni_projekt_ENG.md
-│   └── idejni_projekt_HRV.md
+├─ doc/
+│  ├─ idejni_projekt_HRV.md
+│  └─ project_idea_ENG.md
 ├── Instance/
 │   └── mambaTorchDiscordSync/
 │       └── MambaTorchDiscordSyncData.xml      ← save data
-├── LICENSE
-├── Models/
-│   ├── FactionModel.cs
-│   ├── FactionPlayerModel.cs
-│   └── PlayerModel.cs
-├── Plugin/
-│   └── MambaTorchDiscordSyncPlugin.cs
-├── README.md
-├── Services/
-│   ├── DatabaseService.cs
-│   ├── DiscordService.cs
-│   └── FactionSyncService.cs
-├── Utils/
-│   └── ChatUtils.cs
-├── build.bat
-├── manifest.xml
-└── mamba.TorchDiscordSync.csproj
-
+├─ Models/
+│  ├─ FactionModel.cs
+│  ├─ FactionPlayerModel.cs
+│  ├─ PlayerModel.cs
+│  └─ RootDataModel.cs
+├─ Plugin/
+│  └─ MambaTorchDiscordSyncPlugin.cs
+├─ Services/
+│  ├─ DatabaseService.cs
+│  ├─ DiscordService.cs
+│  └─ FactionSyncService.cs
+├─ Utils/
+│  └─ ChatUtils.cs
+├─ .gitignore
+├─ build.bat
+├─ LICENSE
+├─ mamba.TorchDiscordSync.csproj
+├─ mamba.TorchDiscordSync.sln
+├─ manifest.xml
+├─ README.md
+└─ tree
 ```
