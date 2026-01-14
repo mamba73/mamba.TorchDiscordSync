@@ -1,75 +1,66 @@
-# Project Idea: mamba.TorchDiscordSync
+# idejni_projekt_HRV.md
 
-## 1) Torch / Space Engineers module
-**Purpose:** interact with SE server via Torch API.
+# Idejni koncept plugina mamba.TorchDiscordSync
 
-**Responsibilities:**
-- Session lifecycle
-    - Hook on ITorchSessionManager.SessionStateChanged
-    - React only on TorchSessionState.Loaded
-- Faction reader
-    - Fetch all factions from SE world
-    - Read: Faction ID, Tag, Name, Leader SteamID, Members SteamID
-- Change detection
-    - Periodic scan (e.g., every 60s)
-    - Detect new/deleted factions, member changes, leader changes
-- Output: normalized `FactionModel` object
+## 1) Torch / Space Engineers modul
+**Svrha:** Komunicira sa SE serverom preko Torch API.
 
-## 2) Core Sync / Orchestration module
-**Purpose:** central brain, connects data, does not call Torch or Discord directly.
+**Glavne odgovornosti:**
+- Session lifecycle: hook na `ITorchSessionManager.SessionStateChanged`, reagira samo na `TorchSessionState.Loaded`
+- Čitanje fakcija: ID, tag, ime, članovi (SteamID)
+- Promjene fakcija: periodički scan, detekcija novih/promijenjenih/obrisanih fakcija
+- Output: normalizirani `FactionModel` objekt za Core Sync
 
-**Responsibilities:**
-- State management
-    - Keeps last known faction state
-    - Decides what changed
-- Rules engine
-    - Every faction → Discord role
-    - Every faction → Discord channel
-    - Nickname: `[TAG] OriginalNick`
-- Dispatch
-    - Actions → Discord module
-    - Changes → Database module
+## 2) Core Sync / Orchestration modul
+**Svrha:** Centralni mozak plugina, povezuje podatke.
 
-## 3) Discord module
-**Purpose:** communicate with Discord API.
+**Glavne odgovornosti:**
+- State management: prati zadnje stanje fakcija
+- Rules engine: provjerava pravila (Discord role, channel)
+- Dispatch: poziva Discord modul i Database modul, nikada direktno Torch API
 
-**Responsibilities:**
-- Connection: bot initialization, safe reconnect
-- Role management: create/delete roles
-- Channel management: create/delete channels, set permissions
-- Nickname sync: `[TAG] OriginalNick`, undo / rollback
-- Idempotent behaviour: safe repeated operations
+## 3) Discord modul
+**Svrha:** Komunikacija s Discord API.
 
-## 4) Database (SQLite) module
-**Purpose:** persist data.
+**Glavne odgovornosti:**
+- Connection: inicijalizacija bota, safe reconnect
+- Role management: kreiranje / brisanje role za članove fakcije
+- Channel management: kreiranje text/forum channela, permissions
+- Nick sync: `[TAG] originalNick` format
+- Idempotent behavior: ako već postoji → ne radi ništa
 
-**Responsibilities:**
-- Schema: FactionID → DiscordRoleID, FactionID → DiscordChannelID, Player nick mapping
-- Read / Write: load on startup, save after sync
-- Soft delete fields: `DeletedAt` for undo
-- Single SQLite connection, thread-safe
+## 4) Database (SQLite) modul
+**Svrha:** Persistencija podataka između restarta servera.
 
-## 5) Security / Permissions module
+**Glavne odgovornosti:**
+- Schema: FactionID → DiscordRoleID, FactionID → DiscordChannelID, Player SteamID, original nick
+- Read/Write: load na startup, save nakon svake sinkronizacije
+- Safety: jedna connection instanca, lock oko write operacija
+
+## 5) Security / Permissions modul
+**Svrha:** Zaštita od zlouporabe.
+
+**Glavne odgovornosti:**
 - SteamID whitelist
-- Check before executing commands (Torch / Discord)
-- Anti-abuse active only in production (Debug = false)
+- Discord admin role (opcionalno)
+- Provjera prije izvršavanja komandi
 
-## 6) Commands module (Torch chat / console)
-- `/tds sync` – force full resync
-- `/tds cleanup` – remove orphaned roles/channels
-- `/tds status` – show current sync state
-- `/tds reload` – reload config + database
+## 6) Commands modul (Torch chat / console)
+**Svrha:** Admin kontrola plugina bez restarta.
 
-## 7) Config module
-- Discord token
-- Guild ID
-- Sync interval
-- Debug mode
+**Primjeri komandi:**
+- /tds sync → force full resync
+- /tds cleanup → remove orphaned roles/channels
+- /tds status → show current sync state
+- /tds reload → reload config + database
+
+## 7) Config modul
+**Svrha:** Centralizirana konfiguracija (XML).
+
+**Sadržaj:**
+- Discord token, Guild ID
+- Sync interval, Debug mode
 - Security settings (SteamID whitelist)
 
----
-
-**Note:**  
-All changes (nicknames, role/channel, timestamps) are logged.  
-Database stores only state for undo / rollback.  
-Discord nickname format: `[TAG] OriginalNick`.
+**Napomena:**  
+Torch dio ostaje stabilan, Discord dio može se mijenjati, database trivijalan, plug-in dugoročno održiv.
