@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace mamba.TorchDiscordSync.Models
 {
@@ -9,5 +10,7 @@ namespace mamba.TorchDiscordSync.Models
         public string Name { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        public List<FactionPlayerModel> Players { get; set; } = new List<FactionPlayerModel>();
     }
 }

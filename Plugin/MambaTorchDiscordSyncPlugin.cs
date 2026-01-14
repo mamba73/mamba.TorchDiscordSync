@@ -5,9 +5,9 @@ using Torch.API;
 using Torch.API.Managers;
 using Torch.API.Plugins;
 using Torch.API.Session;
-using mamba.TorchDiscordSync.Services;
-using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Config;
+using mamba.TorchDiscordSync.Models;
+using mamba.TorchDiscordSync.Services;
 
 namespace mamba.TorchDiscordSync.Plugin
 {
@@ -23,7 +23,7 @@ namespace mamba.TorchDiscordSync.Plugin
             base.Init(torch);
 
             _config = PluginConfig.Load();
-            _db = new DatabaseService("data/MambaTorchDiscordSync.db"); // automatski kreira folder i db
+            _db = new DatabaseService();
             _discord = new DiscordService(_config.DiscordToken, _config.GuildID);
             _syncService = new FactionSyncService(_db, _discord);
 
@@ -40,17 +40,26 @@ namespace mamba.TorchDiscordSync.Plugin
 
             Console.WriteLine("[PLUGIN] Session loaded, performing initial faction sync");
 
-            var players = new List<PlayerModel>
-            {
-                new PlayerModel { SteamID = 12345678901234567, OriginalNick = "mamba", FactionID = 1 }
-            };
-
             var factions = new List<FactionModel>
             {
-                new FactionModel { FactionID = 1, Tag = "BLB", Name = "Blind Leading Blind" }
+                new FactionModel
+                {
+                    FactionID = 1,
+                    Tag = "BLB",
+                    Name = "Blind Leading Blind",
+                    Players = new List<FactionPlayerModel>
+                    {
+                        new FactionPlayerModel
+                        {
+                            PlayerID = 1001,
+                            SteamID = 12345678901234567,
+                            OriginalNick = "mamba"
+                        }
+                    }
+                }
             };
 
-            _syncService.SyncFactions(factions, players);
+            _syncService.SyncFactions(factions);
         }
     }
 }

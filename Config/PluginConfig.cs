@@ -12,7 +12,25 @@ namespace mamba.TorchDiscordSync.Config
         public int SyncIntervalSeconds { get; set; }
         public bool Debug { get; set; }
 
-        private static string ConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MambaTorchDiscordSync.cfg");
+        // Folder unutar Instance
+        private static string ConfigDir
+        {
+            get
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var instanceDir = Path.Combine(baseDir, "Instance");
+                if (!Directory.Exists(instanceDir))
+                    Directory.CreateDirectory(instanceDir);
+
+                var mambaDir = Path.Combine(instanceDir, "mambaTorchDiscordSync");
+                if (!Directory.Exists(mambaDir))
+                    Directory.CreateDirectory(mambaDir);
+
+                return mambaDir;
+            }
+        }
+
+        private static string ConfigPath => Path.Combine(ConfigDir, "MambaTorchDiscordSync.cfg");
 
         public static PluginConfig Load()
         {

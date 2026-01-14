@@ -15,20 +15,21 @@ namespace mamba.TorchDiscordSync.Services
             _discord = discord;
         }
 
-        public void SyncFactions(List<FactionModel> factions, List<PlayerModel> players)
+        public void SyncFactions(List<FactionModel> factions)
         {
-            foreach (var faction in factions)
+            var factionsCopy = new List<FactionModel>(factions);
+
+            foreach (var faction in factionsCopy)
             {
                 _db.SaveFaction(faction);
                 _discord.SendLog($"Faction {faction.Tag} saved");
-            }
 
-            foreach (var player in players)
-            {
-                var factionTag = factions.Find(f => f.FactionID == player.FactionID)?.Tag ?? "UNK";
-                player.SyncedNick = $"[{factionTag}] {player.OriginalNick}";
-                _db.SavePlayer(player);
-                _discord.SendLog($"Player {player.SyncedNick} saved");
+                foreach (var player in faction.Players)
+                {
+                    player.SyncedNick = $"[{faction.Tag}] {player.OriginalNick}";
+                    _db.SavePlayer(player, faction.FactionID);
+                    _discord.SendLog($"Player {player.SyncedNick} saved");
+                }
             }
         }
     }
