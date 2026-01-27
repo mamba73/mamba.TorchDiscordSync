@@ -1,9 +1,8 @@
-<?xml version="1.0"?>
-<PluginManifest xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<?xml version='1.0' encoding='utf-8'?>
+<PluginManifest>
   <Name>mamba.TorchDiscordSync</Name>
   <Guid>e1b1e28a-7b3c-4b8d-bfc3-5d9c1f8d9e6f</Guid>
-  <Version>2.0.10</Version>
+  <Version>2.0.11</Version>
   <Description>
     Advanced Space Engineers Torch plugin: Syncs player factions to Discord with death logging,
     chat synchronization, server monitoring (SimSpeed), and security features. XML-based persistence
