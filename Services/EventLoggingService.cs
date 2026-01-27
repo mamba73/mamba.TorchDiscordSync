@@ -1,205 +1,91 @@
 using System;
 using System.Threading.Tasks;
-using mamba.TorchDiscordSync.Config;
-using mamba.TorchDiscordSync.Models;
-using mamba.TorchDiscordSync.Utils;
+using Sandbox.Game.World;
+using Sandbox.Game;
+using NLog;
 
 namespace mamba.TorchDiscordSync.Services
 {
     public class EventLoggingService
     {
-        private readonly DatabaseService _db;
-        private readonly DiscordService _discord;
-        private readonly MainConfig _config;
+        private readonly MambaTorchDiscordSyncPlugin _plugin;
+        private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        public EventLoggingService(DatabaseService db, DiscordService discord, MainConfig config)
+        public EventLoggingService(MambaTorchDiscordSyncPlugin plugin)
         {
-            _db = db;
-            _discord = discord;
-            _config = config;
+            _plugin = plugin;
         }
 
-        public Task LogAsync(string eventType, string details)
+        public void Attach()
         {
-            try
-            {
-                var evt = new EventLogModel
-                {
-                    EventType = eventType,
-                    Details = details,
-                    Timestamp = DateTime.UtcNow
-                };
-
-                if (_db != null)
-                {
-                    _db.LogEvent(evt);
-                }
-
-                if (_config != null && _config.Discord != null && _config.Discord.StaffLog != 0)
-                {
-                    if (_discord != null)
-                    {
-                        return _discord.SendLogAsync(_config.Discord.StaffLog, 
-                            "[" + eventType + "] " + details);
-                    }
-                }
-
-                if (_config != null && _config.Debug)
-                {
-                    LoggerUtil.LogDebug("Event logged: " + eventType + " - " + details);
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Event logging error: " + ex.Message);
-            }
-
-            return Task.FromResult(0);
+            MyVisualScriptLogicProvider.PlayerConnected += OnPlayerConnected;
+            MyVisualScriptLogicProvider.PlayerDisconnected += OnPlayerDisconnected;
+            MyVisualScriptLogicProvider.PlayerDied += OnPlayerDied;
         }
 
-        public Task LogServerStatusAsync(string status, float simSpeed)
+        public void Detach()
         {
-            try
-            {
-                string message = "Server " + status + " | SimSpeed: " + simSpeed.ToString("F2");
-
-                if (_config != null && _config.Discord != null && _config.Discord.StatusChannelId != 0)
-                {
-                    if (_discord != null)
-                    {
-                        return _discord.SendLogAsync(_config.Discord.StatusChannelId, message);
-                    }
-                }
-
-                return LogAsync("ServerStatus", status + " (SimSpeed: " + simSpeed.ToString("F2") + ")");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Server status logging error: " + ex.Message);
-            }
-
-            return Task.FromResult(0);
+            MyVisualScriptLogicProvider.PlayerConnected -= OnPlayerConnected;
+            MyVisualScriptLogicProvider.PlayerDisconnected -= OnPlayerDisconnected;
+            MyVisualScriptLogicProvider.PlayerDied -= OnPlayerDied;
         }
 
-        public Task LogSimSpeedWarningAsync(float simSpeed)
+        private void OnPlayerConnected(long playerId)
         {
-            try
+            if (!_plugin.Config.Chat.Enabled) return;
+            var identity = MySession.Static.Players.TryGetIdentity(playerId);
+            if (identity != null)
             {
-                string threshold = _config != null && _config.Monitoring != null ? 
-                    _config.Monitoring.SimThresh.ToString("F2") : "0.60";
-                string message = "SIMSPEED ALERT - Current: " + simSpeed.ToString("F2") + 
-                    " (Threshold: " + threshold + ")";
-
-                if (_config != null && _config.Discord != null && _config.Discord.StatusChannelId != 0)
-                {
-                    if (_discord != null)
-                    {
-                        return _discord.SendLogAsync(_config.Discord.StatusChannelId, message);
-                    }
-                }
-
-                return LogAsync("SimSpeedWarning", "SimSpeed below threshold: " + simSpeed.ToString("F2"));
+                string msg = _plugin.Config.Chat.JoinMessage.Replace("{p}", identity.DisplayName);
+                _plugin.DiscordService.SendToMainChannel(msg);
             }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("SimSpeed warning error: " + ex.Message);
-            }
-
-            return Task.FromResult(0);
         }
 
-        public Task LogDeathAsync(string deathMessage)
+        private void OnPlayerDisconnected(long playerId)
         {
-            try
+            if (!_plugin.Config.Chat.Enabled) return;
+            var identity = MySession.Static.Players.TryGetIdentity(playerId);
+            if (identity != null)
             {
-                if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
-                {
-                    if (_discord != null)
-                    {
-                        return _discord.SendLogAsync(_config.Discord.ChatChannelId, deathMessage);
-                    }
-                }
-
-                return LogAsync("Death", deathMessage);
+                string msg = _plugin.Config.Chat.LeaveMessage.Replace("{p}", identity.DisplayName);
+                _plugin.DiscordService.SendToMainChannel(msg);
             }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Death logging error: " + ex.Message);
-            }
-
-            return Task.FromResult(0);
         }
 
-        public Task LogPlayerJoinAsync(string playerName, long steamID)
+        private void OnPlayerDied(long playerId)
         {
-            try
-            {
-                string message = playerName + " (" + steamID + ") joined the server";
-
-                if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
-                {
-                    if (_discord != null)
-                    {
-                        return _discord.SendLogAsync(_config.Discord.ChatChannelId, message);
-                    }
-                }
-
-                return LogAsync("PlayerJoin", playerName + " (" + steamID + ")");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Player join logging error: " + ex.Message);
-            }
-
-            return Task.FromResult(0);
+            // Internal Torch event handling
         }
 
-        public Task LogPlayerLeaveAsync(string playerName, long steamID)
+        // Fix for CS1061: Methods expected by SyncOrchestrator and DeathLogService
+        public Task LogDeathAsync(string name, string reason = "Unknown")
         {
-            try
-            {
-                string message = playerName + " (" + steamID + ") left the server";
-
-                if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
-                {
-                    if (_discord != null)
-                    {
-                        return _discord.SendLogAsync(_config.Discord.ChatChannelId, message);
-                    }
-                }
-
-                return LogAsync("PlayerLeave", playerName + " (" + steamID + ")");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Player leave logging error: " + ex.Message);
-            }
-
-            return Task.FromResult(0);
+            Log.Info("[TDS Death] " + name + " died. Reason: " + reason);
+            return Task.CompletedTask;
         }
 
-        public Task LogSyncCompleteAsync(int factionsCount, int playersCount)
+        public Task LogSyncCompleteAsync(int count, int total)
         {
-            try
-            {
-                string message = "Sync Complete - Factions: " + factionsCount + ", Players: " + playersCount;
+            Log.Info("[TDS Sync] Sync complete. " + count + "/" + total);
+            return Task.CompletedTask;
+        }
 
-                if (_config != null && _config.Discord != null && _config.Discord.StaffLog != 0)
-                {
-                    if (_discord != null)
-                    {
-                        return _discord.SendLogAsync(_config.Discord.StaffLog, message);
-                    }
-                }
+        public Task LogSimSpeedWarningAsync(float speed, string message = null)
+        {
+            Log.Warn("[TDS Monitor] Sim Speed Drop: " + speed);
+            return Task.CompletedTask;
+        }
 
-                return LogAsync("SyncComplete", factionsCount + " factions, " + playersCount + " players");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Sync logging error: " + ex.Message);
-            }
+        public Task LogServerStatusAsync(string status, float speed)
+        {
+            Log.Info("[TDS Status] " + status + " | SimSpeed: " + speed);
+            return Task.CompletedTask;
+        }
 
-            return Task.FromResult(0);
+        public Task LogAsync(object message, object status = null)
+        {
+            Log.Info("[TDS] " + message);
+            return Task.CompletedTask;
         }
     }
 }

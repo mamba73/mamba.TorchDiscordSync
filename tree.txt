@@ -1,4 +1,4 @@
-mamba.TorchDiscordSync2/
+mamba.TorchDiscordSync/
 ├─ Config/
 │  ├─ DeathMessagesConfig.cs
 │  ├─ DiscordBotConfig.cs

@@ -1,148 +1,128 @@
+// Services/DiscordService.cs
 using System;
+using System.Linq;
 using System.Threading.Tasks;
-using mamba.TorchDiscordSync.Config;
-using mamba.TorchDiscordSync.Utils;
+using Discord;
+using Discord.WebSocket;
+using NLog;
+using Sandbox;
 
 namespace mamba.TorchDiscordSync.Services
 {
-    /// <summary>
-    /// Wrapper/Adapter for DiscordBotService
-    /// Provides simplified interface for other services
-    /// All methods delegate to DiscordBotService
-    /// </summary>
     public class DiscordService
     {
-        private readonly DiscordBotService _botService;
-        private readonly DiscordConfig _discordConfig;
+        private readonly MambaTorchDiscordSyncPlugin _plugin;
+        private DiscordSocketClient _client;
+        private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
-        public DiscordService(DiscordBotService botService)
+        public DiscordService(MambaTorchDiscordSyncPlugin plugin)
         {
-            _botService = botService;
-            MainConfig cfg = MainConfig.Load();
-            _discordConfig = cfg != null ? cfg.Discord : new DiscordConfig();
+            _plugin = plugin;
         }
 
-        /// <summary>
-        /// Send message to Discord channel
-        /// </summary>
-        public async Task<bool> SendLogAsync(ulong channelID, string message)
+        public void Start()
         {
-            try
+            // Run initialization in a separate thread to avoid blocking Torch startup
+            Task.Run(async () =>
             {
-                if (channelID == 0)
-                    return false;
-
-                if (_botService != null)
+                try
                 {
-                    return await _botService.SendChannelMessageAsync(channelID, message);
+                    _client = new DiscordSocketClient(new DiscordSocketConfig
+                    {
+                        GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent | GatewayIntents.GuildMembers
+                    });
+
+                    // Internal Discord API logging
+                    _client.Log += (msg) => { Log.Info($"[TDS Discord API] {msg.Message}"); return Task.CompletedTask; };
+
+                    await _client.LoginAsync(TokenType.Bot, _plugin.Config.Discord.BotToken);
+                    await _client.StartAsync();
                 }
-                return false;
-            }
-            catch (Exception ex)
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "[TDS] Discord service failed to start.");
+                }
+            });
+        }
+
+        public void Stop()
+        {
+            if (_client != null)
             {
-                LoggerUtil.LogError("[DISCORD] Send log error: " + ex.Message);
-                return false;
+                Task.Run(async () =>
+                {
+                    await _client.StopAsync();
+                    _client.Dispose();
+                }).Wait(5000);
             }
         }
 
-        /// <summary>
-        /// Create Discord role for faction
-        /// </summary>
+        public void SendToMainChannel(string message) => SendMessageInternal(_plugin.Config.Discord.ChatChannelId, message, "Main");
+        public void SendToStaffLog(string message) => SendMessageInternal(_plugin.Config.Discord.StaffLog, message, "Staff");
+
+        private void SendMessageInternal(ulong id, string msg, string name)
+        {
+            if (_client == null || _client.ConnectionState != ConnectionState.Connected || id == 0) return;
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    // Fixed: Removed null-conditional operator to allow proper awaiting
+                    var channel = await _client.GetChannelAsync(id) as IMessageChannel;
+                    if (channel != null) await channel.SendMessageAsync(msg);
+                }
+                catch (Exception ex) { Log.Error(ex, $"[TDS] Failed to send message to {name}"); }
+            });
+        }
+
         public async Task<ulong> CreateRoleAsync(string roleName)
         {
-            try
-            {
-                if (_botService != null)
-                {
-                    return await _botService.CreateRoleAsync(roleName, null);
-                }
-                return 0;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[DISCORD] Create role error: " + ex.Message);
-                return 0;
-            }
+            if (_client == null) return 0;
+            var guild = _client.Guilds.FirstOrDefault();
+            if (guild == null) return 0;
+
+            var role = await guild.CreateRoleAsync(roleName, isMentionable: false);
+            return role.Id;
         }
 
-        /// <summary>
-        /// Create Discord text channel for faction
-        /// </summary>
-        public async Task<ulong> CreateChannelAsync(string channelName)
+        public async Task<ulong> CreateChannelAsync(string name, ulong roleId = 0)
         {
-            try
+            if (_client == null) return 0;
+            var guild = _client.Guilds.FirstOrDefault();
+            if (guild == null) return 0;
+
+            var channel = await guild.CreateTextChannelAsync(name, x =>
             {
-                LoggerUtil.LogInfo("[DISCORD] Creating channel: " + channelName);
-                Random rnd = new Random();
-                return (ulong)rnd.Next(100000, 999999);
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[DISCORD] Create channel error: " + ex.Message);
-                return 0;
-            }
+                if (_plugin.Config.Discord.FactionCategoryId != 0)
+                    x.CategoryId = _plugin.Config.Discord.FactionCategoryId;
+            });
+
+            return channel.Id;
         }
 
-        /// <summary>
-        /// Delete Discord role
-        /// </summary>
-        public async Task<bool> DeleteRoleAsync(ulong roleID)
+        public async Task DeleteRoleAsync(ulong roleId)
         {
-            try
-            {
-                if (_botService != null)
-                {
-                    return await _botService.DeleteRoleAsync(roleID);
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[DISCORD] Delete role error: " + ex.Message);
-                return false;
-            }
+            if (_client == null) return;
+            var guild = _client.Guilds.FirstOrDefault();
+            var role = guild?.GetRole(roleId);
+            if (role != null) await role.DeleteAsync();
         }
 
-        /// <summary>
-        /// Delete Discord channel
-        /// </summary>
-        public async Task<bool> DeleteChannelAsync(ulong channelID)
+        public async Task DeleteChannelAsync(ulong channelId)
         {
-            try
-            {
-                LoggerUtil.LogInfo("[DISCORD] Deleting channel: " + channelID);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[DISCORD] Delete channel error: " + ex.Message);
-                return false;
-            }
+            if (_client == null) return;
+            // Fixed: Check client before awaiting to avoid nullable ValueTask error
+            var channel = await _client.GetChannelAsync(channelId) as ITextChannel;
+            if (channel != null) await channel.DeleteAsync();
         }
 
-        /// <summary>
-        /// Get underlying bot service
-        /// Use when you need direct access to DiscordBotService
-        /// </summary>
-        public DiscordBotService GetBotService()
-        {
-            return _botService;
-        }
+        public Task SendLogAsync(string m, string e = null) { SendToStaffLog(m); return Task.CompletedTask; }
+        public Task SendLogAsync(ulong id, string m) { SendMessageInternal(id, m, "Generic Log"); return Task.CompletedTask; }
 
-        /// <summary>
-        /// Check if service is connected
-        /// </summary>
-        public bool IsConnected
+        private void SafeGameCall(Action action)
         {
-            get { return _botService != null && _botService.IsConnected; }
-        }
-
-        /// <summary>
-        /// Check if service is ready
-        /// </summary>
-        public bool IsReady
-        {
-            get { return _botService != null && _botService.IsReady; }
+            MySandboxGame.Static.Invoke(action, "MambaDiscordSync");
         }
     }
 }
