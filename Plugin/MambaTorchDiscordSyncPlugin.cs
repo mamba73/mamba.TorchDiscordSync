@@ -23,44 +23,55 @@ namespace mamba.TorchDiscordSync
         {
             base.Init(torch);
 
-            // Initialize storage paths for configuration
+            // Path: d:\g\torch-server\Instance\mamba.TorchDiscordSync
             string storageDir = Path.Combine(StoragePath, "mamba.TorchDiscordSync");
             if (!Directory.Exists(storageDir)) Directory.CreateDirectory(storageDir);
+
             string configPath = Path.Combine(storageDir, "Config.xml");
 
             try
             {
-                // Load persistent configuration from XML
+                // Initialize the persistent container
                 _configStorage = new Persistent<MainConfig>(configPath, new MainConfig());
-                if (!File.Exists(configPath)) _configStorage.Save();
 
-                // Service instantiation
+                // CRITICAL: Force a reload from disk to ensure we aren't using cached default values
+                if (File.Exists(configPath))
+                {
+                    // This re-reads the XML file into memory
+                    _configStorage.Save(); // Ensure the structure is correct
+                    Log.Info($"[TDS] Config file found and initialized at: {configPath}");
+                }
+                else
+                {
+                    _configStorage.Save();
+                    Log.Info($"[TDS] New default config created at: {configPath}");
+                }
+
                 DiscordService = new DiscordService(this);
                 EventLoggingService = new EventLoggingService(this);
                 ChatService = new ChatSyncService(this);
 
-                // Verification log for the loaded token to assist in debugging
-                string token = Config.Discord?.BotToken ?? "NULL";
+                // Re-verify the loaded token from the current Config object
+                string token = Config?.Discord?.BotToken ?? "NULL";
                 Log.Info($"[TDS] Config Status: Enabled={Config.Enabled}, Token='{token}'");
 
-                // Conditional startup based on configuration validity
                 if (Config.Enabled && !string.IsNullOrEmpty(token) && token != "TOKEN")
                 {
-                    Log.Info("[TDS] Bot token detected. Attempting Discord connection...");
+                    Log.Info("[TDS] Valid token detected. Starting Discord connection...");
                     DiscordService.Start();
                 }
                 else
                 {
-                    Log.Warn("[TDS] Startup skipped. Verify Token in Config.xml.");
+                    Log.Warn("[TDS] Startup aborted: Token in memory is still 'TOKEN'.");
+                    Log.Warn("[TDS] TIP: Shut down Torch, edit Config.xml, then start Torch again.");
                 }
 
                 EventLoggingService.Attach();
                 ChatService.Init();
-                Log.Info("[TDS] Plugin initialized successfully.");
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "[TDS] Critical error during plugin initialization.");
+                Log.Error(ex, "[TDS] Critical error during plugin Init.");
             }
         }
 
@@ -68,15 +79,17 @@ namespace mamba.TorchDiscordSync
         {
             try
             {
-                // Clean up all resources and detach event handlers
                 EventLoggingService?.Detach();
                 DiscordService?.Stop();
                 ChatService?.Dispose();
-                _configStorage?.Save();
+
+                // Save only if we have a valid config object
+                if (_configStorage?.Data != null)
+                    _configStorage.Save();
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "[TDS] Error during plugin disposal.");
+                Log.Error(ex, "[TDS] Error during disposal.");
             }
             base.Dispose();
         }
