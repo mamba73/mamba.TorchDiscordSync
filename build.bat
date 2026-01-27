@@ -17,14 +17,15 @@ echo === CLEAN ZIP ===
 if exist %ZIPNAME% del %ZIPNAME%
 
 echo === CREATE ZIP ===
-powershell -Command "Compress-Archive -Path '%OUTDIR%\mamba.TorchDiscordSync.dll','manifest.xml' -DestinationPath '%ZIPNAME%'"
+@REM powershell -Command "Compress-Archive -Path '%OUTDIR%\mamba.TorchDiscordSync.dll','manifest.xml' -DestinationPath '%ZIPNAME%'"
+powershell -Command "Compress-Archive -Path '%OUTDIR%\*','manifest.xml' -DestinationPath '%ZIPNAME%'"
 
 echo === DONE ===
 echo Created: %ZIPNAME%
-pause
+::pause
 exit /b 0
 
 :fail
 echo BUILD FAILED
-pause
+::pause
 exit /b 1
