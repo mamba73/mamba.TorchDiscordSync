@@ -19,7 +19,7 @@ Za sada ostajemo na XML, a pripremamo se tako da će kasnije kada sve proradi bi
 
 Ovo je "čista karta" za novi razgovor:
 
-📋 Projektni sažetak: mamba.TorchDiscordSync2 (Restart)
+📋 Projektni sažetak: mamba.TorchDiscordSync
 
 Status: Nastavak rada na postojećem projektu uz očuvanje funkcionalnih dijelova. Fokus je na modularnosti bez "ubijanja" koda koji radi.
 
@@ -48,9 +48,7 @@ Server up / down ✔
 Join / leave ✔
 Online player count ✔
 
-➡️ Ovo je već dobar temelj
-
-## 🔥 PRIORITET 2 – CHAT (najviše koristi)
+## 🔥 PRIORITET 2 – CHAT 
 
 Global chat → Discord ✔
 Faction chat:
@@ -61,7 +59,7 @@ slati u faction forum
 
 ➡️ Ovo je sljedeći veliki dobitak
 
-## 🔥 PRIORITET 3 – FACTIONS (Python parity)
+## 🔥 PRIORITET 3 – FACTIONS (napravljena python skripta odlično radi taj posao, pa će biti uključena kao primjer kasnije)
 
 Čitanje fakcija iz SE runtimea
 Dodjela Discord rola

@@ -1,73 +1,99 @@
 import os
-import clr
 import sys
+import clr  # Dio 'pythonnet' paketa
 
 # --- KONFIGURACIJA ---
 DEFAULT_PATH = r"d:\g\dev\csharp\mamba.TorchDiscordSync2\Dependencies"
-# Filtriraj DLL-ove koji sadrže ove ključne riječi (prazna lista [] znači "skeniraj sve")
 FILTER_KEYWORDS = ["Torch", "Sandbox", "VRage", "SpaceEngineers"]
-LOG_FILE = "inspect_results.txt"
+LOG_DIR = "doc"
+LOG_BASE_NAME = "inspect_results"
 # ---------------------
+
+def print_help():
+    help_text = f"""
+DLL INSPECTOR - POMOĆ
+=================================================
+Ova skripta analizira .NET DLL datoteke i ispisuje
+njihove Namespace-ove, klase i metode u log datoteku.
+
+POTREBNE INSTALACIJE:
+---------------------
+Prije prvog pokretanja instalirajte 'pythonnet' biblioteku:
+    pip install pythonnet
+
+KORIŠTENJE:
+-----------
+1. Pokrenite: python {os.path.basename(__file__)}
+2. Pritisnite ENTER za zadani direktorij:
+   {DEFAULT_PATH}
+3. Ili unesite novu putanju (apsolutnu ili relativnu).
+
+REZULTAT:
+---------
+Izvještaji se spremaju u mapu: ./{LOG_DIR}/
+Svako pokretanje stvara novu datoteku (increment).
+=================================================
+    """
+    print(help_text)
+
+def get_unique_filename(directory, base_name, extension):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    counter = 1
+    filename = f"{base_name}.{extension}"
+    while os.path.exists(os.path.join(directory, filename)):
+        filename = f"{base_name}_{counter}.{extension}"
+        counter += 1
+    return os.path.join(directory, filename)
 
 def inspect_dll(dll_path, log_file):
     output = []
-    output.append(f"\n{'='*60}\nANALIZA: {os.path.basename(dll_path)}\n{'='*60}")
-    
+    output.append(f"\n{'='*80}\nANALIZA: {os.path.basename(dll_path)}\n{'='*80}")
     try:
         import System.Reflection as Reflection
-        # LoadFile može imati problema s ovisnostima, LoadFrom je često bolji za SE/Torch
         assembly = Reflection.Assembly.LoadFrom(os.path.abspath(dll_path))
         types = assembly.GetTypes()
-        
         for t in types:
             if t.IsPublic:
                 output.append(f"\n[NS: {t.Namespace}] -> Klasa: {t.Name}")
-                
-                methods = t.GetMethods(Reflection.BindingFlags.Public | 
-                                      Reflection.BindingFlags.Instance | 
-                                      Reflection.BindingFlags.Static |
-                                      Reflection.BindingFlags.DeclaredOnly)
-                
+                flags = (Reflection.BindingFlags.Public | Reflection.BindingFlags.Instance | 
+                         Reflection.BindingFlags.Static | Reflection.BindingFlags.DeclaredOnly)
+                methods = t.GetMethods(flags)
                 for m in methods:
                     if not m.IsSpecialName:
-                        output.append(f"  - {m.Name}")
+                        params = ", ".join([f"{p.ParameterType.Name} {p.Name}" for p in m.GetParameters()])
+                        output.append(f"  - {m.ReturnType.Name} {m.Name}({params})")
     except Exception as e:
-        output.append(f"GREŠKA: {e}")
-    
-    # Zapiši u log
+        output.append(f"INFO: Preskočeno (nije .NET ili nema pristupa): {e}")
     log_file.write("\n".join(output) + "\n")
-    return len(output) > 3 # Vrati true ako je nešto pronađeno
 
 def main():
-    print(f"Header: Zadana putanja: {DEFAULT_PATH}")
-    user_input = input(f"Putanja (Enter za zadano): ").strip()
+    # Provjera za --help argument
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print_help()
+        return
+
+    print(f"--- DLL Inspector za Torch/SE (upišite --help za upute) ---")
+    user_input = input(f"Putanja do DLL-ova (Enter za zadano): ").strip()
     target_dir = os.path.abspath(user_input if user_input else DEFAULT_PATH)
 
     if not os.path.isdir(target_dir):
-        print(f"Greška: Putanja ne postoji.")
+        print(f"Greška: Putanja '{target_dir}' ne postoji.")
         return
 
-    # Dohvati DLL-ove i filtriraj ih
+    log_path = get_unique_filename(LOG_DIR, LOG_BASE_NAME, "txt")
     all_dlls = [f for f in os.listdir(target_dir) if f.lower().endswith('.dll')]
-    
-    if FILTER_KEYWORDS:
-        dll_files = [f for f in all_dlls if any(k.lower() in f.lower() for k in FILTER_KEYWORDS)]
-    else:
-        dll_files = all_dlls
+    dll_files = [f for f in all_dlls if any(k.lower() in f.lower() for k in FILTER_KEYWORDS)] if FILTER_KEYWORDS else all_dlls
 
-    print(f"Pronađeno: {len(all_dlls)} | Filtrirano za skeniranje: {len(dll_files)}")
-    print(f"Rezultati će biti spremljeni u: {LOG_FILE}")
+    print(f"Skeniram {len(dll_files)} datoteka u: {log_path}")
 
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        f.write(f"DLL INSPECTION REPORT - {target_dir}\n")
-        f.write(f"Filteri: {', '.join(FILTER_KEYWORDS)}\n")
-        
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(f"REPORT: {target_dir}\nFiltrirano: {', '.join(FILTER_KEYWORDS)}\n" + "="*40 + "\n")
         for i, dll in enumerate(dll_files):
-            full_path = os.path.join(target_dir, dll)
-            print(f"[{i+1}/{len(dll_files)}] Skeniram: {dll}...", end="\r")
-            inspect_dll(full_path, f)
+            print(f"[{i+1}/{len(dll_files)}] {dll}", end="\r")
+            inspect_dll(os.path.join(target_dir, dll), f)
 
-    print(f"\n\nGotovo! Otvorite {LOG_FILE} u VSCode-u za pregled.")
+    print(f"\n\nGotovo! Log se nalazi na: {log_path}")
 
 if __name__ == "__main__":
     main()

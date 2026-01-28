@@ -1,3 +1,4 @@
+// Models/CommandModel.cs
 using System;
 
 namespace mamba.TorchDiscordSync.Models

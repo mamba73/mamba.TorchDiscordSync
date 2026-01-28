@@ -1,3 +1,4 @@
+// Services/DiscordService.cs
 using System;
 using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Config;
@@ -144,5 +145,25 @@ namespace mamba.TorchDiscordSync.Services
         {
             get { return _botService != null && _botService.IsReady; }
         }
+
+        /// <summary>
+        /// Send status message to status channel
+        /// </summary>
+        public void SendMessage(string message)
+        {
+            try
+            {
+                if (_discordConfig != null && _discordConfig.StatusChannelId != 0 && _botService != null)
+                {
+                    _botService.SendChannelMessageAsync(_discordConfig.StatusChannelId, message);
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD] Send message error: " + ex.Message);
+            }
+        }
+
+
     }
 }

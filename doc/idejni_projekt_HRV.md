@@ -48,11 +48,17 @@
 ## 6) Commands modul (Torch chat / console)
 **Svrha:** Admin kontrola plugina bez restarta.
 
-**Primjeri komandi:**
+**Primjeri admin komandi:**
 - /tds sync → force full resync
 - /tds cleanup → remove orphaned roles/channels
 - /tds status → show current sync state
 - /tds reload → reload config + database
+- /tds unverify discordName → obrisati verifikaciju korisnika (sa čime se onemogućuje daljnje slanje poruka u chat sa discorda)
+
+**Igračeve komande:**
+- /tds verify discordName → započeti verifikaciju igrača, poslati korisniku naputak privatno u DM, nakon uspješne verifikacije dodati SteamID i discordName u bazu
+- /tds help → prikazati dostupne komande
+
 
 ## 7) Config modul
 **Svrha:** Centralizirana konfiguracija (XML).

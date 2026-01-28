@@ -200,6 +200,33 @@ namespace mamba.TorchDiscordSync.Config
     public class ChatConfig
     {
         [XmlElement]
+        public bool EnableModeration { get; set; }
+
+        [XmlElement]
+        public string[] BlacklistedWords { get; set; }
+
+        [XmlElement]
+        public int MaxWarningsBeforeMute { get; set; }
+
+        [XmlElement]
+        public int MuteDurationMinutes { get; set; }
+
+        [XmlElement]
+        public int MaxMutesBeforeKick { get; set; }
+
+        [XmlElement]
+        public string WarningMessage { get; set; }
+
+        [XmlElement]
+        public string MuteMessage { get; set; }
+
+        [XmlElement]
+        public string KickMessage { get; set; }
+
+        [XmlElement]
+        public ulong AdminLogChannelId { get; set; }
+
+        [XmlElement]
         public bool Enabled { get; set; }
 
         [XmlElement]
@@ -253,6 +280,15 @@ namespace mamba.TorchDiscordSync.Config
             FactionDiscordFormat = "[SE-Faction] {p}: {msg}";
             GlobalColor = "White";
             FactionColor = "Green";
+            EnableModeration = false;
+            BlacklistedWords = new string[] { "hack", "cheat", "exploit", "http"  };
+            MaxWarningsBeforeMute = 3;
+            MuteDurationMinutes = 10;
+            MaxMutesBeforeKick = 2;
+            WarningMessage = "⚠️ Please avoid using inappropriate language.";
+            MuteMessage = "🔇 You have been muted for {minutes} minutes due to repeated violations.";
+            KickMessage = "🚫 You have been removed from the channel for repeated violations.";
+            AdminLogChannelId = 0;
         }
     }
 

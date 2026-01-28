@@ -1,3 +1,4 @@
+// Utils/CommandAuthorizationUtil.cs
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -57,6 +58,22 @@ namespace mamba.TorchDiscordSync.Utils
                     "reset",
                     "Clear all Discord roles and channels (WARNING: irreversible)",
                     "/tds reset",
+                    requiresAdmin: true,
+                    minArgs: 0
+                ),
+                
+                new CommandModel(
+                    "cleanup",
+                    "Remove orphaned Discord roles and channels",
+                    "/tds cleanup",
+                    requiresAdmin: true,
+                    minArgs: 0
+                ),
+
+                new CommandModel(
+                    "reload",
+                    "Reload configuration and database",
+                    "/tds reload",
                     requiresAdmin: true,
                     minArgs: 0
                 ),

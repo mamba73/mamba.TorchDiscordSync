@@ -1,3 +1,4 @@
+// Utils/ChatUtils.cs
 using System;
 
 namespace mamba.TorchDiscordSync.Utils

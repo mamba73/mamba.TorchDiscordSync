@@ -1,3 +1,8 @@
+2026-01-28@09:50
+
+Treba implementirati da poruke idu iz igre prema discordu i sa discorda u igru.
+Na discordu treba paziti na blacklisted riječi; jer se ne smiju dozvoliti attachmenti, slanje linkova, slanje slika. Treba napraviti "moderaciju" i korisnik koji pošalje blacklisted poruku, na diskordu dobije opomenu. Nakon X opomena dobije mute na XX minuta. Ukoliko korisnik i nakon mute ponovno šalje blacklisted poruke nakon X puta; dobije isključenje sa kanala. X i XX je definirano u konfiguraciji kao i poruke za opomene, mute i isključenje sa kanala - ukoliko još nije, treba napraviti konfiguraciju. Sve se šalje kao log u admin kanal.
+
 **Torch**: 1.3.1+  
 **Space Engineers**: 1.208+  
 **C#**: 4.6+ / .NET Framework 4.8
