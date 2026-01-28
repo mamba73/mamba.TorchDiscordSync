@@ -1,8 +1,8 @@
- Analiziraj ovaj projekt:
+Analiziraj ovaj projekt:
 
 https://github.com/mamba73/mamba.TorchDiscordSync
 
-Ne diramo ništa što radi, bez "popravljanja" spremanja konfiguracije samo implementiramo i popravljamo postojeće po mojem odobrenju sukladno pravilima, koja ponavljam:
+Ne diramo ništa što radi, bez "popravljanja" i razdvajanja projekta u nesuvisle cjeline. Samo implementiramo i popravljamo postojeće po mojem odobrenju sukladno pravilima, koja ponavljam:
 
 rules:
   - "Context: Space Engineers Torch Server Plugin development."
@@ -15,7 +15,7 @@ rules:
   - "File Header: Mandatory! Always put the relative file path as a comment in the very first line."
   - "Note: Ensure thread safety when interacting with the game world (MySandboxGame.Static.Invoke)."
 
-Za sada ostajemo na XML, a pripremamo se tako da će kasnije kada sve proradi biti lako migrirati na SQLite. 
+Imam listu svih dll datoteka u Dependencies\ direktoriju sa njihovim namespace, klasama i atributima, jer Keen i Torch developeri konstantno mijenjaju klase, pa nam ovaj inspekcijski result može biti vodilja koja klasa je u kojem namespace.
 
 Ovo je "čista karta" za novi razgovor:
 
@@ -28,28 +28,15 @@ Kontekst: Space Engineers Torch Server Plugin.
 Verzije: Torch v1.3.1.328-master, SE 1.208.15.
 Target: .NET Framework 4.8 (bez novije sintakse).
 
-💀 Glavni zadatak: Death Messages ("Osmrtnice")
-Proširiti OnPlayerDied.
-Prikazati poruke na discordu o server statusu: "Server Up" i "Server Down" - koje su predefinirane u konfiguraciji
-Analiza smrti: MyDamageInformation (DamageType, Amount, AttackerId).
-Razlikovati: PvP, samoubojstvo, okoliš (kisik, pritisak) i gridove.
-
-🚀 Cilj razgovora
-
-Implementirati detaljne poruke o smrti bez diranja XML-a koji radi.
-Uredi da se na discordu prikaže "server up" i "server down" 
-
 ### PRIORITETI
 
 ## 🔥 PRIORITET 1 – CORE STABILITY
-
 SimSpeed ✔
 Server up / down ✔
 Join / leave ✔
 Online player count ✔
 
 ## 🔥 PRIORITET 2 – CHAT 
-
 Global chat → Discord ✔
 Faction chat:
 detektirati FACTION vs GLOBAL
@@ -57,19 +44,25 @@ konfiguracijski odlučiti:
 ignorirati
 slati u faction forum
 
-➡️ Ovo je sljedeći veliki dobitak
-
 ## 🔥 PRIORITET 3 – FACTIONS (napravljena python skripta odlično radi taj posao, pa će biti uključena kao primjer kasnije)
-
 Čitanje fakcija iz SE runtimea
 Dodjela Discord rola
 Spremanje promjena za undo
 
-➡️ Ovdje C# mora prestati “glumiti bazu” i čitati SE
-
 ## 🔥 PRIORITET 4 – CLEANUP
-
 Provjera postojećih featurea
-Isključiti ili označiti sve što nije 100 % pouzdano
+Označiti sve što nije 100 % pouzdano
+
+
+💀 Death Messages ("Osmrtnice")
+Proširiti OnPlayerDied.
+Prikazati poruke na discordu o server statusu: "Server Up" i "Server Down" - koje su predefinirane u konfiguraciji
+Analiza smrti: MyDamageInformation (DamageType, Amount, AttackerId).
+Razlikovati: PvP, samoubojstvo, okoliš (kisik, pritisak) i gridove.
+
+🚀 Cilj razgovora
+Implementirati detaljne poruke o smrti bez diranja XML-a koji radi.
+
+**Glavni prioritet:** Uredi da se na discordu prikaže "server up" i "server down", te kada se igrač spoji i odspoji 
 
 Kada sve proradi, na novoj verziji projekta prebaciti bazu podataka na SQLite
