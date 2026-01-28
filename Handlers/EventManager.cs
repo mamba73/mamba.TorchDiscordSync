@@ -31,46 +31,44 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         // Register player connect/disconnect events - TORCH WAY
-        /* 
+        // ZAKOMENTIRANO JER NE POSTOJE PlayerConnected/PlayerDisconnected EVENTOVI
+        /*
         public void RegisterEvents()
         {
             try
             {
-                // Player connected event - Torch koristi MyAPIGateway.Players
-                if (MyAPIGateway.Players != null)
-                {
-                    MyAPIGateway.Players.PlayerConnected += OnPlayerConnected;
-                }
-
-                // Player disconnected event  
-                if (MyAPIGateway.Players != null)
-                {
-                    MyAPIGateway.Players.PlayerDisconnected += OnPlayerDisconnected;
-                }
-
-                LoggerUtil.LogInfo("Player connection events registered");
+                // OVO NE POSTOJI U NOVIJIM VERZIJAMA TORCHA
+                // MyAPIGateway.Players.PlayerConnected += OnPlayerConnected;
+                // MyAPIGateway.Players.PlayerDisconnected += OnPlayerDisconnected;
+                
+                LoggerUtil.LogInfo("Player connection events would be registered if they existed");
             }
             catch (Exception ex)
             {
                 LoggerUtil.LogError("Failed to register player events: " + ex.Message);
             }
         }
- */
+        */
 
-        // Player connected event handler
+        // Player connected event handler - ZAKOMENTIRANO
+        /*
         private void OnPlayerConnected(long playerId)
         {
             Task.Run(() => ProcessPlayerConnected(playerId));
         }
+        */
 
-        // Player disconnected event handler  
+        // Player disconnected event handler - ZAKOMENTIRANO
+        /*
         private void OnPlayerDisconnected(long playerId)
         {
             Task.Run(() => ProcessPlayerDisconnected(playerId));
         }
+        */
 
         // Register death events - different approach for newer Torch
-        /* 
+        // ZAKOMENTIRANO - koristimo PlayerTrackingService i DeathLogService
+        /*
         public void RegisterDeathEvents()
         {
             try
@@ -84,9 +82,10 @@ namespace mamba.TorchDiscordSync.Handlers
                 LoggerUtil.LogError("Failed to register death events: " + ex.Message);
             }
         }
-         */
+        */
 
-        // Process player connected - ASYNC
+        // Process player connected - ASYNC - ZAKOMENTIRANO
+        /*
         private async Task ProcessPlayerConnected(long playerId)
         {
             try
@@ -114,8 +113,10 @@ namespace mamba.TorchDiscordSync.Handlers
                 LoggerUtil.LogError("Error in ProcessPlayerConnected: " + ex.Message);
             }
         }
+        */
 
-        // Process player disconnected - ASYNC
+        // Process player disconnected - ASYNC - ZAKOMENTIRANO
+        /*
         private async Task ProcessPlayerDisconnected(long playerId)
         {
             try
@@ -143,6 +144,7 @@ namespace mamba.TorchDiscordSync.Handlers
                 LoggerUtil.LogError("Error in ProcessPlayerDisconnected: " + ex.Message);
             }
         }
+        */
 
         // Helper to get player by Steam ID (Torch way)
         private IMyPlayer GetPlayerBySteamId(long steamId)
@@ -151,13 +153,13 @@ namespace mamba.TorchDiscordSync.Handlers
             {
                 var players = new System.Collections.Generic.List<IMyPlayer>();
                 MyAPIGateway.Players.GetPlayers(players);
-                
+
                 foreach (var player in players)
                 {
                     if ((long)player.SteamUserId == steamId)
                         return player;
                 }
-                
+
                 return null;
             }
             catch
@@ -172,7 +174,7 @@ namespace mamba.TorchDiscordSync.Handlers
             try
             {
                 string cause = "unknown";
-                
+
                 // Determine death cause based on damage type and attacker
                 if (damageInfo.AttackerId == 0)
                 {
@@ -207,7 +209,7 @@ namespace mamba.TorchDiscordSync.Handlers
                         cause = "killed by entity #" + damageInfo.AttackerId;
                     }
                 }
-                
+
                 return playerName + " was killed by " + cause + " (" + damageInfo.Type + ")";
             }
             catch (Exception ex)
@@ -224,13 +226,13 @@ namespace mamba.TorchDiscordSync.Handlers
             {
                 var players = new System.Collections.Generic.List<IMyPlayer>();
                 MyAPIGateway.Players.GetPlayers(players);
-                
+
                 foreach (var player in players)
                 {
                     if (player.DisplayName.Equals(playerName, StringComparison.OrdinalIgnoreCase))
                         return player;
                 }
-                
+
                 return null;
             }
             catch
@@ -248,11 +250,11 @@ namespace mamba.TorchDiscordSync.Handlers
                 ulong channelId = 0;
                 if (_config.Discord != null)
                 {
-                    channelId = _config.Discord.StatusChannelId != 0 ? 
-                               _config.Discord.StatusChannelId : 
+                    channelId = _config.Discord.StatusChannelId != 0 ?
+                               _config.Discord.StatusChannelId :
                                _config.Discord.ChatChannelId;
                 }
-                
+
                 if (channelId != 0 && _discordService != null)
                 {
                     await _discordService.SendLogAsync(channelId, message);
@@ -269,12 +271,12 @@ namespace mamba.TorchDiscordSync.Handlers
         {
             try
             {
-                if (_config.Monitoring != null && 
-                    _config.Monitoring.Enabled && 
+                if (_config.Monitoring != null &&
+                    _config.Monitoring.Enabled &&
                     !string.IsNullOrEmpty(_config.Monitoring.ServerStartedMessage) &&
                     _discordService != null)
                 {
-                    Task.Run(async () => 
+                    Task.Run(async () =>
                     {
                         await SendDiscordMessageAsync(_config.Monitoring.ServerStartedMessage);
                     });
@@ -296,12 +298,12 @@ namespace mamba.TorchDiscordSync.Handlers
                 if (_serverShutdownSent)
                     return;
 
-                if (_config.Monitoring != null && 
-                    _config.Monitoring.Enabled && 
+                if (_config.Monitoring != null &&
+                    _config.Monitoring.Enabled &&
                     !string.IsNullOrEmpty(_config.Monitoring.ServerStoppedMessage) &&
                     _discordService != null)
                 {
-                    Task.Run(async () => 
+                    Task.Run(async () =>
                     {
                         await SendDiscordMessageAsync(_config.Monitoring.ServerStoppedMessage);
                     });
