@@ -1,3 +1,4 @@
+// Config/MainConfig.cs
 using System;
 using System.Xml.Serialization;
 using System.IO;
@@ -8,11 +9,50 @@ namespace mamba.TorchDiscordSync.Config
     [XmlRoot("MainConfig")]
     public class MainConfig
     {
-        private static readonly string ConfigPath = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, 
-            "Plugins", 
-            "mamba.TorchDiscordSync", 
-            "MainConfig.xml");
+        // NEW: Static field for instance-specific config directory name
+        private static readonly string CONFIG_DIR_NAME = "mambaTorchDiscordSync";
+        
+        // NEW: Property to get correct config path based on Torch instance directory
+        private static string ConfigPath 
+        { 
+            get 
+            { 
+                // NEW: Get instance directory from environment or use default
+                string instancePath = GetInstancePath();
+                string pluginConfigDir = Path.Combine(instancePath, CONFIG_DIR_NAME);
+                
+                // NEW: Ensure directory exists
+                if (!Directory.Exists(pluginConfigDir))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(pluginConfigDir);
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError("Failed to create config directory " + pluginConfigDir + ": " + ex.Message);
+                    }
+                }
+                
+                return Path.Combine(pluginConfigDir, "MainConfig.xml");
+            } 
+        }
+
+        // NEW: Method to determine correct instance path
+        private static string GetInstancePath()
+        {
+            // NEW: Try to get from environment variable (set by Torch)
+            string instancePath = Environment.GetEnvironmentVariable("TORCH_INSTANCE_PATH");
+            
+            // NEW: Fallback to current directory structure
+            if (string.IsNullOrEmpty(instancePath))
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                instancePath = Path.Combine(baseDir, "Instance");
+            }
+            
+            return instancePath;
+        }
 
         // ========== CORE SETTINGS ==========
         [XmlElement]
@@ -61,10 +101,12 @@ namespace mamba.TorchDiscordSync.Config
             Faction = new FactionConfig();
         }
 
+        // NEW: Updated Load method to use correct path
         public static MainConfig Load()
         {
             try
             {
+                // NEW: Use the updated ConfigPath property
                 if (File.Exists(ConfigPath))
                 {
                     XmlSerializer serializer = new XmlSerializer(typeof(MainConfig));
@@ -88,10 +130,12 @@ namespace mamba.TorchDiscordSync.Config
             return new MainConfig();
         }
 
+        // NEW: Updated Save method to use correct path
         public void Save()
         {
             try
             {
+                // NEW: Use the updated ConfigPath property
                 string dir = Path.GetDirectoryName(ConfigPath);
                 if (!Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
