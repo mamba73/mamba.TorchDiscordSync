@@ -11,7 +11,7 @@ LOG_BASE_NAME = "inspect_results"
 
 def print_help():
     help_text = f"""
-DLL INSPECTOR - POMOĆ
+DLL INSPECTOR - POMOĆ na HRVATSKOM
 =================================================
 Ova skripta analizira .NET DLL datoteke i ispisuje
 njihove Namespace-ove, klase i metode u log datoteku.
