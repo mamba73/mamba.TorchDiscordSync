@@ -61,6 +61,11 @@ namespace mamba.TorchDiscordSync.Plugin
                 {
                     LoggerUtil.LogInfo("Configuration loaded - Debug mode: " + _config.Debug);
                 }
+                else 
+                {
+                    LoggerUtil.LogError("Failed to load configuration!");
+                    return;
+                }
 
                 // Build a compatibility DiscordBotConfig from MainConfig.Discord for existing services
                 _discordBotConfig = new DiscordBotConfig();
@@ -110,6 +115,13 @@ namespace mamba.TorchDiscordSync.Plugin
                 _orchestrator = new SyncOrchestrator(_db, _discordWrapper, _factionSync, _eventLog, _config);
 
                 LoggerUtil.LogSuccess("All services initialized");
+
+                // Send 'Server Started' message if enabled in config
+                // if (_config != null && _config.Enabled && !string.IsNullOrEmpty(_config.ServerStartedMessage))
+                // {
+                    // Assuming _discordBot is your wrapper class that has SendMessage
+                    // _discordBot?.SendMessage(_config.ServerStartedMessage);
+                // }
 
                 // Hook Discord bot verification event
                 if (_discordBot != null)

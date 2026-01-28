@@ -510,6 +510,11 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        internal void SendMessage(object serverStartedMessage)
+        {
+            throw new NotImplementedException();
+        }
+
         // ============================================================
         // PUBLIC EVENTS
         // ============================================================
