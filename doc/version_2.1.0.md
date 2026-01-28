@@ -1,6 +1,6 @@
  Analiziraj ovaj projekt:
 
-https://github.com/mamba73/mamba.TorchDiscordSync2/tree/master
+https://github.com/mamba73/mamba.TorchDiscordSync
 
 Ne diramo ništa što radi, bez "popravljanja" spremanja konfiguracije samo implementiramo i popravljamo postojeće po mojem odobrenju sukladno pravilima, koja ponavljam:
 
