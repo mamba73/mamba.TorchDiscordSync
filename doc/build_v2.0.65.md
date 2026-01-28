@@ -204,6 +204,4 @@ Last Updated: January 28, 2026
 3. **Fix async warnings** in existing codebase
 4. **Move faction logic** from plugin to FactionSyncService
 
-Would you like me to start implementing any of these next features?
-
 
