@@ -1,176 +1,194 @@
 import os
 import sys
-import clr  # Part of 'pythonnet' package
+import clr
+import configparser
 
-# --- CONFIGURATION ---
-# DEFAULT_PATH = r"d:\g\dev\csharp\mamba.TorchDiscordSync2\Dependencies"
-DEFAULT_PATH = r"g:\\dev\\SE\\csharp\\mamba.TorchDiscordSync\\Dependencies"
+# --- DYNAMIC CONFIGURATION LOADER ---
+script_full_path = os.path.abspath(__file__)
+script_dir = os.path.dirname(script_full_path)
+script_base_name = os.path.splitext(os.path.basename(__file__))[0]
+config_file = os.path.join(script_dir, f"{script_base_name}.ini")
 
-FILTER_KEYWORDS = ["Torch", "Sandbox", "VRage", "SpaceEngineers"]
-LOG_DIR = "doc"
-LOG_BASE_NAME = "inspect_results"
-# ---------------------
+config = configparser.ConfigParser()
+
+def load_config():
+    """ Loads configuration and ensures 'Dependencies' is the default path suffix """
+    if not os.path.exists(config_file):
+        # Auto-create path pointing to a 'Dependencies' folder in the script directory
+        default_dep_path = os.path.join(script_dir, "Dependencies")
+        
+        config['SETTINGS'] = {
+            'DefaultPath': default_dep_path,
+            'FilterKeywords': "Torch,Sandbox,VRage,SpaceEngineers",
+            'LogDir': "doc",
+            'LogBaseName': "inspect_results"
+        }
+        with open(config_file, 'w') as f:
+            config.write(f)
+    else:
+        config.read(config_file)
+    
+    return {
+        'path': config.get('SETTINGS', 'DefaultPath'),
+        'keywords': config.get('SETTINGS', 'FilterKeywords').split(','),
+        'log_dir': config.get('SETTINGS', 'LogDir'),
+        'log_name': config.get('SETTINGS', 'LogBaseName')
+    }
+
+# Load config globally at startup
+cfg = load_config()
 
 def print_help():
     help_text = f"""
-DLL INSPECTOR - HELP (v2.6 - Standard Deep Search)
+.NET DLL INSPECTOR - HELP (v2.12)
 =================================================
-This script analyzes .NET DLL files and finds all classes/methods
-matching your keyword across multiple files.
+Analyzes .NET assemblies and extracts metadata.
+Configuration: {os.path.basename(config_file)}
 
 USAGE:
 -----------
-1. STANDARD SCAN: python {os.path.basename(__file__)}
-2. SEARCH MODE:   python {os.path.basename(__file__)} --search "Keyword"
+python {os.path.basename(__file__)} [--search KEYWORD] [--deep]
 
-RESULTS:
----------
-- Results are printed to console AND saved to {LOG_DIR}/
-- Search logs use a '_search' prefix with auto-increment.
+DEFAULT SETUP:
+--------------
+By default, the script looks for DLLs in:
+{cfg['path']}
+
+SWITCHES:
+----------
+--search, -s  : Keyword to find (Namespace, Class, Method, Prop).
+--deep, -d    : Include Fields [F] and Events [E].
+--help, -h    : Show this help text.
+
+LEGEND:
+-------
+[P] : Property | [M] : Method | [F] : Field | [E] : Event
+[ST]: Static member (accessible without instance)
 =================================================
     """
     print(help_text)
 
 def get_unique_filename(directory, base_name, extension):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    # Ensure log directory is relative to script location
+    full_log_dir = os.path.join(script_dir, directory)
+    if not os.path.exists(full_log_dir): 
+        os.makedirs(full_log_dir)
+    
     counter = 1
     filename = f"{base_name}.{extension}"
-    while os.path.exists(os.path.join(directory, filename)):
+    while os.path.exists(os.path.join(full_log_dir, filename)):
         filename = f"{base_name}_{counter}.{extension}"
         counter += 1
-    return os.path.join(directory, filename)
+    return os.path.join(full_log_dir, filename)
 
-def inspect_dll(dll_path, search_term=None):
+def inspect_dll(dll_path, search_term=None, deep_mode=False):
     results = []
     try:
         import System.Reflection as Reflection
         from System.Reflection import ReflectionTypeLoadException
         
         abs_path = os.path.abspath(dll_path)
-        # Koristimo standardni LoadFrom jer je on najpouzdaniji za hvatanje svega
         assembly = Reflection.Assembly.LoadFrom(abs_path)
+        version = assembly.GetName().Version
         
         try:
             types = assembly.GetTypes()
         except ReflectionTypeLoadException as e:
-            # Ako VRage ili neka druga datoteka fali, uzmi ono što je uspjelo učitati
             types = [t for t in e.Types if t is not None]
         except:
-            return []
+            return ("Unknown", [])
 
         for t in types:
             try:
-                if not (t.IsClass or t.IsInterface): continue
-                if not t.IsPublic: continue
+                if not t.IsPublic or not (t.IsClass or t.IsInterface): continue
                 
-                # BindingFlags: Isključujemo DeclaredOnly kako bismo vidjeli Attach/Detach
-                flags = (Reflection.BindingFlags.Public | 
-                         Reflection.BindingFlags.Instance | 
-                         Reflection.BindingFlags.Static |
-                         Reflection.BindingFlags.FlattenHierarchy)
+                flags = (Reflection.BindingFlags.Public | Reflection.BindingFlags.Instance | 
+                         Reflection.BindingFlags.Static | Reflection.BindingFlags.FlattenHierarchy)
                 
-                type_full_name = f"{t.Namespace}.{t.Name}"
-                
-                # Provjera odgovara li klasa ili namespace pojmu
-                type_matches = search_term and (search_term.lower() in type_full_name.lower())
-                
-                methods = t.GetMethods(flags)
-                temp_methods = []
-                
-                for m in methods:
-                    if m.IsSpecialName: continue
-                    
-                    # Provjera odgovara li metoda pojmu
-                    method_matches = search_term and (search_term.lower() in m.Name.lower())
-                    
-                    if not search_term or type_matches or method_matches:
-                        try:
-                            params = ", ".join([f"{p.ParameterType.Name} {p.Name}" for p in m.GetParameters()])
-                            method_sig = f"  - {m.ReturnType.Name} {m.Name}({params})"
-                            temp_methods.append(method_sig)
-                        except:
-                            temp_methods.append(f"  - {m.Name} (Parameters hidden)")
+                type_name_full = f"{t.Namespace}.{t.Name}"
+                type_matches = not search_term or (search_term.lower() in type_name_full.lower())
+                temp_items = []
 
-                if temp_methods:
-                    results.append(f"[NS: {t.Namespace}] -> Class: {t.Name}")
-                    results.extend(temp_methods)
-            except:
-                continue
-                
-    except Exception as e:
-        if search_term:
-            # Ispisujemo grešku samo ako je kritična za taj specifični DLL
-            results.append(f"  [!] ERROR: {os.path.basename(dll_path)} - {str(e)[:50]}")
-            
-    return results
+                # 1. Properties
+                for p in t.GetProperties(flags):
+                    if not search_term or type_matches or (search_term.lower() in p.Name.lower()):
+                        accessors = []
+                        if p.CanRead: accessors.append("get")
+                        if p.CanWrite: accessors.append("set")
+                        acc_str = f" {{ {'; '.join(accessors)}; }}"
+                        
+                        is_static = any(m.IsStatic for m in p.GetAccessors(True))
+                        static_tag = "[ST] " if is_static else ""
+                        temp_items.append(f"  [P] {static_tag}{p.PropertyType.Name} {p.Name}{acc_str}")
+
+                # 2. Methods
+                for m in t.GetMethods(flags):
+                    if m.IsSpecialName: continue
+                    params = ", ".join([f"{p.ParameterType.Name} {p.Name}" for p in m.GetParameters()])
+                    sig = f"{m.ReturnType.Name} {m.Name}({params})"
+                    if not search_term or type_matches or (search_term.lower() in sig.lower()):
+                        temp_items.append(f"  [M] {'[ST] ' if m.IsStatic else ''}{sig}")
+
+                # 3. Deep Scan (Fields & Events)
+                if deep_mode:
+                    for f in t.GetFields(flags):
+                        if not search_term or type_matches or (search_term.lower() in f.Name.lower()):
+                            temp_items.append(f"  [F] {'[ST] ' if f.IsStatic else ''}{f.FieldType.Name} {f.Name}")
+                    for e in t.GetEvents(flags):
+                        if not search_term or type_matches or (search_term.lower() in e.Name.lower()):
+                            temp_items.append(f"  [E] {e.EventHandlerType.Name} {e.Name}")
+
+                if temp_items:
+                    base = f" : {t.BaseType.Name}" if t.BaseType and t.BaseType.Name != "Object" else ""
+                    results.append(f"[NS: {t.Namespace}] -> {t.Name}{base}")
+                    results.extend(temp_items)
+            except: continue
+    except Exception as ex:
+        if search_term: results.append(f"  [!] ERROR: {os.path.basename(dll_path)} - {str(ex)[:50]}")
+    return (version, results)
 
 def main():
-    search_term = None
     if "--help" in sys.argv or "-h" in sys.argv:
-        print_help()
-        return
-    
+        print_help(); return
+
+    search_term = None
+    deep_mode = "--deep" in sys.argv or "-d" in sys.argv
     if "--search" in sys.argv or "-s" in sys.argv:
         try:
             idx = sys.argv.index("--search") if "--search" in sys.argv else sys.argv.index("-s")
             search_term = sys.argv[idx + 1]
-        except IndexError:
-            print("Error: Enter keyword after --search")
-            return
+        except: pass
 
-    print(f"--- DLL Inspector v2.6 ---")
-    user_input = input(f"Path to DLLs (Press Enter for default): ").strip()
-    target_dir = os.path.abspath(user_input if user_input else DEFAULT_PATH)
+    print(f"--- DLL Inspector v2.12 ---")
+    print(f"Default search directory: {cfg['path']}")
+    user_input = input(f"Enter path (Leave blank for default 'Dependencies' folder):\n").strip()
+    
+    target_dir = os.path.abspath(user_input if user_input else cfg['path'])
 
     if not os.path.isdir(target_dir):
-        print(f"Error: Path not found.")
-        return
+        print(f"Error: Directory '{target_dir}' not found.\nPlease create it or update {os.path.basename(config_file)}."); return
 
-    # Pomaže .NET-u da nađe zavisne DLL-ove u istom folderu
     sys.path.append(target_dir)
-
+    
     all_dlls = [f for f in os.listdir(target_dir) if f.lower().endswith('.dll')]
-    dll_files = [f for f in all_dlls if any(k.lower() in f.lower() for k in FILTER_KEYWORDS)] if FILTER_KEYWORDS else all_dlls
+    dll_files = [f for f in all_dlls if any(k.strip().lower() in f.lower() for k in cfg['keywords'])] if cfg['keywords'] else all_dlls
 
-    if search_term:
-        log_name = f"{LOG_BASE_NAME}_search"
-        log_path = get_unique_filename(LOG_DIR, log_name, "txt")
-        print(f"Searching for '{search_term}' in {len(dll_files)} files...")
-        
-        found_any = False
-        with open(log_path, "w", encoding="utf-8") as f:
-            f.write(f"SEARCH REPORT: {search_term}\nLocation: {target_dir}\n" + "="*40 + "\n")
-            
-            for dll in dll_files:
-                matches = inspect_dll(os.path.join(target_dir, dll), search_term)
-                if matches:
-                    header = f"\nFILE: {dll}"
-                    print(header)
-                    f.write(header + "\n")
-                    for line in matches:
-                        print(line)
-                        f.write(line + "\n")
-                    found_any = True
-        
-        if not found_any:
-            print("No matches found.")
-        else:
-            print(f"\nDone! Results saved in: {log_path}")
-            
-    else:
-        log_path = get_unique_filename(LOG_DIR, LOG_BASE_NAME, "txt")
-        print(f"Full Scan Mode...")
+    log_base = f"{cfg['log_name']}_search" if search_term else cfg['log_name']
+    log_path = get_unique_filename(cfg['log_dir'], log_base, "txt")
 
-        with open(log_path, "w", encoding="utf-8") as f:
-            f.write(f"FULL REPORT: {target_dir}\n" + "="*40 + "\n")
-            for i, dll in enumerate(dll_files):
-                print(f"[{i+1}/{len(dll_files)}] {dll}", end="\r")
-                results = inspect_dll(os.path.join(target_dir, dll))
-                f.write(f"\nFILE: {dll}\n" + "-"*40 + "\n")
-                f.write("\n".join(results) + "\n")
-        
-        print(f"\n\nDone! Full log: {log_path}")
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(f"INSPECTION REPORT\nDeep Mode: {deep_mode}\nTarget: {target_dir}\n{'='*60}\n")
+        for dll in dll_files:
+            version, matches = inspect_dll(os.path.join(target_dir, dll), search_term, deep_mode)
+            if matches:
+                header = f"\nFILE: {dll} (v{version})"
+                print(header)
+                f.write(header + "\n" + "-"*len(header) + "\n")
+                for line in matches:
+                    print(line)
+                    f.write(line + "\n")
+
+    print(f"\nFinished! Log: {log_path}")
 
 if __name__ == "__main__":
     main()
