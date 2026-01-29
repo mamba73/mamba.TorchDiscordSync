@@ -1,3 +1,4 @@
+// Services/DeathLogService.cs
 using System;
 using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Config;

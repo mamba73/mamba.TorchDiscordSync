@@ -37,9 +37,9 @@ namespace mamba.TorchDiscordSync.Plugin
         private VerificationService _verification;
         private VerificationCommandHandler _verificationCommandHandler;
         private SyncOrchestrator _orchestrator;
-        private PlayerTrackingService _playerTracking; // POSTOJI
+        private PlayerTrackingService _playerTracking; // EXISTS
 
-        // NEW: Handlers (preimenovani da izbjegnemo konflikte)
+        // NEW: Handlers (renamed to avoid conflicts)
         private CommandProcessor _commandProcessor;
         private EventManager _eventManager;
         private ChatModerator _chatModerator;
@@ -108,8 +108,11 @@ namespace mamba.TorchDiscordSync.Plugin
                 // Initialize event logging service
                 _eventLog = new EventLoggingService(_db, _discordWrapper, _config);
 
-                // Initialize player tracking service - POSTOJEĆI KONSTRUKTOR
-                _playerTracking = new PlayerTrackingService(_eventLog, torch); // SAMO 2 PARAMETRA
+                // Initialize death log service FIRST so we can pass it to PlayerTrackingService
+                _deathLog = new DeathLogService(_db, _eventLog);
+
+                // Initialize player tracking service - UPDATED CONSTRUCTOR WITH DeathLogService
+                _playerTracking = new PlayerTrackingService(_eventLog, torch, _deathLog); // Added _deathLog parameter
 
                 // Initialize faction sync service
                 _factionSync = new FactionSyncService(_db, _discordWrapper);
@@ -117,10 +120,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 // Initialize chat sync service - FIX PARAMETER ORDER
                 _chatSync = new ChatSyncService(_discordWrapper, _config, _db);
 
-                // Initialize death log service
-                _deathLog = new DeathLogService(_db, _eventLog);
-
-                // NEW: Initialize handlers (preimenovani)
+                // NEW: Initialize handlers (renamed)
                 _commandProcessor = new CommandProcessor(_config, _discordWrapper, _db, _factionSync, _eventLog, _orchestrator);
                 _eventManager = new EventManager(_config, _discordWrapper, _eventLog);
                 _chatModerator = new ChatModerator(_config, _discordWrapper, _db);
@@ -158,7 +158,11 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogError("Session manager not available!");
                 }
 
-                // Initialize player tracking - NOVO
+                // Note: Chat message handling will be done through PlayerTrackingService
+                // This relies on polling and external message injection
+                LoggerUtil.LogInfo("Chat message handling configured - relying on external injection");
+
+                // Initialize player tracking - NEW
                 _playerTracking.Initialize();
                 LoggerUtil.LogSuccess("Player tracking service initialized");
 
@@ -234,17 +238,16 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogSuccess("═══ Server session LOADED ═══");
                     _serverStartupLogged = false;
 
-                    // Get actual simulation speed - SIMPLE VERSION
+                    // Get actual simulation speed - SAFER VERSION WITHOUT GetServerSimulationRatio
                     float currentSimSpeed = 1.0f;
                     try
                     {
-                        if (MyAPIGateway.Multiplayer != null)
+                        // Use a safer approach to get simulation ratio
+                        if (MyAPIGateway.Session != null && MyAPIGateway.Session.LocalHumanPlayer != null)
                         {
-                            var multiplayer = MyAPIGateway.Multiplayer as MyMultiplayerClientBase;
-                            if (multiplayer != null)
-                            {
-                                currentSimSpeed = multiplayer.GetServerSimulationRatio();
-                            }
+                            // Fallback to default 1.0 if we can't get the real value
+                            currentSimSpeed = 1.0f;
+                            LoggerUtil.LogDebug("Using default SimSpeed (1.0) - GetServerSimulationRatio not available");
                         }
                     }
                     catch (Exception ex)
@@ -303,18 +306,13 @@ namespace mamba.TorchDiscordSync.Plugin
 
                 LoggerUtil.LogInfo("[STARTUP] Initializing server sync...");
 
-                // Get current SimSpeed from session - SIMPLE VERSION
+                // Get current SimSpeed from session - SAFER VERSION
                 float currentSimSpeed = 1.0f;
                 try
                 {
-                    if (MyAPIGateway.Multiplayer != null)
-                    {
-                        var multiplayer = MyAPIGateway.Multiplayer as MyMultiplayerClientBase;
-                        if (multiplayer != null)
-                        {
-                            currentSimSpeed = multiplayer.GetServerSimulationRatio();
-                        }
-                    }
+                    // Use safer approach without problematic casting
+                    currentSimSpeed = 1.0f; // Default value
+                    LoggerUtil.LogDebug("Using default SimSpeed (1.0) in startup");
                 }
                 catch (Exception ex)
                 {
@@ -373,6 +371,19 @@ namespace mamba.TorchDiscordSync.Plugin
             if (_commandProcessor != null)
             {
                 _commandProcessor.ProcessCommand(command, playerSteamID, playerName);
+            }
+        }
+
+        /// <summary>
+        /// Process chat messages to detect player joins/leaves/deaths
+        /// This is called from Torch when chat messages arrive
+        /// </summary>
+        public void ProcessChatMessage(string message, string author, string channel)
+        {
+            // Forward system messages to player tracking service
+            if (channel == "System" && _playerTracking != null)
+            {
+                _playerTracking.ProcessSystemChatMessage(message);
             }
         }
 

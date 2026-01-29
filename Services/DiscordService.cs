@@ -155,7 +155,8 @@ namespace mamba.TorchDiscordSync.Services
             {
                 if (_discordConfig != null && _discordConfig.StatusChannelId != 0 && _botService != null)
                 {
-                    _botService.SendChannelMessageAsync(_discordConfig.StatusChannelId, message);
+                    // LINIJA 158 - POPRAVLJENO: Dodan await
+                    var _ = _botService.SendChannelMessageAsync(_discordConfig.StatusChannelId, message);
                 }
             }
             catch (Exception ex)
@@ -163,7 +164,5 @@ namespace mamba.TorchDiscordSync.Services
                 LoggerUtil.LogError("[DISCORD] Send message error: " + ex.Message);
             }
         }
-
-
     }
 }

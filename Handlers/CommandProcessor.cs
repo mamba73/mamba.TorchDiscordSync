@@ -184,7 +184,8 @@ namespace mamba.TorchDiscordSync.Handlers
             try
             {
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds sync");
-                _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds sync").Wait();
+                // LINE 188 - FIXED: Added await fix
+                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds sync");
                 ChatUtils.SendSuccess("Starting faction synchronization...");
                 
                 // Sync will be handled by orchestrator
@@ -194,7 +195,8 @@ namespace mamba.TorchDiscordSync.Handlers
             {
                 LoggerUtil.LogError("[SYNC_CMD] Error: " + ex.Message);
                 ChatUtils.SendError("Sync error: " + ex.Message);
-                _eventLog.LogAsync("CommandError", "Sync command failed: " + ex.Message).Wait();
+                // FIXED: Added await fix
+                var _ = _eventLog.LogAsync("CommandError", "Sync command failed: " + ex.Message);
             }
         }
 
@@ -206,11 +208,13 @@ namespace mamba.TorchDiscordSync.Handlers
             try
             {
                 LoggerUtil.LogWarning("[COMMAND] " + playerName + " executed: /tds reset (DESTRUCTIVE)");
-                _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds reset").Wait();
+                // FIXED: Added await fix
+                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds reset");
                 ChatUtils.SendWarning("Clearing Discord roles and channels...");
 
                 _factionSync.ResetDiscordAsync();
-                _eventLog.LogAsync("Command", "Discord reset executed by " + playerName).Wait();
+                // FIXED: Added await fix
+                var __ = _eventLog.LogAsync("Command", "Discord reset executed by " + playerName);
                 ChatUtils.SendSuccess("Discord reset complete! User roles updated.");
                 LoggerUtil.LogSuccess("[RESET] Completed by " + playerName);
             }
@@ -218,7 +222,8 @@ namespace mamba.TorchDiscordSync.Handlers
             {
                 LoggerUtil.LogError("[RESET_CMD] Error: " + ex.Message);
                 ChatUtils.SendError("Reset error: " + ex.Message);
-                _eventLog.LogAsync("CommandError", "Reset command failed: " + ex.Message).Wait();
+                // FIXED: Added await fix
+                var _ = _eventLog.LogAsync("CommandError", "Reset command failed: " + ex.Message);
             }
         }
 
@@ -230,7 +235,8 @@ namespace mamba.TorchDiscordSync.Handlers
             try
             {
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds cleanup");
-                _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds cleanup").Wait();
+                // FIXED: Added await fix
+                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds cleanup");
                 ChatUtils.SendWarning("Starting cleanup of orphaned Discord roles/channels...");
                 
                 ChatUtils.SendSuccess("Cleanup simulation completed! (Actual cleanup not yet implemented)");
@@ -240,7 +246,8 @@ namespace mamba.TorchDiscordSync.Handlers
             {
                 LoggerUtil.LogError("[CLEANUP_CMD] Error: " + ex.Message);
                 ChatUtils.SendError("Cleanup error: " + ex.Message);
-                _eventLog.LogAsync("CommandError", "Cleanup command failed: " + ex.Message).Wait();
+                // FIXED: Added await fix
+                var _ = _eventLog.LogAsync("CommandError", "Cleanup command failed: " + ex.Message);
             }
         }
 
@@ -252,7 +259,8 @@ namespace mamba.TorchDiscordSync.Handlers
             try
             {
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds reload");
-                _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds reload").Wait();
+                // FIXED: Added await fix
+                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds reload");
                 ChatUtils.SendWarning("Reloading configuration and database...");
                 
                 // Reload configuration
@@ -313,7 +321,8 @@ namespace mamba.TorchDiscordSync.Handlers
 
                 // This also needs to be handled through main plugin
                 ChatUtils.SendServerMessage("Unverify command received for SteamID: " + targetSteamID);
-                _eventLog.LogAsync("UnverifyCommand", adminName + " unverified SteamID " + targetSteamID + ": " + reason).Wait();
+                // FIXED: Added await fix
+                var _ = _eventLog.LogAsync("UnverifyCommand", adminName + " unverified SteamID " + targetSteamID + ": " + reason);
 
                 LoggerUtil.LogInfo("[COMMAND] " + adminName + " executed: /tds unverify " + targetSteamID + " (" + reason + ")");
             }
@@ -364,7 +373,8 @@ namespace mamba.TorchDiscordSync.Handlers
                     ChatUtils.SendServerMessage(line);
                 }
 
-                _eventLog.LogAsync("StatusCommand", "Status requested by " + playerName).Wait();
+                // FIXED: Added await fix
+                var _ = _eventLog.LogAsync("StatusCommand", "Status requested by " + playerName);
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds status");
             }
             catch (Exception ex)

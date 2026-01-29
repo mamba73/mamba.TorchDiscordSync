@@ -2,7 +2,7 @@ import os
 import sys
 import clr
 import configparser
-import re  # Added for filename cleaning
+import re
 
 # --- DYNAMIC CONFIGURATION LOADER ---
 script_full_path = os.path.abspath(__file__)
@@ -13,7 +13,6 @@ config_file = os.path.join(script_dir, f"{script_base_name}.ini")
 config = configparser.ConfigParser()
 
 def load_config():
-    """ Loads settings from INI file. Creates default if missing. """
     if not os.path.exists(config_file):
         default_dep_path = os.path.join(script_dir, "Dependencies")
         config['SETTINGS'] = {
@@ -35,34 +34,6 @@ def load_config():
     }
 
 cfg = load_config()
-
-def print_help():
-    help_text = f"""
-.NET DLL INSPECTOR - HELP (v2.17)
-=================================================
-Analyzes .NET assemblies and extracts metadata.
-Config file: {os.path.basename(config_file)}
-
-USAGE:
------------
-python {os.path.basename(__file__)} [OPTIONS]
-
-OPTIONS:
-----------
---search, -s  : Keyword to find (Namespace, Class, Method, etc.).
---ext, -e     : Extended mode (Include Properties [P]).
---deep, -d    : Deep mode (Include Fields [F] and Events [E]).
---help, -h    : Show this help text.
-
-LEGEND:
--------
-[M] : Method (Default)
-[P] : Property (Requires --ext or --deep)
-[F] : Field (Requires --deep)
-[E] : Event (Requires --deep)
-=================================================
-    """
-    print(help_text)
 
 def get_unique_filename(directory, base_name, extension):
     full_log_dir = os.path.join(script_dir, directory)
@@ -137,9 +108,6 @@ def inspect_dll(dll_path, search_term=None, ext_mode=False, deep_mode=False):
     return (version, results)
 
 def main():
-    if "--help" in sys.argv or "-h" in sys.argv:
-        print_help(); return
-
     search_term = None
     clean_search_term = ""
     ext_mode = "--ext" in sys.argv or "-e" in sys.argv
@@ -149,12 +117,10 @@ def main():
         try:
             idx = sys.argv.index("--search") if "--search" in sys.argv else sys.argv.index("-s")
             search_term = sys.argv[idx + 1]
-            # Strip invalid filename characters using regex
             clean_search_term = re.sub(r'[^\w\s-]', '', search_term).strip().replace(' ', '_')
         except: pass
 
-    # Header
-    print(f"--- DLL Inspector v2.17 ---")
+    print(f"--- DLL Inspector v2.18 ---")
     print(f"Default search directory: {cfg['path']}")
     print("Available switches: --ext (show Properties), --deep (show Fields/Events), --search <term>")
     
@@ -165,30 +131,39 @@ def main():
         print(f"Error: Directory '{target_dir}' not found."); return
 
     sys.path.append(target_dir)
-    
     all_dlls = [f for f in os.listdir(target_dir) if f.lower().endswith('.dll')]
     dll_files = [f for f in all_dlls if any(k.strip().lower() in f.lower() for k in cfg['keywords'])] if cfg['keywords'] else all_dlls
 
-    # Construct log filename with the search term
     log_base = cfg['log_name']
     if clean_search_term:
         log_base = f"inspect_search_{clean_search_term}"
     
     log_path = get_unique_filename(cfg['log_dir'], log_base, "txt")
 
+    # STARTING PROMPT
+    print(f"\n[INFO] Starting inspection...")
+    if search_term:
+        print(f"[INFO] Searching for keyword: '{search_term}'")
+    print(f"[INFO] Results will be saved to: {log_path}\n")
+
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(f"REPORT: {target_dir}\n" + "="*40 + "\n")
-        if search_term:
-            f.write(f"SEARCH FILTER: {search_term}\n" + "="*40 + "\n")
+        if search_term: f.write(f"SEARCH FILTER: {search_term}\n" + "="*40 + "\n")
 
-        for dll in dll_files:
+        total_files = len(dll_files)
+        for index, dll in enumerate(dll_files, start=1):
+            # LIVE UPDATE IN CONSOLE
+            # Using \r and end="" to overwrite the same line
+            status_msg = f"[{index}/{total_files}] Analyzing: {dll}"
+            print(f"\r{status_msg[:75].ljust(75)}", end="", flush=True)
+
             version, matches = inspect_dll(os.path.join(target_dir, dll), search_term, ext_mode, deep_mode)
             if matches:
                 f.write(f"\n{'='*60}\nFILE: {dll} (v{version})\n{'='*60}\n")
                 for line in matches:
                     f.write(line + "\n")
 
-    print(f"\nDONE! Inspection file created: {log_path}")
+    print(f"\n\nDONE! Inspection complete. File created: {log_path}")
 
 if __name__ == "__main__":
     main()

@@ -1,3 +1,4 @@
+// Services/EventLoggingService.cs
 using System;
 using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Config;
@@ -61,13 +62,35 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                string message = "Server " + status + " | SimSpeed: " + simSpeed.ToString("F2");
+                string message = "";
+                
+                // Use custom messages from config if available
+                if (_config != null && _config.Monitoring != null)
+                {
+                    switch (status.ToUpper())
+                    {
+                        case "STARTED":
+                            message = _config.Monitoring.ServerStartedMessage ?? ":white_check_mark: Server Started!";
+                            break;
+                        case "STOPPED":
+                            message = _config.Monitoring.ServerStoppedMessage ?? ":x: Server Stopped!";
+                            break;
+                        default:
+                            message = "Server " + status + " | SimSpeed: " + simSpeed.ToString("F2");
+                            break;
+                    }
+                }
+                else
+                {
+                    message = "Server " + status + " | SimSpeed: " + simSpeed.ToString("F2");
+                }
 
-                if (_config != null && _config.Discord != null && _config.Discord.StatusChannelId != 0)
+                // Send to ChatChannelId instead of StatusChannelId (as per your preference)
+                if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
                 {
                     if (_discord != null)
                     {
-                        return _discord.SendLogAsync(_config.Discord.StatusChannelId, message);
+                        return _discord.SendLogAsync(_config.Discord.ChatChannelId, message);
                     }
                 }
 
