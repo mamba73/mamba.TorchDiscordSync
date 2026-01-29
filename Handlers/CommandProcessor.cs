@@ -184,8 +184,7 @@ namespace mamba.TorchDiscordSync.Handlers
             try
             {
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds sync");
-                // LINE 188 - FIXED: Added await fix
-                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds sync");
+                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds sync").ConfigureAwait(false);
                 ChatUtils.SendSuccess("Starting faction synchronization...");
                 
                 // Sync will be handled by orchestrator
