@@ -1,22 +1,18 @@
-mamba.TorchDiscordSync2/
+PROJECT STRUCTURE: 
+------------------------------
+mamba.TorchDiscordSync/
 ├─ Config/
 │  ├─ DeathMessagesConfig.cs
 │  ├─ DiscordBotConfig.cs
-│  └─ PluginConfig.cs
+│  └─ MainConfig.cs
 ├─ Core/
 │  ├─ CommandHandler.cs
 │  ├─ SyncOrchestrator.cs
 │  └─ VerificationCommandHandler.cs
-├─ data/
-│  └─ MambaTorchDiscordSync.cfg
-├─ doc/
-│  ├─ idejni_projekt_HRV.md
-│  └─ project_idea_ENG.md
-├─ Instance/
-│  └─ mambaTorchDiscordSync/
-│     ├─ DeathMessages.xml
-│     ├─ MambaTorchDiscordSync.cfg
-│     └─ MambaTorchDiscordSyncData.xml
+├─ Handlers/
+│  ├─ ChatModerator.cs
+│  ├─ CommandProcessor.cs
+│  └─ EventManager.cs
 ├─ Models/
 │  ├─ CommandModel.cs
 │  ├─ DeathHistoryModel.cs
@@ -39,18 +35,19 @@ mamba.TorchDiscordSync2/
 │  ├─ DiscordService.cs
 │  ├─ EventLoggingService.cs
 │  ├─ FactionSyncService.cs
+│  ├─ PlayerTrackingService.cs
 │  └─ VerificationService.cs
 ├─ Utils/
 │  ├─ ChatUtils.cs
 │  ├─ CommandAuthorizationUtil.cs
 │  ├─ LoggerUtil.cs
-│  └─ SecurityUtil.cs
+│  ├─ SecurityUtil.cs
+│  └─ VersionUtil.cs
 ├─ .gitignore
-├─ build.bat
+├─ build.py
 ├─ LICENSE
 ├─ mamba.TorchDiscordSync.csproj
 ├─ mamba.TorchDiscordSync.sln
 ├─ manifest.xml
 ├─ README.md
-├─ TODO.md
-└─ tree
+└─ tree.txt

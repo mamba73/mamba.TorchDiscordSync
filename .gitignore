@@ -15,6 +15,7 @@ Dependencies/
 tmp/*
 tmp/
 doc/*.txt
+doc/
 build_archive/
 build_staging/
 
@@ -23,3 +24,27 @@ build_staging/
 
 # Config
 *.config
+*.ini
+
+# Environment files
+*.env
+*.local
+*.cache
+*.bak
+*.old
+*.orig
+*.tmp
+*.swp
+*.DS_Store
+# *.class
+*.pyc
+*.egg-info/
+
+# Documentation files
+# *.py
+# *.md
+# *.txt
+# LICENSE
+# README.md
+# TODO.md
+# CHANGELOG.md
