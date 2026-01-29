@@ -1,3 +1,4 @@
+// Models/EventLogModel.cs
 using System;
 
 namespace mamba.TorchDiscordSync.Models

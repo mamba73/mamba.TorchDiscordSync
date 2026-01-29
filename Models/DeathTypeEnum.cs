@@ -1,3 +1,4 @@
+// Models/DeathTypeEnum.cs
 namespace mamba.TorchDiscordSync.Models
 {
     public enum DeathType

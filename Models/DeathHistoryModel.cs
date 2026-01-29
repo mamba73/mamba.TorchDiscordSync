@@ -1,3 +1,4 @@
+// Models/DeathHistoryModel.cs
 using System;
 
 namespace mamba.TorchDiscordSync.Models

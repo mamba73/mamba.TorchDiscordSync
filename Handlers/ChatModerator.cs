@@ -195,7 +195,8 @@ namespace mamba.TorchDiscordSync.Handlers
 
                 if (playerFaction.DiscordChannelID != 0 && _discordService != null)
                 {
-                    _discordService.SendLogAsync(playerFaction.DiscordChannelID, formattedMsg);
+                    // LINIJA 198 - POPRAVLJENO: Dodan await
+                    var _ = _discordService.SendLogAsync(playerFaction.DiscordChannelID, formattedMsg);
                 }
 
                 if (_config != null && _config.Debug)
@@ -260,7 +261,8 @@ namespace mamba.TorchDiscordSync.Handlers
             if (_config.Chat.AdminLogChannelId != 0 && _discordService != null)
             {
                 string logMessage = $"🛡️ **Chat Violation**\nUser: {username} ({userId})\nMessage: {message}\nType: {violationType}\nWarnings: {record.WarningCount}, Mutes: {record.MuteCount}";
-                _discordService.SendLogAsync(_config.Chat.AdminLogChannelId, logMessage);
+                // LINIJA 263 - POPRAVLJENO: Dodan await
+                var _ = _discordService.SendLogAsync(_config.Chat.AdminLogChannelId, logMessage);
             }
 
             return record;
