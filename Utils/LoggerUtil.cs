@@ -1,5 +1,5 @@
 // Utils/LoggerUtil.cs
-// Utility class for logging messages to console and file
+/// Utility class for logging messages to console and file
 using System;
 using System.IO;
 
@@ -12,9 +12,10 @@ namespace mamba.TorchDiscordSync.Utils
     {
         private const string PREFIX = "[mamba.TorchDiscordSync]";
         private static readonly string LOG_DIR_NAME = "mambaTorchDiscordSync";
-        private static readonly string LOG_FILE_NAME = "plugin.log";
+        private static readonly string LOG_SUBDIR_NAME = "log";
         private static readonly object _lock = new object();
         private static bool _debugMode = false;
+        private static string _currentLogFile = null;
 
         static LoggerUtil()
         {
@@ -59,7 +60,7 @@ namespace mamba.TorchDiscordSync.Utils
         }
 
         /// <summary>
-        /// Get the full path to the log file
+        /// Get the full path to the log file with timestamp
         /// </summary>
         private static string GetLogFilePath()
         {
@@ -67,19 +68,38 @@ namespace mamba.TorchDiscordSync.Utils
             {
                 string instancePath = GetInstancePath();
                 string pluginLogDir = Path.Combine(instancePath, LOG_DIR_NAME);
+                string logSubDir = Path.Combine(pluginLogDir, LOG_SUBDIR_NAME);
                 
-                // Ensure directory exists
+                // Ensure directories exist
                 if (!Directory.Exists(pluginLogDir))
                 {
                     Directory.CreateDirectory(pluginLogDir);
                 }
                 
-                return Path.Combine(pluginLogDir, LOG_FILE_NAME);
+                if (!Directory.Exists(logSubDir))
+                {
+                    Directory.CreateDirectory(logSubDir);
+                }
+                
+                // Create new log file with timestamp if not already created
+                if (string.IsNullOrEmpty(_currentLogFile))
+                {
+                    string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+                    _currentLogFile = Path.Combine(logSubDir, $"{timestamp}_TDS_plugin.log");
+                }
+                
+                return _currentLogFile;
             }
             catch
             {
                 // Fallback to temp directory
-                return Path.Combine(Path.GetTempPath(), LOG_FILE_NAME);
+                string tempLogDir = Path.Combine(Path.GetTempPath(), "mambaTorchDiscordSync", "log");
+                if (!Directory.Exists(tempLogDir))
+                {
+                    Directory.CreateDirectory(tempLogDir);
+                }
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+                return Path.Combine(tempLogDir, $"{timestamp}_TDS_plugin.log");
             }
         }
 
