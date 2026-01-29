@@ -3,7 +3,7 @@ import sys
 import clr  # Dio 'pythonnet' paketa
 
 # --- KONFIGURACIJA ---
-DEFAULT_PATH = r"d:\g\dev\csharp\mamba.TorchDiscordSync2\Dependencies"
+DEFAULT_PATH = r"d:\g\dev\csharp\mamba.TorchDiscordSync\Dependencies"
 FILTER_KEYWORDS = ["Torch", "Sandbox", "VRage", "SpaceEngineers"]
 LOG_DIR = "doc"
 LOG_BASE_NAME = "inspect_results"
