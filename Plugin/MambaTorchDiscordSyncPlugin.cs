@@ -480,18 +480,23 @@ namespace mamba.TorchDiscordSync.Plugin
             }
 
             // Normal messages (global) → send to Discord
-            if (_chatSync != null && _config != null && _config.Chat != null)
+            if (_chatSync != null && _config?.Chat != null)
             {
-                // FIXED: Safe conversion bool → bool check (no string conversion needed)
                 bool serverToDiscordEnabled = _config.Chat.ServerToDiscord;
 
-                LoggerUtil.LogDebug($"Chat sync check - ServerToDiscord: {serverToDiscordEnabled}");
+                LoggerUtil.LogDebug(
+                    $"Chat sync check - ServerToDiscord: {serverToDiscordEnabled}, channel: {channel}, message: {message}"
+                );
 
                 if (serverToDiscordEnabled)
                 {
-                    // Skip commands and system messages
                     if (message.StartsWith("/") || channel == "System")
+                    {
+                        LoggerUtil.LogDebug("Skipped: command or system message");
                         return;
+                    }
+
+                    LoggerUtil.LogDebug($"Sending game chat to Discord: {author}: {message}");
 
                     string formatted = _config
                         .Chat.GameToDiscordFormat.Replace("{p}", author)
@@ -500,6 +505,16 @@ namespace mamba.TorchDiscordSync.Plugin
 
                     _ = _chatSync.SendGameMessageToDiscordAsync(author, message);
                 }
+                else
+                {
+                    LoggerUtil.LogDebug("ServerToDiscord is false - skipping game → Discord");
+                }
+            }
+            else
+            {
+                LoggerUtil.LogWarning(
+                    "ChatSyncService or Chat config is null - cannot sync game chat to Discord"
+                );
             }
         }
 
