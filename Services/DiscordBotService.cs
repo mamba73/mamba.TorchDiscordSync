@@ -1,6 +1,5 @@
 // Services/DiscordBotService.cs
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
@@ -9,6 +8,10 @@ using mamba.TorchDiscordSync.Utils;
 
 namespace mamba.TorchDiscordSync.Services
 {
+    /// <summary>
+    /// Core Discord bot service using Discord.Net
+    /// Handles connection, events, commands and message processing
+    /// </summary>
     public class DiscordBotService
     {
         private readonly DiscordBotConfig _config;
@@ -16,13 +19,18 @@ namespace mamba.TorchDiscordSync.Services
         private bool _isConnected = false;
         private bool _isReady = false;
 
+        /// <summary>
+        /// Event triggered when a message is received (used for chat sync)
+        /// </summary>
+        public event Func<SocketMessage, Task> OnMessageReceivedEvent;
+
         public DiscordBotService(DiscordBotConfig config)
         {
             _config = config;
         }
 
         /// <summary>
-        /// Initialize and connect Discord bot
+        /// Initialize and connect the Discord bot
         /// </summary>
         public async Task<bool> ConnectAsync()
         {
@@ -43,6 +51,7 @@ namespace mamba.TorchDiscordSync.Services
 
                 _client = new DiscordSocketClient(config);
 
+                // Hook events
                 _client.Ready += OnBotReady;
                 _client.Disconnected += OnBotDisconnected;
                 _client.MessageReceived += OnMessageReceived;
@@ -53,6 +62,7 @@ namespace mamba.TorchDiscordSync.Services
 
                 _isConnected = true;
                 LoggerUtil.LogSuccess("[DISCORD_BOT] Bot connection established");
+
                 return true;
             }
             catch (Exception ex)
@@ -63,7 +73,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Disconnect bot
+        /// Disconnect and cleanup the bot
         /// </summary>
         public async Task DisconnectAsync()
         {
@@ -71,14 +81,21 @@ namespace mamba.TorchDiscordSync.Services
             {
                 if (_client != null)
                 {
+                    // Unhook events to prevent memory leaks
+                    _client.Ready -= OnBotReady;
+                    _client.Disconnected -= OnBotDisconnected;
+                    _client.MessageReceived -= OnMessageReceived;
+                    _client.UserJoined -= OnUserJoined;
+
                     await _client.LogoutAsync();
                     await _client.StopAsync();
                     _client.Dispose();
+                    _client = null;
                 }
 
                 _isConnected = false;
                 _isReady = false;
-                LoggerUtil.LogInfo("[DISCORD_BOT] Bot disconnected");
+                LoggerUtil.LogInfo("[DISCORD_BOT] Bot disconnected and cleaned up");
             }
             catch (Exception ex)
             {
@@ -87,7 +104,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Send DM to Discord user with verification instructions
+        /// Send direct message to a user (e.g. verification code)
         /// </summary>
         public async Task<bool> SendVerificationDMAsync(string discordUsername, string verificationCode)
         {
@@ -118,14 +135,13 @@ namespace mamba.TorchDiscordSync.Services
                     .WithTitle("🔐 Space Engineers Verification Request")
                     .WithDescription("Someone has requested to link your Discord account to a Space Engineers account.")
                     .AddField("Verification Code", "```" + verificationCode + "```", false)
-                    .AddField("How to Complete", "React to this message or type:\n" + _config.BotPrefix + "verify " + verificationCode, false)
+                    .AddField("How to Complete", "Type: " + _config.BotPrefix + "verify " + verificationCode, false)
                     .AddField("⏱️ Expires", "This code will expire in " + _config.VerificationCodeExpirationMinutes + " minutes", false)
-                    .WithFooter("If you didn't request this, simply ignore this message")
+                    .WithFooter("If you didn't request this, ignore this message")
                     .WithTimestamp(DateTime.UtcNow)
                     .Build();
 
                 await dmChannel.SendMessageAsync(embed: embed);
-
                 LoggerUtil.LogSuccess("[DISCORD_BOT] Sent verification DM to " + discordUsername);
                 return true;
             }
@@ -137,36 +153,32 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Send success notification DM
+        /// Send success notification DM after verification
         /// </summary>
         public async Task<bool> SendVerificationSuccessDMAsync(string discordUsername, string playerName, long steamID)
         {
             try
             {
-                if (!_isReady)
-                    return false;
+                if (!_isReady) return false;
 
                 var user = FindUserByUsername(discordUsername);
-                if (user == null)
-                    return false;
+                if (user == null) return false;
 
                 var dmChannel = await user.CreateDMChannelAsync();
-                if (dmChannel == null)
-                    return false;
+                if (dmChannel == null) return false;
 
                 var embed = new EmbedBuilder()
                     .WithColor(Color.Green)
                     .WithTitle("✅ Verification Successful!")
-                    .WithDescription("Your Discord account has been successfully linked to Space Engineers.")
+                    .WithDescription("Your Discord account has been linked to Space Engineers.")
                     .AddField("Game Player", playerName, true)
                     .AddField("Steam ID", steamID.ToString(), true)
-                    .AddField("✨ You can now use:", "Faction channels, death notifications, chat sync", false)
+                    .AddField("✨ Features unlocked", "Faction channels, death notifications, chat sync", false)
                     .WithFooter("Welcome to the server!")
                     .WithTimestamp(DateTime.UtcNow)
                     .Build();
 
                 await dmChannel.SendMessageAsync(embed: embed);
-
                 LoggerUtil.LogSuccess("[DISCORD_BOT] Sent success DM to " + discordUsername);
                 return true;
             }
@@ -178,14 +190,13 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Send message to Discord channel
+        /// Send message to a specific channel
         /// </summary>
         public async Task<bool> SendChannelMessageAsync(ulong channelID, string message)
         {
             try
             {
-                if (!_isReady)
-                    return false;
+                if (!_isReady) return false;
 
                 var channel = _client.GetChannel(channelID) as IMessageChannel;
                 if (channel == null)
@@ -205,18 +216,16 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Send embed to Discord channel
+        /// Send embed message to a channel
         /// </summary>
         public async Task<bool> SendEmbedAsync(ulong channelID, Embed embed)
         {
             try
             {
-                if (!_isReady)
-                    return false;
+                if (!_isReady) return false;
 
                 var channel = _client.GetChannel(channelID) as IMessageChannel;
-                if (channel == null)
-                    return false;
+                if (channel == null) return false;
 
                 await channel.SendMessageAsync(embed: embed);
                 return true;
@@ -229,14 +238,13 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Create a Discord role
+        /// Create a new role in the guild
         /// </summary>
         public async Task<ulong> CreateRoleAsync(string roleName, Color? color = null)
         {
             try
             {
-                if (!_isReady)
-                    return 0;
+                if (!_isReady) return 0;
 
                 var guild = _client.GetGuild(_config.GuildID);
                 if (guild == null)
@@ -257,22 +265,19 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Delete a Discord role
+        /// Delete a role by ID
         /// </summary>
         public async Task<bool> DeleteRoleAsync(ulong roleID)
         {
             try
             {
-                if (!_isReady)
-                    return false;
+                if (!_isReady) return false;
 
                 var guild = _client.GetGuild(_config.GuildID);
-                if (guild == null)
-                    return false;
+                if (guild == null) return false;
 
                 var role = guild.GetRole(roleID);
-                if (role == null)
-                    return false;
+                if (role == null) return false;
 
                 await role.DeleteAsync();
                 LoggerUtil.LogSuccess("[DISCORD_BOT] Deleted role: " + roleID);
@@ -286,26 +291,22 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Assign role to user
+        /// Assign role to a user
         /// </summary>
         public async Task<bool> AssignRoleAsync(ulong userID, ulong roleID)
         {
             try
             {
-                if (!_isReady)
-                    return false;
+                if (!_isReady) return false;
 
                 var guild = _client.GetGuild(_config.GuildID);
-                if (guild == null)
-                    return false;
+                if (guild == null) return false;
 
                 var user = guild.GetUser(userID);
-                if (user == null)
-                    return false;
+                if (user == null) return false;
 
                 var role = guild.GetRole(roleID);
-                if (role == null)
-                    return false;
+                if (role == null) return false;
 
                 await user.AddRoleAsync(role);
                 LoggerUtil.LogSuccess("[DISCORD_BOT] Assigned role " + roleID + " to user " + userID);
@@ -319,24 +320,24 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Remove role from user
+        /// Remove role from a user
         /// </summary>
         public async Task<bool> RemoveRoleAsync(ulong userID, ulong roleID)
         {
             try
             {
-                if (!_isReady)
-                    return false;
+                if (!_isReady) return false;
 
                 var guild = _client.GetGuild(_config.GuildID);
-                if (guild == null)
-                    return false;
+                if (guild == null) return false;
 
                 var user = guild.GetUser(userID);
-                if (user == null)
-                    return false;
+                if (user == null) return false;
 
-                await user.RemoveRoleAsync(guild.GetRole(roleID));
+                var role = guild.GetRole(roleID);
+                if (role == null) return false;
+
+                await user.RemoveRoleAsync(role);
                 LoggerUtil.LogSuccess("[DISCORD_BOT] Removed role " + roleID + " from user " + userID);
                 return true;
             }
@@ -347,42 +348,49 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        public bool IsReady { get { return _isReady; } }
-        public bool IsConnected { get { return _isConnected; } }
+        public bool IsReady => _isReady;
+        public bool IsConnected => _isConnected;
 
         // ============================================================
         // PRIVATE EVENT HANDLERS
         // ============================================================
 
-        private async Task OnBotReady()
+        private Task OnBotReady()
         {
             _isReady = true;
             LoggerUtil.LogSuccess("[DISCORD_BOT] Bot is ready and listening!");
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         }
 
-        private async Task OnBotDisconnected(Exception ex)
+        private Task OnBotDisconnected(Exception ex)
         {
             _isReady = false;
-            string exMsg = ex != null ? ex.Message : "Unknown error";
+            string exMsg = ex?.Message ?? "Unknown error";
             LoggerUtil.LogWarning("[DISCORD_BOT] Bot disconnected: " + exMsg);
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         }
 
         /// <summary>
-        /// Handle incoming messages (DM and guild messages)
+        /// Main message handler - processes both commands and chat messages
         /// </summary>
         private async Task OnMessageReceived(SocketMessage message)
         {
             try
             {
-                if (message.Author.IsBot)
-                    return;
+                if (message.Author.IsBot) return;
 
-                if (!message.Content.StartsWith(_config.BotPrefix))
-                    return;
+                // Forward all messages to chat sync (if in monitored channel)
+                if (OnMessageReceivedEvent != null)
+                {
+                    await OnMessageReceivedEvent.Invoke(message);
+                }
 
-                var args = message.Content.Substring(_config.BotPrefix.Length).Split(new char[] { ' ' });
+                // Command handling only if message starts with prefix
+                if (!message.Content.StartsWith(_config.BotPrefix)) return;
+
+                var args = message.Content.Substring(_config.BotPrefix.Length).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (args.Length == 0) return;
+
                 var command = args[0].ToLower();
 
                 if (command == "verify")
@@ -398,8 +406,6 @@ namespace mamba.TorchDiscordSync.Services
             {
                 LoggerUtil.LogError("[DISCORD_BOT] Message handler error: " + ex.Message);
             }
-
-            await Task.CompletedTask;
         }
 
         private async Task HandleVerifyCommand(SocketMessage message, string[] args)
@@ -413,14 +419,13 @@ namespace mamba.TorchDiscordSync.Services
                 }
 
                 string code = args[1].ToUpper();
-
                 OnVerificationAttempt?.Invoke(code, message.Author.Id, message.Author.Username);
 
                 var embed = new EmbedBuilder()
                     .WithColor(Color.Blue)
                     .WithTitle("⏳ Verifying...")
                     .WithDescription("Your verification code is being processed.")
-                    .WithFooter("You will receive a confirmation message shortly")
+                    .WithFooter("You will receive a confirmation shortly")
                     .Build();
 
                 await message.Author.SendMessageAsync(embed: embed);
@@ -440,7 +445,7 @@ namespace mamba.TorchDiscordSync.Services
                     .WithTitle("🤖 mamba.TorchDiscordSync Bot Help")
                     .AddField("Verification", _config.BotPrefix + "verify CODE - Verify your Space Engineers account", false)
                     .AddField("Help", _config.BotPrefix + "help - Show this message", false)
-                    .WithFooter("Bot will respond to you via DM")
+                    .WithFooter("Bot will respond via DM")
                     .Build();
 
                 await message.Author.SendMessageAsync(embed: embed);
@@ -461,8 +466,8 @@ namespace mamba.TorchDiscordSync.Services
                     .WithColor(Color.Gold)
                     .WithTitle("👋 Welcome!")
                     .WithDescription("Welcome to the Space Engineers community!")
-                    .AddField("Link Your Account", "If you play on our SE server, use `/tds verify @YourDiscordName` in-game", false)
-                    .AddField("Need Help?", "Type `!help` to learn more", false)
+                    .AddField("Link Your Account", "Use `/tds verify @YourDiscordName` in-game", false)
+                    .AddField("Need Help?", "Type `!help` for commands", false)
                     .Build();
 
                 await user.SendMessageAsync(embed: embed);
@@ -471,12 +476,10 @@ namespace mamba.TorchDiscordSync.Services
             {
                 LoggerUtil.LogError("[DISCORD_BOT] User joined handler error: " + ex.Message);
             }
-
-            await Task.CompletedTask;
         }
 
         /// <summary>
-        /// Find Discord user by username
+        /// Find user by username or nickname in the guild
         /// </summary>
         private SocketUser FindUserByUsername(string username)
         {
@@ -491,15 +494,11 @@ namespace mamba.TorchDiscordSync.Services
 
                 foreach (var user in guild.Users)
                 {
-                    if (user.Username == username || user.Nickname == username)
+                    if (string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase) ||
+                        (user.Nickname != null && string.Equals(user.Nickname, username, StringComparison.OrdinalIgnoreCase)))
+                    {
                         return user;
-                }
-
-                foreach (var user in guild.Users)
-                {
-                    if (user.Username.Equals(username, StringComparison.OrdinalIgnoreCase) ||
-                        (user.Nickname != null && user.Nickname.Equals(username, StringComparison.OrdinalIgnoreCase)))
-                        return user;
+                    }
                 }
 
                 return null;
@@ -511,15 +510,13 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        internal void SendMessage(object serverStartedMessage)
-        {
-            throw new NotImplementedException();
-        }
-
         // ============================================================
         // PUBLIC EVENTS
         // ============================================================
 
+        /// <summary>
+        /// Event for verification attempts (triggered by !verify command)
+        /// </summary>
         public event Action<string, ulong, string> OnVerificationAttempt;
     }
 }

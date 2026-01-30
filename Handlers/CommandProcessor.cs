@@ -184,7 +184,7 @@ namespace mamba.TorchDiscordSync.Handlers
             try
             {
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds sync");
-                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds sync").ConfigureAwait(false);
+                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds sync");
                 ChatUtils.SendSuccess("Starting faction synchronization...");
                 
                 // Sync will be handled by orchestrator
@@ -208,10 +208,10 @@ namespace mamba.TorchDiscordSync.Handlers
             {
                 LoggerUtil.LogWarning("[COMMAND] " + playerName + " executed: /tds reset (DESTRUCTIVE)");
                 // FIXED: Added await fix
-                var _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds reset");
+                _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds reset");
                 ChatUtils.SendWarning("Clearing Discord roles and channels...");
 
-                _factionSync.ResetDiscordAsync();
+                _ = _factionSync.ResetDiscordAsync();
                 // FIXED: Added await fix
                 var __ = _eventLog.LogAsync("Command", "Discord reset executed by " + playerName);
                 ChatUtils.SendSuccess("Discord reset complete! User roles updated.");
@@ -222,7 +222,7 @@ namespace mamba.TorchDiscordSync.Handlers
                 LoggerUtil.LogError("[RESET_CMD] Error: " + ex.Message);
                 ChatUtils.SendError("Reset error: " + ex.Message);
                 // FIXED: Added await fix
-                var _ = _eventLog.LogAsync("CommandError", "Reset command failed: " + ex.Message);
+                _ = _eventLog.LogAsync("CommandError", "Reset command failed: " + ex.Message);
             }
         }
 

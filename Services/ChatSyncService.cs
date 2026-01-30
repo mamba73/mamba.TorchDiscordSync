@@ -1,7 +1,7 @@
 // Services/ChatSyncService.cs
-// ENHANCED - Bidirectional chat synchronization
-// Game messages ↔ Discord messages with proper formatting
-
+// Bidirectional chat synchronization service
+// Game messages → Discord global channel
+// Discord messages → Game global chat (server-side broadcast)
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,28 +10,29 @@ using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
+using Sandbox.ModAPI;               // Za MyAPIGateway (ako bude trebalo)
+using Sandbox.Game;                  // Za MyVisualScriptLogicProvider
+using VRage.Game.ModAPI;
 
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
     /// Bidirectional chat synchronization service
-    /// Syncs messages between Space Engineers game chat and Discord
-    /// Game → Discord: Player messages
-    /// Discord → Game: Bot/user messages
+    /// Syncs messages between Space Engineers global chat and Discord channel
     /// </summary>
     public class ChatSyncService
     {
         private readonly DiscordService _discord;
         private readonly MainConfig _config;
         private readonly DatabaseService _db;
-        
-        // Chat tracking to prevent duplicate sync
+
+        // Tracking to prevent duplicate sync and spam
         private HashSet<string> _syncedMessages = new HashSet<string>();
         private Dictionary<string, DateTime> _lastMessageTime = new Dictionary<string, DateTime>();
-        
-        // Rate limiting per player
-        private const int MESSAGE_THROTTLE_MS = 500; // Min 500ms between messages
-        private const int DUPLICATE_WINDOW_S = 2; // Check duplicates within 2 seconds
+
+        // Rate limiting constants
+        private const int MESSAGE_THROTTLE_MS = 500;     // Minimum time between messages from same source
+        private const int DUPLICATE_WINDOW_S = 2;       // Duplicate check window in seconds
 
         public ChatSyncService(DiscordService discord, MainConfig config, DatabaseService db)
         {
@@ -42,68 +43,71 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Send message from game to Discord
-        /// Called when player sends chat message in-game
+        /// Send message from game to Discord global channel
+        /// Called when player sends message in global chat
         /// </summary>
-        public async Task SendGameMessageToDiscordAsync(string playerName, string message, string channel = "global")
+        public async Task SendGameMessageToDiscordAsync(string playerName, string message)
         {
             try
             {
-                // Validation
                 if (string.IsNullOrWhiteSpace(playerName) || string.IsNullOrWhiteSpace(message))
                 {
-                    LoggerUtil.LogDebug("Chat: Empty player name or message");
+                    LoggerUtil.LogDebug("Chat: Empty player name or message - skipping");
                     return;
                 }
 
-                // Rate limiting
+                // Rate limiting per player
                 string rateLimitKey = $"{playerName}_game";
                 if (!CheckRateLimit(rateLimitKey))
                 {
-                    LoggerUtil.LogDebug($"Chat: Rate limit hit for {playerName}");
+                    LoggerUtil.LogDebug($"Chat: Rate limit hit for player {playerName}");
                     return;
                 }
 
-                // Prevent spam/duplicates
+                // Prevent duplicates
                 string messageKey = $"{playerName}:{message}";
                 if (_syncedMessages.Contains(messageKey))
                 {
                     LoggerUtil.LogDebug("Chat: Duplicate game message suppressed");
                     return;
                 }
-
-                // Store to prevent re-sync
                 _syncedMessages.Add(messageKey);
-                if (_syncedMessages.Count > 1000) // Keep memory bounded
+
+                // Clean up old entries to prevent memory growth
+                if (_syncedMessages.Count > 1000)
                 {
                     var oldest = _syncedMessages.First();
                     _syncedMessages.Remove(oldest);
                 }
 
-                // Format Discord embed message
-                string discordMessage = FormatGameMessageForDiscord(playerName, message, channel);
+                // Format message for Discord
+                string discordMessage = FormatGameMessageForDiscord(playerName, message);
 
-                // Get target channel from config
-                ulong targetChannel = GetChannelIdForGameChannel(channel);
+                // Skip if it's a command or empty after formatting
+                if (string.IsNullOrWhiteSpace(discordMessage) || discordMessage.StartsWith("/"))
+                {
+                    return;
+                }
+
+                // Get target Discord channel from config
+                ulong targetChannel = _config?.Discord?.ChatChannelId ?? 0;
                 if (targetChannel == 0)
                 {
-                    LoggerUtil.LogDebug($"Chat: No Discord channel configured for '{channel}'");
+                    LoggerUtil.LogWarning("Chat: No Discord ChatChannelId configured in config");
                     return;
                 }
 
                 // Send to Discord
                 bool sent = await _discord.SendLogAsync(targetChannel, discordMessage);
-                
+
                 if (sent)
                 {
-                    LoggerUtil.LogInfo($"[CHAT] Game→Discord: {playerName}: {message}");
-                    
-                    // Save to database
-                    LogChatMessage(playerName, message, "game", channel);
+                    LoggerUtil.LogInfo($"[CHAT] Game → Discord: {playerName}: {message}");
+                    LogChatMessage(playerName, message, "game", "global");
                 }
                 else
                 {
-                    LoggerUtil.LogWarning($"Chat: Failed to send to Discord ({targetChannel})");
+                    LoggerUtil.LogWarning($"Chat: Failed to send to Discord channel {targetChannel}");
                 }
             }
             catch (Exception ex)
@@ -113,31 +117,27 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Send message from Discord to game
-        /// Called when Discord message received in monitored channel
+        /// Send message from Discord to game global chat
+        /// Called when message received in monitored Discord channel
         /// </summary>
-        public async Task SendDiscordMessageToGameAsync(
-            string discordUsername, 
-            string message, 
-            string discordChannel = "")
+        public async Task SendDiscordMessageToGameAsync(string discordUsername, string message)
         {
             try
             {
-                // Validation
                 if (string.IsNullOrWhiteSpace(discordUsername) || string.IsNullOrWhiteSpace(message))
                 {
-                    LoggerUtil.LogDebug("Chat: Empty Discord username or message");
+                    LoggerUtil.LogDebug("Chat: Empty Discord username or message - skipping");
                     return;
                 }
 
-                // Filter out bot messages (prevent echo)
-                if (discordUsername.Contains("bot") || discordUsername.Contains("Bot"))
+                // Filter bot messages to prevent echo loops
+                if (discordUsername.Contains("bot", StringComparison.OrdinalIgnoreCase))
                 {
-                    LoggerUtil.LogDebug("Chat: Bot message filtered");
+                    LoggerUtil.LogDebug("Chat: Bot message filtered - skipping");
                     return;
                 }
 
-                // Rate limiting
+                // Rate limiting per Discord user
                 string rateLimitKey = $"{discordUsername}_discord";
                 if (!CheckRateLimit(rateLimitKey))
                 {
@@ -145,28 +145,38 @@ namespace mamba.TorchDiscordSync.Services
                     return;
                 }
 
-                // Prevent spam/duplicates
+                // Prevent duplicates
                 string messageKey = $"{discordUsername}:{message}";
                 if (_syncedMessages.Contains(messageKey))
                 {
                     LoggerUtil.LogDebug("Chat: Duplicate Discord message suppressed");
                     return;
                 }
-
-                // Store to prevent re-sync
                 _syncedMessages.Add(messageKey);
 
-                // Format for game chat
+                // Format message for game chat
                 string gameMessage = FormatDiscordMessageForGame(discordUsername, message);
 
-                LoggerUtil.LogInfo($"[CHAT] Discord→Game: {discordUsername}: {message}");
+                LoggerUtil.LogInfo($"[CHAT] Discord → Game: {discordUsername}: {message}");
 
-                // In real implementation, this would call ChatManager.SendChatMessage
-                // For now, log it
-                LogChatMessage(discordUsername, message, "discord", discordChannel);
+                // Send to global chat for ALL players (server-side broadcast)
+                try
+                {
+                    // Use MyVisualScriptLogicProvider for server-wide chat broadcast
+                    MyVisualScriptLogicProvider.SendChatMessage(
+                        gameMessage,           // Message text
+                        "Discord",             // Sender name shown in chat
+                        0,                     // 0 = server-sent
+                        "Blue"                 // Color: Blue, Green, Red, White, etc.
+                    );
 
-                // This would be called from plugin's chat handler
-                // CommandHandler.ExecuteCommand($"/say {gameMessage}");
+                    LoggerUtil.LogSuccess($"[CHAT] Broadcasted to game: {gameMessage}");
+                    LogChatMessage(discordUsername, message, "discord", "global");
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"Failed to broadcast chat message to game: {ex.Message}");
+                }
             }
             catch (Exception ex)
             {
@@ -175,71 +185,24 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Handle incoming game chat messages (from plugin)
-        /// Route to appropriate handlers (faction chat, system, etc)
-        /// </summary>
-        public async Task ProcessGameChatMessageAsync(string playerName, string message, string channel)
-        {
-            try
-            {
-                LoggerUtil.LogDebug($"Processing game chat: {playerName} → {channel}: {message}");
-
-                // Check for system messages (join/leave)
-                if (message.Contains(" joined the game") || message.Contains(" left the game"))
-                {
-                    LoggerUtil.LogDebug("System message detected, skipping sync");
-                    return;
-                }
-
-                // Route based on channel
-                if (channel == "faction")
-                {
-                    await SendGameMessageToDiscordAsync(playerName, message, "faction");
-                }
-                else if (channel == "system")
-                {
-                    // System messages don't sync to Discord usually
-                    LoggerUtil.LogDebug("System message suppressed from sync");
-                }
-                else
-                {
-                    // Global channel
-                    await SendGameMessageToDiscordAsync(playerName, message, "global");
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error processing game chat: {ex.Message}");
-            }
-        }
-
-        /// <summary>
         /// Format game chat message for Discord display
         /// </summary>
-        private string FormatGameMessageForDiscord(string playerName, string message, string channel)
+        private string FormatGameMessageForDiscord(string playerName, string message)
         {
             try
             {
-                // Clean message of special characters
                 string cleanMessage = CleanMessageText(message);
-                
-                // Remove commands (don't sync commands to Discord)
+
+                // Skip commands
                 if (cleanMessage.StartsWith("/"))
                 {
                     return null;
                 }
 
-                // Format based on channel
-                string formatted = channel switch
-                {
-                    "faction" => $"**[FACTION] {playerName}**: {cleanMessage}",
-                    "private" => $"**[PRIVATE] {playerName}**: {cleanMessage}",
-                    "global" => $"**{playerName}**: {cleanMessage}",
-                    _ => $"**{playerName}**: {cleanMessage}"
-                };
+                string formatted = $"**{playerName}**: {cleanMessage}";
 
-                // Limit length
-                if (formatted.Length > 2000) // Discord message limit
+                // Respect Discord message length limit
+                if (formatted.Length > 2000)
                 {
                     formatted = formatted.Substring(0, 1990) + "...";
                 }
@@ -248,60 +211,54 @@ namespace mamba.TorchDiscordSync.Services
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogDebug($"Error formatting game message: {ex.Message}");
+                LoggerUtil.LogDebug($"Error formatting game message for Discord: {ex.Message}");
                 return $"{playerName}: {message}";
             }
         }
 
         /// <summary>
-        /// Format Discord message for game chat
+        /// Format Discord message for game chat display
         /// </summary>
         private string FormatDiscordMessageForGame(string discordUser, string message)
         {
             try
             {
-                // Clean message
                 string cleanMessage = CleanMessageText(message);
 
-                // Limit length (game chat has smaller limit)
+                // Limit length for game chat readability
                 if (cleanMessage.Length > 100)
                 {
                     cleanMessage = cleanMessage.Substring(0, 97) + "...";
                 }
 
-                // Format: [DISCORD] username: message
-                return $"[DISCORD] {discordUser}: {cleanMessage}";
+                return $"[Discord] {discordUser}: {cleanMessage}";
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogDebug($"Error formatting Discord message: {ex.Message}");
+                LoggerUtil.LogDebug($"Error formatting Discord message for game: {ex.Message}");
                 return message;
             }
         }
 
         /// <summary>
-        /// Clean message text of unwanted characters
+        /// Clean message text - remove mentions, URLs, extra spaces
         /// </summary>
         private string CleanMessageText(string text)
         {
             try
             {
-                if (string.IsNullOrEmpty(text))
-                    return "";
+                if (string.IsNullOrEmpty(text)) return "";
 
-                // Remove Discord mentions (to prevent spam)
+                // Remove Discord mentions to prevent spam
                 text = Regex.Replace(text, @"<@!?[0-9]+>", "");
-                
-                // Remove URLs
-                text = Regex.Replace(text, @"https?://[^\s]+", "[URL]");
-                
-                // Remove multiple spaces
-                text = Regex.Replace(text, @"\s+", " ");
-                
-                // Trim
-                text = text.Trim();
 
-                return text;
+                // Replace URLs with placeholder
+                text = Regex.Replace(text, @"https?://[^\s]+", "[URL]");
+
+                // Normalize spaces
+                text = Regex.Replace(text, @"\s+", " ");
+
+                return text.Trim();
             }
             catch
             {
@@ -310,8 +267,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Check rate limit for a user
-        /// Returns false if throttled
+        /// Check rate limit for a given key (player or user)
         /// </summary>
         private bool CheckRateLimit(string key)
         {
@@ -323,8 +279,8 @@ namespace mamba.TorchDiscordSync.Services
                     return true;
                 }
 
-                int timeSinceLastMs = (int)(DateTime.UtcNow - lastTime).TotalMilliseconds;
-                if (timeSinceLastMs < MESSAGE_THROTTLE_MS)
+                int msSinceLast = (int)(DateTime.UtcNow - lastTime).TotalMilliseconds;
+                if (msSinceLast < MESSAGE_THROTTLE_MS)
                 {
                     return false; // Throttled
                 }
@@ -339,46 +295,21 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Get Discord channel ID for game channel
+        /// Log chat message to database for history/auditing
         /// </summary>
-        private ulong GetChannelIdForGameChannel(string gameChannel)
-        {
-            try
-            {
-                if (_config?.Discord == null)
-                    return 0;
-
-                return gameChannel switch
-                {
-                    "faction" => _config.Discord.ChatChannelId,
-                    "global" => _config.Discord.ChatChannelId,
-                    "private" => _config.Discord.ChatChannelId,
-                    _ => _config.Discord.ChatChannelId
-                };
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-
-        /// <summary>
-        /// Log chat message to database for history
-        /// </summary>
-        private void LogChatMessage(string playerName, string message, string source, string channel)
+        private void LogChatMessage(string author, string message, string source, string channel)
         {
             try
             {
                 if (_db != null)
                 {
-                    var chatRecord = new EventLogModel
+                    var evt = new EventLogModel
                     {
                         EventType = "Chat",
-                        Details = $"[{source.ToUpper()}] {playerName}: {message}",
+                        Details = $"[{source.ToUpper()}] {author}: {message} ({channel})",
                         Timestamp = DateTime.UtcNow
                     };
-
-                    _db.LogEvent(chatRecord);
+                    _db.LogEvent(evt);
                 }
             }
             catch (Exception ex)
@@ -388,29 +319,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Get chat history between two timestamps
-        /// </summary>
-        public List<(string Author, string Message, DateTime Time, string Source)> GetChatHistory(
-            DateTime from, 
-            DateTime to)
-        {
-            var history = new List<(string, string, DateTime, string)>();
-
-            try
-            {
-                // In real implementation, would query database
-                // For now, return empty (database layer integration needed)
-                return history;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogDebug($"Error getting chat history: {ex.Message}");
-                return history;
-            }
-        }
-
-        /// <summary>
-        /// Clear chat cache (for memory management)
+        /// Clear internal caches (called on unload or periodically)
         /// </summary>
         public void ClearCache()
         {
@@ -418,7 +327,7 @@ namespace mamba.TorchDiscordSync.Services
             {
                 _syncedMessages.Clear();
                 _lastMessageTime.Clear();
-                LoggerUtil.LogDebug("Chat cache cleared");
+                LoggerUtil.LogDebug("Chat sync cache cleared");
             }
             catch (Exception ex)
             {
