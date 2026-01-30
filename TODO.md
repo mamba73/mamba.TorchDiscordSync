@@ -512,37 +512,3 @@ Vrijeme: ~2-3 sata
 
 UKUPNO: ~16-23 sata kod pisanja
 
-
-═══════════════════════════════════════════════════════════════════════════════
-🎯 ŠTA TREBAM ZNATI PRE NEGO KRENEŠ SA KODOM
-═══════════════════════════════════════════════════════════════════════════════
-
-CHAT:
-  1. Kako Torch detektira player chat poruke?
-  2. Koji event ili method trebam hookarati?
-  3. Što je dostupno iz ITorchSession?
-
-DEATH:
-  1. Koji je točan format death poruke u chat-u?
-  2. Trebam regex pattern za parsing?
-  3. Kako znam gdje je player bio? (WorldMatrix?)
-
-FACTION:
-  1. Kako pristupiti MyAPIGateway.Factions?
-  2. Koja je struktura IFaction i IFactionMember?
-  3. Kako znam koja faction je obrisana?
-
-KOMANDE:
-  1. Kako VerificationService radi?
-  2. Trebam novi kod ili je integration dovoljna?
-  3. Je li cleanup sigurna komanda?
-
-
-═══════════════════════════════════════════════════════════════════════════════
-ČEKAM TVOJ FEEDBACK
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Je li redoslijed ispravan (Chat → Death → Faction → Komande)?
-2. Jesu li moje procjene o što trebam sigurne?
-3. Možeš li odgovoriti na gornja pitanja?
-4. Trebam li početi sa FAZA 1 (Chat)?
