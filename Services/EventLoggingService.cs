@@ -135,22 +135,31 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
+                // Send to ChatChannelId (global channel)
+                if (_config?.Discord?.ChatChannelId != 0 && _discord != null)
                 {
-                    if (_discord != null)
-                    {
-                        return _discord.SendLogAsync(_config.Discord.ChatChannelId, deathMessage);
-                    }
+                    _ = _discord.SendLogAsync(_config.Discord.ChatChannelId, deathMessage);
                 }
 
-                return LogAsync("Death", deathMessage);
+                // Also log to database
+                if (_db != null)
+                {
+                    var evt = new EventLogModel
+                    {
+                        EventType = "Death",
+                        Details = deathMessage,
+                        Timestamp = DateTime.UtcNow,
+                    };
+                    _db.LogEvent(evt);
+                }
+
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
                 LoggerUtil.LogError("Death logging error: " + ex.Message);
+                return Task.CompletedTask;
             }
-
-            return Task.FromResult(0);
         }
 
         public Task LogPlayerJoinAsync(string playerName, long steamID)
