@@ -1,46 +1,44 @@
 // Services/PlayerTrackingService.cs
-// FINAL FIXED VERSION - Uses IMyCharacter.CharacterDied event (PROPER API)
-// Instead of MyEntities polling - much more reliable!
-
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Sandbox.ModAPI;
-using Torch.API;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
+using Sandbox.Game; // Za MyVisualScriptLogicProvider (slanje u global chat)
+using Sandbox.ModAPI;
+using Torch.API;
 using VRage.Game.ModAPI;
 
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
     /// Service for tracking player joins/leaves and DEATHS via IMyCharacter.CharacterDied event
-    /// This is the PROPER API way - not polling MyEntities!
+    /// Sends death messages to global chat in game and Discord.
     /// </summary>
     public class PlayerTrackingService
     {
         private readonly EventLoggingService _eventLog;
         private readonly ITorchBase _torch;
         private readonly DeathLogService _deathLog;
-        
+
         // Polling timer for join/leave detection only
         private System.Timers.Timer _pollingTimer;
-        
+
         // Track hooked characters to prevent double-hooking
         private HashSet<ulong> _knownPlayers = new HashSet<ulong>();
-        private Dictionary<ulong, IMyCharacter> _trackedCharacters = 
+        private Dictionary<ulong, IMyCharacter> _trackedCharacters =
             new Dictionary<ulong, IMyCharacter>();
-        
-        // Death tracking - remember last damage source per player
-        private Dictionary<ulong, LastDamageInfo> _lastDamage = 
-            new Dictionary<ulong, LastDamageInfo>();
-        
+
         // Processed deaths to prevent duplicates
         private HashSet<string> _processedDeaths = new HashSet<string>();
-        
+
         private object _lockObject = new object();
 
-        public PlayerTrackingService(EventLoggingService eventLog, ITorchBase torch, DeathLogService deathLog)
+        public PlayerTrackingService(
+            EventLoggingService eventLog,
+            ITorchBase torch,
+            DeathLogService deathLog
+        )
         {
             _eventLog = eventLog;
             _torch = torch;
@@ -55,14 +53,16 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                LoggerUtil.LogDebug("Initializing PlayerTrackingService with CharacterDied event hooking...");
-                
+                LoggerUtil.LogDebug(
+                    "Initializing PlayerTrackingService with CharacterDied event hooking..."
+                );
+
                 // Initialize polling for join/leave detection (5 seconds)
                 InitializePolling();
-                
+
                 // Hook death events for all current players
                 InitializeDeathTracking();
-                
+
                 LoggerUtil.LogSuccess("Player tracking initialized (event-based death detection)");
             }
             catch (Exception ex)
@@ -101,12 +101,15 @@ namespace mamba.TorchDiscordSync.Services
             {
                 if (MyAPIGateway.Players == null)
                 {
-                    LoggerUtil.LogWarning("MyAPIGateway.Players is null - cannot initialize death tracking");
+                    LoggerUtil.LogWarning(
+                        "MyAPIGateway.Players is null - cannot initialize death tracking"
+                    );
                     return;
                 }
 
                 var allPlayers = new List<IMyPlayer>();
                 MyAPIGateway.Players.GetPlayers(allPlayers);
+
                 if (allPlayers == null || allPlayers.Count == 0)
                 {
                     LoggerUtil.LogDebug("No players found for death tracking initialization");
@@ -153,10 +156,10 @@ namespace mamba.TorchDiscordSync.Services
 
                 // Hook the CharacterDied event
                 character.CharacterDied += (deadChar) => OnCharacterDied(deadChar, steamId);
-                
+
                 // Track this character
                 _trackedCharacters[steamId] = character;
-                
+
                 LoggerUtil.LogDebug($"Hooked CharacterDied event for SteamID {steamId}");
             }
             catch (Exception ex)
@@ -196,11 +199,16 @@ namespace mamba.TorchDiscordSync.Services
                     if (!_knownPlayers.Contains(player.SteamUserId))
                     {
                         _knownPlayers.Add(player.SteamUserId);
-                        LoggerUtil.LogInfo($"Player joined: {player.DisplayName} ({player.SteamUserId})");
+                        LoggerUtil.LogInfo(
+                            $"Player joined: {player.DisplayName} ({player.SteamUserId})"
+                        );
 
                         Task.Run(async () =>
                         {
-                            await _eventLog.LogPlayerJoinAsync(player.DisplayName, (long)player.SteamUserId);
+                            await _eventLog.LogPlayerJoinAsync(
+                                player.DisplayName,
+                                (long)player.SteamUserId
+                            );
                         });
                     }
                 }
@@ -219,16 +227,8 @@ namespace mamba.TorchDiscordSync.Services
                 {
                     _knownPlayers.Remove(steamId);
                     _trackedCharacters.Remove(steamId);
-                    _lastDamage.Remove(steamId);
 
-                    // Try to get player name from cache
-                    string playerName = "Unknown";
-                    try
-                    {
-                        // Find in all players (even offline) - this might not work, just fallback
-                        playerName = steamId.ToString();
-                    }
-                    catch { }
+                    string playerName = steamId.ToString();
 
                     LoggerUtil.LogInfo($"Player left: {playerName} ({steamId})");
 
@@ -256,6 +256,7 @@ namespace mamba.TorchDiscordSync.Services
 
                 var allPlayers = new List<IMyPlayer>();
                 MyAPIGateway.Players.GetPlayers(allPlayers);
+
                 if (allPlayers == null)
                     return;
 
@@ -266,7 +267,6 @@ namespace mamba.TorchDiscordSync.Services
                         if (player == null || player.Character == null)
                             continue;
 
-                        // If player is new and has character, hook them
                         if (!_trackedCharacters.ContainsKey(player.SteamUserId))
                         {
                             HookCharacterDeath(player.Character, player.SteamUserId);
@@ -294,20 +294,15 @@ namespace mamba.TorchDiscordSync.Services
                 if (deadCharacter == null)
                     return;
 
-                // Get victim info
                 var controller = MyAPIGateway.Players.GetPlayerControllingEntity(deadCharacter);
                 if (controller == null)
-                {
-                    LoggerUtil.LogDebug("Could not find controller for dead character");
                     return;
-                }
 
                 ulong victimSteamId = controller.SteamUserId;
                 string victimName = controller.DisplayName ?? "Unknown";
-                
+
                 LoggerUtil.LogInfo($"[DEATH EVENT] {victimName} ({victimSteamId}) died");
 
-                // Prevent duplicate processing
                 string deathKey = $"{victimSteamId}:{DateTime.UtcNow:yyyyMMddHHmmss}";
                 if (_processedDeaths.Contains(deathKey))
                 {
@@ -316,24 +311,10 @@ namespace mamba.TorchDiscordSync.Services
                 }
                 _processedDeaths.Add(deathKey);
 
-                // Get killer/damage info
-                string killerName = "Unknown";
-                long killerId = 0;
-                string weapon = "Unknown";
+                // Basic death message (no killer/weapon until we parse system chat)
+                string deathMessage = $"{victimName} died";
 
-                // Try to get last damage source
-                if (_lastDamage.TryGetValue(victimSteamId, out var damageInfo))
-                {
-                    killerName = damageInfo.AttackerName;
-                    killerId = damageInfo.AttackerId;
-                    weapon = damageInfo.Weapon;
-                    _lastDamage.Remove(victimSteamId);
-                }
-
-                // Get location
-                string location = deadCharacter.GetPosition().ToString();
-
-                // Log the death
+                // Log to database
                 if (_deathLog != null)
                 {
                     Task.Run(async () =>
@@ -341,12 +322,12 @@ namespace mamba.TorchDiscordSync.Services
                         try
                         {
                             await _deathLog.LogPlayerDeathAsync(
-                                killerName,
+                                "Unknown", // killer
                                 victimName,
-                                weapon,
-                                killerId,
+                                "Unknown", // weapon
+                                0, // killerId
                                 (long)victimSteamId,
-                                location
+                                deadCharacter.GetPosition().ToString() // location
                             );
                         }
                         catch (Exception ex)
@@ -356,24 +337,31 @@ namespace mamba.TorchDiscordSync.Services
                     });
                 }
 
-                // Send to Discord
+                // Send to Discord (via EventLoggingService)
                 if (_eventLog != null)
                 {
                     Task.Run(async () =>
                     {
                         try
                         {
-                            string msg = killerName == "Unknown"
-                                ? $"{victimName} died"
-                                : $"{killerName} killed {victimName} with {weapon}";
-
-                            await _eventLog.LogDeathAsync(msg);
+                            await _eventLog.LogDeathAsync(deathMessage);
                         }
                         catch (Exception ex)
                         {
                             LoggerUtil.LogError($"Error sending to Discord: {ex.Message}");
                         }
                     });
+                }
+
+                // FIXED: Broadcast death to global chat in game
+                try
+                {
+                    MyVisualScriptLogicProvider.SendChatMessage(deathMessage, "Server", 0, "Red");
+                    LoggerUtil.LogInfo($"[DEATH CHAT] Broadcasted to game: {deathMessage}");
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"Failed to broadcast death to game chat: {ex.Message}");
                 }
             }
             catch (Exception ex)
@@ -384,34 +372,8 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Track damage to characters
-        /// Call this when you detect a damage event
-        /// </summary>
-        public void OnCharacterDamaged(ulong victimSteamId, string attackerName, ulong attackerSteamId, string weapon)
-        {
-            try
-            {
-                lock (_lockObject)
-                {
-                    _lastDamage[victimSteamId] = new LastDamageInfo
-                    {
-                        AttackerName = attackerName,
-                        AttackerId = (long)attackerSteamId,
-                        Weapon = weapon,
-                        Timestamp = DateTime.UtcNow
-                    };
-                }
-
-                LoggerUtil.LogDebug($"Damage tracked: {attackerName} → victim {victimSteamId}");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogDebug($"Error tracking damage: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Process system chat messages (legacy fallback for join/leave)
+        /// Process system chat messages (legacy fallback for join/leave and death parsing)
+        /// This method is called from plugin when channel == "System"
         /// </summary>
         public void ProcessSystemChatMessage(string message)
         {
@@ -420,30 +382,61 @@ namespace mamba.TorchDiscordSync.Services
                 if (string.IsNullOrEmpty(message))
                     return;
 
-                LoggerUtil.LogDebug($"Processing chat: {message}");
+                LoggerUtil.LogDebug($"System chat message received: {message}");
 
-                // Check for death messages in chat (legacy fallback)
-                if (message.Contains(" died") || message.Contains(" was killed"))
+                // Check for death messages and forward them
+                if (
+                    message.Contains(" died")
+                    || message.Contains(" was killed")
+                    || message.Contains(" suffocated")
+                    || message.Contains(" didn't survive")
+                )
                 {
-                    LoggerUtil.LogDebug($"Death message detected in chat: {message}");
+                    LoggerUtil.LogDebug($"Death message detected in system chat: {message}");
 
-                    Task.Run(async () =>
+                    // Use the system message directly as death info
+                    string deathMessage = message.Trim();
+
+                    // Send to Discord
+                    if (_eventLog != null)
                     {
-                        try
+                        Task.Run(async () =>
                         {
-                            if (_eventLog != null)
-                                await _eventLog.LogDeathAsync(message);
-                        }
-                        catch (Exception ex)
-                        {
-                            LoggerUtil.LogError($"Error logging chat death: {ex.Message}");
-                        }
-                    });
+                            try
+                            {
+                                await _eventLog.LogDeathAsync(deathMessage);
+                            }
+                            catch (Exception ex)
+                            {
+                                LoggerUtil.LogError($"Error logging chat death: {ex.Message}");
+                            }
+                        });
+                    }
+
+                    // Broadcast to global chat in game (enhanced visibility)
+                    try
+                    {
+                        MyVisualScriptLogicProvider.SendChatMessage(
+                            deathMessage,
+                            "Server",
+                            0,
+                            "Red"
+                        );
+                        LoggerUtil.LogInfo(
+                            $"[DEATH CHAT] Broadcasted from system message: {deathMessage}"
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError(
+                            $"Failed to broadcast system death message to game chat: {ex.Message}"
+                        );
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error processing chat message: {ex.Message}");
+                LoggerUtil.LogError($"Error processing system chat message: {ex.Message}");
             }
         }
 
@@ -463,25 +456,10 @@ namespace mamba.TorchDiscordSync.Services
                     _pollingTimer.Dispose();
                 }
 
-                // Unhook all character events
+                // Clear collections
                 lock (_lockObject)
                 {
-                    foreach (var kvp in _trackedCharacters)
-                    {
-                        try
-                        {
-                            var character = kvp.Value;
-                            if (character != null)
-                            {
-                                // Unhook - using lambda is tricky, so we'll just clear
-                                LoggerUtil.LogDebug($"Unhooked character for SteamID {kvp.Key}");
-                            }
-                        }
-                        catch { }
-                    }
-
                     _trackedCharacters.Clear();
-                    _lastDamage.Clear();
                     _knownPlayers.Clear();
                     _processedDeaths.Clear();
                 }
@@ -492,17 +470,6 @@ namespace mamba.TorchDiscordSync.Services
             {
                 LoggerUtil.LogError($"Error during disposal: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// Helper class to store last damage info
-        /// </summary>
-        private class LastDamageInfo
-        {
-            public string AttackerName { get; set; }
-            public long AttackerId { get; set; }
-            public string Weapon { get; set; }
-            public DateTime Timestamp { get; set; }
         }
     }
 }

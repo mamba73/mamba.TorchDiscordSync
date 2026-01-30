@@ -3,14 +3,17 @@ using System;
 
 namespace mamba.TorchDiscordSync.Models
 {
-    [System.Serializable]
+    [Serializable]
     public class DeathHistoryModel
     {
         public long KillerSteamID { get; set; }
         public long VictimSteamID { get; set; }
         public DateTime DeathTime { get; set; }
         public string DeathType { get; set; }
-        public object[] KillerName { get; internal set; }
-        public string VictimName { get; internal set; }
+
+        public string KillerName { get; set; }
+        public string VictimName { get; set; }
+        public string Weapon { get; set; }
+        public string Location { get; set; }
     }
 }
