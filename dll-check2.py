@@ -8,7 +8,8 @@ import re
 script_full_path = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_full_path)
 script_base_name = os.path.splitext(os.path.basename(__file__))[0]
-config_file = os.path.join(script_dir, f"{script_base_name}.ini")
+# config_file = os.path.join(script_dir, f"{script_base_name}.ini")
+config_file = os.path.join(script_dir, f"check2.ini")
 
 config = configparser.ConfigParser()
 

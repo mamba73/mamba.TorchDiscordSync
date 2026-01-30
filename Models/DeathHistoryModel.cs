@@ -10,5 +10,7 @@ namespace mamba.TorchDiscordSync.Models
         public long VictimSteamID { get; set; }
         public DateTime DeathTime { get; set; }
         public string DeathType { get; set; }
+        public object[] KillerName { get; internal set; }
+        public string VictimName { get; internal set; }
     }
 }
