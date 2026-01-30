@@ -40,6 +40,8 @@ build_staging/
 *.egg-info/
 
 # Documentation files
+.inspect/
+.inspect/*
 # doc/
 # *.py
 # *.md
