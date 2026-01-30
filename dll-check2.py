@@ -36,6 +36,33 @@ def load_config():
 
 cfg = load_config()
 
+def print_help():
+    help_text = f"""
+.NET DLL INSPECTOR - HELP (v2.21)
+=================================================
+Analyzes .NET assemblies and extracts metadata.
+Config file: {os.path.basename(config_file)}
+
+USAGE:
+-----------
+python {os.path.basename(__file__)} [OPTIONS]
+
+OPTIONS:
+----------
+--search, -s  : Keyword to find (Namespace, Class, Method, etc.).
+--ext, -e     : Extended mode (Include Properties [P]).
+--deep, -d    : Deep mode (Include Fields [F] and Events [E]).
+--default, -y : Skip path prompt and use 'DefaultPath' from INI.
+--help, -h    : Show this help text.
+
+EXAMPLES:
+---------
+python {os.path.basename(__file__)} -y -s ChatManager
+python {os.path.basename(__file__)} --deep --search MySession
+=================================================
+    """
+    print(help_text)
+
 def get_unique_filename(directory, base_name, extension):
     full_log_dir = os.path.join(script_dir, directory)
     if not os.path.exists(full_log_dir): 
@@ -106,8 +133,12 @@ def inspect_dll(dll_path, search_term=None, ext_mode=False, deep_mode=False):
     return (version, results)
 
 def main():
-    # Switches definition
-    switches = ["--ext", "-e", "--deep", "-d", "--default", "-y", "--search", "-s"]
+    # 1. Check for Help first
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print_help()
+        return
+
+    switches = ["--ext", "-e", "--deep", "-d", "--default", "-y", "--search", "-s", "--help", "-h"]
     
     ext_mode = "--ext" in sys.argv or "-e" in sys.argv
     deep_mode = "--deep" in sys.argv or "-d" in sys.argv
@@ -116,12 +147,10 @@ def main():
     search_term = None
     clean_search_term = ""
     
-    # Smarter search term detection
     for opt in ["--search", "-s"]:
         if opt in sys.argv:
             try:
                 idx = sys.argv.index(opt)
-                # Look at subsequent arguments to find the first one that isn't another switch
                 for i in range(idx + 1, len(sys.argv)):
                     if sys.argv[i] not in switches:
                         search_term = sys.argv[i]
@@ -129,9 +158,8 @@ def main():
                         break
             except: pass
 
-    print(f"--- DLL Inspector v2.20 ---")
+    print(f"--- DLL Inspector v2.21 ---")
     print(f"Default search directory: {cfg['path']}")
-    print("Switches: --ext (-e), --deep (-d), --default (-y), --search (-s) <term>")
     
     if use_default_path:
         print(f"[INFO] Using default path as requested: {cfg['path']}")
