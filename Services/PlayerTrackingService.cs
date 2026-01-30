@@ -1,4 +1,4 @@
-// Services/PlayerTrackingService.cs - KONAČNA VERZIJA BEZ DUPLIKATA
+// Services/PlayerTrackingService.cs
 using System;
 using System.Threading.Tasks;
 using Sandbox.ModAPI;
