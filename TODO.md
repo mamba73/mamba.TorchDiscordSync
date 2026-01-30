@@ -1,3 +1,8 @@
+2026-01-30@12:22
+Napraviti da ukoliko nadogradim aplikaciju, ukoliko konfiguracijska datoteka već postoji (xml) samo napravimo apply dodatnih parametara, a ne da se prebriše sa predefiniranim, kako bih izbjegao ponovno upisivanje svih parametara u konfiguraciju.
+
+
+
 2026-01-28@09:50
 
 Treba implementirati da poruke idu iz igre prema discordu i sa discorda u igru.

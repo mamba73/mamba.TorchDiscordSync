@@ -138,17 +138,21 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        public void LogDeath(long killerSteamID, long victimSteamID, string deathType)
+        public void LogDeath(long killerSteamID, long victimSteamID, string deathType, string weapon = null, string location = null)
         {
             lock (_lock)
             {
-                _data.DeathHistory.Add(new DeathHistoryModel
+                var entry = new DeathHistoryModel
                 {
                     KillerSteamID = killerSteamID,
                     VictimSteamID = victimSteamID,
-                    DeathTime = DateTime.UtcNow,
-                    DeathType = deathType
-                });
+                    DeathTime     = DateTime.UtcNow,
+                    DeathType     = deathType,
+                    // Ako model nema Weapon i Location → dodaj ih u DeathHistoryModel.cs
+                    // Weapon        = weapon,
+                    // Location      = location
+                };
+                _data.DeathHistory.Add(entry);
                 SaveToXml();
             }
         }

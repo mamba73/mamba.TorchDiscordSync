@@ -1,39 +1,44 @@
-// Services/PlayerTrackingService.cs - KONAČNA VERZIJA BEZ DUPLIKATA
+// Services/PlayerTrackingService.cs
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using mamba.TorchDiscordSync.Models;
+using mamba.TorchDiscordSync.Utils;
+using Sandbox.Game; // Za MyVisualScriptLogicProvider (slanje u global chat)
 using Sandbox.ModAPI;
 using Torch.API;
-using Torch.Managers.ChatManager;
-using mamba.TorchDiscordSync.Services;
-using mamba.TorchDiscordSync.Utils;
 using VRage.Game.ModAPI;
-using System.Collections.Generic;
 
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
-    /// Service for tracking player joins/leaves, deaths and server status changes
-    /// Uses polling-based detection since event handlers are problematic
+    /// Service for tracking player joins/leaves and DEATHS via IMyCharacter.CharacterDied event
+    /// Sends death messages to global chat in game and Discord.
     /// </summary>
     public class PlayerTrackingService
     {
         private readonly EventLoggingService _eventLog;
         private readonly ITorchBase _torch;
         private readonly DeathLogService _deathLog;
-        
-        // Polling timers
-        private System.Timers.Timer _pollingTimer;
-        private System.Timers.Timer _deathCheckTimer;
-        
-        // Player tracking
-        private System.Collections.Generic.Dictionary<ulong, string> _previousPlayers =
-            new System.Collections.Generic.Dictionary<ulong, string>();
-        
-        // Death tracking
-        private Dictionary<ulong, DateTime> _lastPlayerSeen = new Dictionary<ulong, DateTime>();
-        private HashSet<string> _processedDeathMessages = new HashSet<string>();
 
-        public PlayerTrackingService(EventLoggingService eventLog, ITorchBase torch, DeathLogService deathLog)
+        // Polling timer for join/leave detection only
+        private System.Timers.Timer _pollingTimer;
+
+        // Track hooked characters to prevent double-hooking
+        private HashSet<ulong> _knownPlayers = new HashSet<ulong>();
+        private Dictionary<ulong, IMyCharacter> _trackedCharacters =
+            new Dictionary<ulong, IMyCharacter>();
+
+        // Processed deaths to prevent duplicates
+        private HashSet<string> _processedDeaths = new HashSet<string>();
+
+        private object _lockObject = new object();
+
+        public PlayerTrackingService(
+            EventLoggingService eventLog,
+            ITorchBase torch,
+            DeathLogService deathLog
+        )
         {
             _eventLog = eventLog;
             _torch = torch;
@@ -41,32 +46,34 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Initialize player tracking with polling only
+        /// Initialize player tracking
+        /// Hook CharacterDied events for existing players
         /// </summary>
         public void Initialize()
         {
             try
             {
-                LoggerUtil.LogDebug("Initializing PlayerTrackingService with polling only...");
-                
-                // Initialize main polling for join/leave detection
+                LoggerUtil.LogDebug(
+                    "Initializing PlayerTrackingService with CharacterDied event hooking..."
+                );
+
+                // Initialize polling for join/leave detection (5 seconds)
                 InitializePolling();
-                
-                // Initialize death checking
-                InitializeDeathChecking();
-                
-                LoggerUtil.LogInfo("Player tracking initialized with polling (5-second intervals)");
+
+                // Hook death events for all current players
+                InitializeDeathTracking();
+
+                LoggerUtil.LogSuccess("Player tracking initialized (event-based death detection)");
             }
             catch (Exception ex)
             {
                 LoggerUtil.LogError("Player tracking initialization failed: " + ex.Message);
-                InitializePolling();
-                LoggerUtil.LogInfo("Player tracking emergency fallback to polling activated");
+                LoggerUtil.LogError("Stack: " + ex.StackTrace);
             }
         }
 
         /// <summary>
-        /// Initialize main polling for player join/leave detection
+        /// Initialize polling for player join/leave detection
         /// </summary>
         private void InitializePolling()
         {
@@ -85,289 +92,384 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Initialize death checking timer
+        /// Hook death tracking for all current players
+        /// Called once at startup and periodically for new joiners
         /// </summary>
-        private void InitializeDeathChecking()
+        private void InitializeDeathTracking()
         {
             try
             {
-                _deathCheckTimer = new System.Timers.Timer(3000); // 3 seconds
-                _deathCheckTimer.Elapsed += OnDeathCheckTick;
-                _deathCheckTimer.AutoReset = true;
-                _deathCheckTimer.Start();
-                LoggerUtil.LogInfo("Death checking timer started (3-second intervals)");
+                if (MyAPIGateway.Players == null)
+                {
+                    LoggerUtil.LogWarning(
+                        "MyAPIGateway.Players is null - cannot initialize death tracking"
+                    );
+                    return;
+                }
+
+                var allPlayers = new List<IMyPlayer>();
+                MyAPIGateway.Players.GetPlayers(allPlayers);
+
+                if (allPlayers == null || allPlayers.Count == 0)
+                {
+                    LoggerUtil.LogDebug("No players found for death tracking initialization");
+                    return;
+                }
+
+                foreach (var player in allPlayers)
+                {
+                    try
+                    {
+                        if (player == null || player.Character == null)
+                            continue;
+
+                        HookCharacterDeath(player.Character, player.SteamUserId);
+                        _knownPlayers.Add(player.SteamUserId);
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogDebug($"Error hooking player character: {ex.Message}");
+                    }
+                }
+
+                LoggerUtil.LogInfo($"Death tracking hooked for {_knownPlayers.Count} players");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("Death checking initialization failed: " + ex.Message);
+                LoggerUtil.LogError($"Error initializing death tracking: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Main polling tick to detect player changes
+        /// Hook CharacterDied event on a specific character
+        /// </summary>
+        private void HookCharacterDeath(IMyCharacter character, ulong steamId)
+        {
+            try
+            {
+                if (character == null)
+                    return;
+
+                // Prevent double-hooking
+                if (_trackedCharacters.ContainsKey(steamId))
+                    return;
+
+                // Hook the CharacterDied event
+                character.CharacterDied += (deadChar) => OnCharacterDied(deadChar, steamId);
+
+                // Track this character
+                _trackedCharacters[steamId] = character;
+
+                LoggerUtil.LogDebug($"Hooked CharacterDied event for SteamID {steamId}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogDebug($"Error hooking character death: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Main polling tick - check for new/left players
         /// </summary>
         private void OnPollingTick(object sender, System.Timers.ElapsedEventArgs e)
         {
             CheckPlayerChanges();
+            HookNewPlayers();
         }
 
         /// <summary>
-        /// Death checking tick - monitor for death messages in chat log
-        /// </summary>
-        private void OnDeathCheckTick(object sender, System.Timers.ElapsedEventArgs e)
-        {
-            CheckForDeathMessages();
-        }
-
-        /// <summary>
-        /// Check for player changes and send notifications
+        /// Check for player joins/leaves
         /// </summary>
         private void CheckPlayerChanges()
         {
             try
             {
-                if (_eventLog == null || MyAPIGateway.Players == null) return;
+                if (MyAPIGateway.Players == null)
+                    return;
 
-                var currentPlayers = new System.Collections.Generic.List<IMyPlayer>();
+                var currentPlayers = new List<IMyPlayer>();
                 MyAPIGateway.Players.GetPlayers(currentPlayers);
 
-                var currentDict = new System.Collections.Generic.Dictionary<ulong, string>();
+                var currentSteamIds = new HashSet<ulong>();
                 foreach (var player in currentPlayers)
                 {
-                    currentDict[player.SteamUserId] = player.DisplayName;
-                    
-                    // Update last seen time for death tracking
-                    _lastPlayerSeen[player.SteamUserId] = DateTime.UtcNow;
-                }
+                    currentSteamIds.Add(player.SteamUserId);
 
-                // Check for new players (joined)
-                foreach (var kvp in currentDict)
-                {
-                    if (!_previousPlayers.ContainsKey(kvp.Key))
+                    // Check for new players
+                    if (!_knownPlayers.Contains(player.SteamUserId))
                     {
-                        // New player joined
-                        string playerName = kvp.Value ?? "Unknown";
-                        ulong steamId = kvp.Key;
-
-                        LoggerUtil.LogInfo($"Player joined (polling): {playerName} ({steamId})");
+                        _knownPlayers.Add(player.SteamUserId);
+                        LoggerUtil.LogInfo(
+                            $"Player joined: {player.DisplayName} ({player.SteamUserId})"
+                        );
 
                         Task.Run(async () =>
                         {
-                            await _eventLog.LogPlayerJoinAsync(playerName, (long)steamId);
+                            await _eventLog.LogPlayerJoinAsync(
+                                player.DisplayName,
+                                (long)player.SteamUserId
+                            );
                         });
                     }
                 }
 
-                // Check for disconnected players (left)
-                foreach (var kvp in _previousPlayers)
+                // Check for disconnected players
+                var disconnected = new List<ulong>();
+                foreach (var steamId in _knownPlayers)
                 {
-                    if (!currentDict.ContainsKey(kvp.Key))
+                    if (!currentSteamIds.Contains(steamId))
                     {
-                        // Player left
-                        string playerName = kvp.Value ?? "Unknown";
-                        ulong steamId = kvp.Key;
-
-                        LoggerUtil.LogInfo($"Player left (polling): {playerName} ({steamId})");
-
-                        Task.Run(async () =>
-                        {
-                            await _eventLog.LogPlayerLeaveAsync(playerName, (long)steamId);
-                        });
-                        
-                        // Remove from death tracking
-                        _lastPlayerSeen.Remove(kvp.Key);
+                        disconnected.Add(steamId);
                     }
                 }
 
-                // Update previous players list
-                _previousPlayers = new System.Collections.Generic.Dictionary<ulong, string>(currentDict);
+                foreach (var steamId in disconnected)
+                {
+                    _knownPlayers.Remove(steamId);
+                    _trackedCharacters.Remove(steamId);
+
+                    string playerName = steamId.ToString();
+
+                    LoggerUtil.LogInfo($"Player left: {playerName} ({steamId})");
+
+                    Task.Run(async () =>
+                    {
+                        await _eventLog.LogPlayerLeaveAsync(playerName, (long)steamId);
+                    });
+                }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("Error checking player changes: " + ex.Message);
+                LoggerUtil.LogError($"Error checking player changes: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Check for death messages by monitoring chat or player status
+        /// Hook death events for any newly joined players
         /// </summary>
-        private void CheckForDeathMessages()
+        private void HookNewPlayers()
         {
             try
             {
-                // This is a placeholder - in a real implementation we would check
-                // for actual death events or parse chat logs
-                // For now, we rely on external calls to ProcessSystemChatMessage
+                if (MyAPIGateway.Players == null)
+                    return;
+
+                var allPlayers = new List<IMyPlayer>();
+                MyAPIGateway.Players.GetPlayers(allPlayers);
+
+                if (allPlayers == null)
+                    return;
+
+                foreach (var player in allPlayers)
+                {
+                    try
+                    {
+                        if (player == null || player.Character == null)
+                            continue;
+
+                        if (!_trackedCharacters.ContainsKey(player.SteamUserId))
+                        {
+                            HookCharacterDeath(player.Character, player.SteamUserId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogDebug($"Error hooking new player: {ex.Message}");
+                    }
+                }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("Error checking for death messages: " + ex.Message);
+                LoggerUtil.LogDebug($"Error in HookNewPlayers: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Process system chat messages to detect player joins/leaves/deaths
-        /// This method should be called from the main plugin when chat messages arrive
+        /// Called when character dies (event handler)
+        /// </summary>
+        private void OnCharacterDied(IMyCharacter deadCharacter, ulong steamId)
+        {
+            try
+            {
+                if (deadCharacter == null)
+                    return;
+
+                var controller = MyAPIGateway.Players.GetPlayerControllingEntity(deadCharacter);
+                if (controller == null)
+                    return;
+
+                ulong victimSteamId = controller.SteamUserId;
+                string victimName = controller.DisplayName ?? "Unknown";
+
+                LoggerUtil.LogInfo($"[DEATH EVENT] {victimName} ({victimSteamId}) died");
+
+                string deathKey = $"{victimSteamId}:{DateTime.UtcNow:yyyyMMddHHmmss}";
+                if (_processedDeaths.Contains(deathKey))
+                {
+                    LoggerUtil.LogDebug("Duplicate death event suppressed");
+                    return;
+                }
+                _processedDeaths.Add(deathKey);
+
+                // Basic death message (no killer/weapon until we parse system chat)
+                string deathMessage = $"{victimName} died";
+
+                // Log to database
+                if (_deathLog != null)
+                {
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _deathLog.LogPlayerDeathAsync(
+                                "Unknown", // killer
+                                victimName,
+                                "Unknown", // weapon
+                                0, // killerId
+                                (long)victimSteamId,
+                                deadCharacter.GetPosition().ToString() // location
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError($"Error logging death: {ex.Message}");
+                        }
+                    });
+                }
+
+                // Send to Discord (via EventLoggingService)
+                if (_eventLog != null)
+                {
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _eventLog.LogDeathAsync(deathMessage);
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError($"Error sending to Discord: {ex.Message}");
+                        }
+                    });
+                }
+
+                // FIXED: Broadcast death to global chat in game
+                try
+                {
+                    MyVisualScriptLogicProvider.SendChatMessage(deathMessage, "Server", 0, "Red");
+                    LoggerUtil.LogInfo($"[DEATH CHAT] Broadcasted to game: {deathMessage}");
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"Failed to broadcast death to game chat: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in OnCharacterDied: {ex.Message}");
+                LoggerUtil.LogDebug($"Stack: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// Process system chat messages (legacy fallback for join/leave and death parsing)
+        /// This method is called from plugin when channel == "System"
         /// </summary>
         public void ProcessSystemChatMessage(string message)
         {
             try
             {
-                LoggerUtil.LogDebug($"Processing system chat message: '{message}'");
-
-                if (_eventLog == null || string.IsNullOrEmpty(message)) 
-                {
-                    LoggerUtil.LogDebug("EventLog is null or message is empty");
-                    return;
-                }
-
-                // Prevent duplicate processing
-                if (_processedDeathMessages.Contains(message))
+                if (string.IsNullOrEmpty(message))
                     return;
 
-                // Check for player join messages
-                if (message.EndsWith(" joined the game"))
+                LoggerUtil.LogDebug($"System chat message received: {message}");
+
+                // Check for death messages and forward them
+                if (
+                    message.Contains(" died")
+                    || message.Contains(" was killed")
+                    || message.Contains(" suffocated")
+                    || message.Contains(" didn't survive")
+                )
                 {
-                    string playerName = message.Replace(" joined the game", "").Trim();
-                    LoggerUtil.LogDebug($"Detected join message for: {playerName}");
-                    
-                    if (!string.IsNullOrEmpty(playerName))
-                    {
-                        LoggerUtil.LogInfo($"Player joined (instant): {playerName}");
-                        Task.Run(async () =>
-                        {
-                            await _eventLog.LogPlayerJoinAsync(playerName, 0);
-                        });
-                    }
-                }
-                // Check for player leave messages
-                else if (message.EndsWith(" left the game"))
-                {
-                    string playerName = message.Replace(" left the game", "").Trim();
-                    LoggerUtil.LogDebug($"Detected leave message for: {playerName}");
-                    
-                    if (!string.IsNullOrEmpty(playerName))
-                    {
-                        LoggerUtil.LogInfo($"Player left (instant): {playerName}");
-                        Task.Run(async () =>
-                        {
-                            await _eventLog.LogPlayerLeaveAsync(playerName, 0);
-                        });
-                    }
-                }
-                // Check for player death messages
-                else if ((message.Contains(" died") || message.Contains(" was killed")) && 
-                         !_processedDeathMessages.Contains(message))
-                {
-                    LoggerUtil.LogDebug($"Detected death message: {message}");
-                    
-                    // Add to processed messages to prevent duplicates
-                    _processedDeathMessages.Add(message);
-                    
-                    // Clean up old processed messages (keep only last 100)
-                    if (_processedDeathMessages.Count > 100)
-                    {
-                        // Get first element to remove
-                        var enumerator = _processedDeathMessages.GetEnumerator();
-                        if (enumerator.MoveNext())
-                        {
-                            var first = enumerator.Current;
-                            _processedDeathMessages.Remove(first);
-                        }
-                    }
-                    
-                    // Log death message
-                    if (_deathLog != null)
+                    LoggerUtil.LogDebug($"Death message detected in system chat: {message}");
+
+                    // Use the system message directly as death info
+                    string deathMessage = message.Trim();
+
+                    // Send to Discord
+                    if (_eventLog != null)
                     {
                         Task.Run(async () =>
                         {
                             try
                             {
-                                // Extract victim name from message
-                                string victimName = message.Contains(" died") ? 
-                                    message.Substring(0, message.IndexOf(" died")) :
-                                    message.Substring(0, message.IndexOf(" was killed"));
-                                
-                                await _deathLog.LogPlayerDeathAsync(
-                                    "Unknown", 
-                                    victimName, 
-                                    "Unknown Weapon", 
-                                    0, 
-                                    0, 
-                                    "Unknown Location"
-                                );
+                                await _eventLog.LogDeathAsync(deathMessage);
                             }
                             catch (Exception ex)
                             {
-                                LoggerUtil.LogError("Error in death logging task: " + ex.Message);
+                                LoggerUtil.LogError($"Error logging chat death: {ex.Message}");
                             }
                         });
                     }
-                    
-                    // Send to Discord through event log
-                    Task.Run(async () =>
+
+                    // Broadcast to global chat in game (enhanced visibility)
+                    try
                     {
-                        try
-                        {
-                            await _eventLog.LogDeathAsync(message);
-                        }
-                        catch (Exception ex)
-                        {
-                            LoggerUtil.LogError("Error sending death message to Discord: " + ex.Message);
-                        }
-                    });
-                }
-                else
-                {
-                    LoggerUtil.LogDebug($"Unrecognized system message: {message}");
+                        MyVisualScriptLogicProvider.SendChatMessage(
+                            deathMessage,
+                            "Server",
+                            0,
+                            "Red"
+                        );
+                        LoggerUtil.LogInfo(
+                            $"[DEATH CHAT] Broadcasted from system message: {deathMessage}"
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError(
+                            $"Failed to broadcast system death message to game chat: {ex.Message}"
+                        );
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("Error processing system chat message: " + ex.Message);
-                LoggerUtil.LogError("Message content: " + message);
+                LoggerUtil.LogError($"Error processing system chat message: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Cleanup resources
+        /// Cleanup - unhook all events
         /// </summary>
         public void Dispose()
         {
-            // Stop death checking timer
-            if (_deathCheckTimer != null)
+            try
             {
-                try
-                {
-                    _deathCheckTimer.Stop();
-                    _deathCheckTimer.Dispose();
-                    LoggerUtil.LogInfo("Death checking timer stopped");
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError("Error stopping death checking timer: " + ex.Message);
-                }
-            }
+                LoggerUtil.LogInfo("Disposing PlayerTrackingService...");
 
-            // Stop polling timer
-            if (_pollingTimer != null)
-            {
-                try
+                // Stop polling timer
+                if (_pollingTimer != null)
                 {
                     _pollingTimer.Stop();
                     _pollingTimer.Dispose();
-                    LoggerUtil.LogInfo("Player polling timer stopped");
                 }
-                catch (Exception ex)
+
+                // Clear collections
+                lock (_lockObject)
                 {
-                    LoggerUtil.LogError("Error stopping polling timer: " + ex.Message);
+                    _trackedCharacters.Clear();
+                    _knownPlayers.Clear();
+                    _processedDeaths.Clear();
                 }
+
+                LoggerUtil.LogSuccess("PlayerTrackingService disposed");
             }
-            
-            // Clear tracking collections
-            _lastPlayerSeen.Clear();
-            _processedDeathMessages.Clear();
-            _previousPlayers.Clear();
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error during disposal: {ex.Message}");
+            }
         }
     }
 }
