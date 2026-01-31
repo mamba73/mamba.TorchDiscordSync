@@ -110,13 +110,19 @@ namespace mamba.TorchDiscordSync.Services
         {
             lock (_lock)
             {
-                var existing = _data.Players.FirstOrDefault(p => p.PlayerID == player.PlayerID);
+                // FIX: Changed search to SteamID for consistency with SE tracking
+                var existing = _data.Players.FirstOrDefault(p => p.SteamID == player.SteamID);
                 if (existing != null)
                 {
+                    // existing.PlayerName = player.PlayerName;
+                    existing.OriginalNick = player.OriginalNick;
+                    existing.SyncedNick = player.SyncedNick;
+                    existing.SteamID = player.SteamID;
                     existing.OriginalNick = player.OriginalNick;
                     existing.SyncedNick = player.SyncedNick;
                     existing.FactionID = player.FactionID;
                     existing.DiscordUserID = player.DiscordUserID;
+                    // existing.LastSeen = player.LastSeen; // Keep the connection timestamp
                     existing.UpdatedAt = DateTime.UtcNow;
                 }
                 else
@@ -129,6 +135,12 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        // FIX: Added missing method for PlayerTrackingService
+        public PlayerModel GetPlayerBySteamID(long steamID)
+        {
+            return _data.Players.FirstOrDefault(p => p.SteamID == steamID);
+        }
+
         public void LogEvent(EventLogModel evt)
         {
             lock (_lock)
@@ -138,6 +150,7 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        // FIX: Updated signature to match DeathLogService calls (added weapon/location)
         public void LogDeath(long killerSteamID, long victimSteamID, string deathType, string weapon = null, string location = null)
         {
             lock (_lock)
@@ -146,11 +159,10 @@ namespace mamba.TorchDiscordSync.Services
                 {
                     KillerSteamID = killerSteamID,
                     VictimSteamID = victimSteamID,
-                    DeathTime     = DateTime.UtcNow,
-                    DeathType     = deathType,
-                    // Ako model nema Weapon i Location → dodaj ih u DeathHistoryModel.cs
-                    // Weapon        = weapon,
-                    // Location      = location
+                    DeathTime = DateTime.UtcNow,
+                    DeathType = deathType,
+                    Weapon = weapon,
+                    Location = location
                 };
                 _data.DeathHistory.Add(entry);
                 SaveToXml();
@@ -173,11 +185,8 @@ namespace mamba.TorchDiscordSync.Services
                 SaveToXml();
             }
         }
-        
-        /* ADD verification methods */
-        /// <summary>
-        /// Save or update a verification
-        /// </summary>
+
+        // Verification methods (Saved as per original)
         public void SaveVerification(VerificationModel verification)
         {
             lock (_lock)
@@ -200,34 +209,10 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /* Update: Services/DatabaseService.cs - ADD verification methods */
-        /// <summary>
-        /// Get verification by Steam ID
-        /// </summary>
-        public VerificationModel GetVerification(long steamID)
-        {
-            return _data.Verifications.FirstOrDefault(v => v.SteamID == steamID);
-        }
+        public VerificationModel GetVerification(long steamID) => _data.Verifications.FirstOrDefault(v => v.SteamID == steamID);
+        public VerificationModel GetVerificationByCode(string code) => _data.Verifications.FirstOrDefault(v => v.VerificationCode == code);
+        public List<VerificationModel> GetAllVerifications() => new List<VerificationModel>(_data.Verifications);
 
-        /// <summary>
-        /// Get verification by code
-        /// </summary>
-        public VerificationModel GetVerificationByCode(string code)
-        {
-            return _data.Verifications.FirstOrDefault(v => v.VerificationCode == code);
-        }
-
-        /// <summary>
-        /// Get all verifications
-        /// </summary>
-        public List<VerificationModel> GetAllVerifications()
-        {
-            return new List<VerificationModel>(_data.Verifications);
-        }
-
-        /// <summary>
-        /// Delete verification
-        /// </summary>
         public void DeleteVerification(long steamID)
         {
             lock (_lock)
@@ -237,9 +222,6 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Save verification history entry
-        /// </summary>
         public void SaveVerificationHistory(VerificationHistoryModel entry)
         {
             lock (_lock)
@@ -249,9 +231,6 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Get verification history for a Steam ID
-        /// </summary>
         public List<VerificationHistoryModel> GetVerificationHistory(long steamID)
         {
             return _data.VerificationHistory
@@ -259,7 +238,5 @@ namespace mamba.TorchDiscordSync.Services
                 .OrderByDescending(v => v.VerifiedAt)
                 .ToList();
         }
-
-
     }
 }

@@ -1,4 +1,4 @@
-PROJECT STRUCTURE: 
+PROJECT STRUCTURE:
 ------------------------------
 mamba.TorchDiscordSync/
 ├─ Config/
@@ -34,6 +34,7 @@ mamba.TorchDiscordSync/
 │  ├─ DiscordBotService.cs
 │  ├─ DiscordService.cs
 │  ├─ EventLoggingService.cs
+│  ├─ FactionReaderService.cs
 │  ├─ FactionSyncService.cs
 │  ├─ PlayerTrackingService.cs
 │  └─ VerificationService.cs
@@ -45,9 +46,11 @@ mamba.TorchDiscordSync/
 │  └─ VersionUtil.cs
 ├─ .gitignore
 ├─ build.py
+├─ dll-check2.py
 ├─ LICENSE
 ├─ mamba.TorchDiscordSync.csproj
 ├─ mamba.TorchDiscordSync.sln
 ├─ manifest.xml
 ├─ README.md
+├─ TODO.md
 └─ tree.txt
