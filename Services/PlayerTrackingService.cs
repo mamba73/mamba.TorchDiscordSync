@@ -1,475 +1,412 @@
 // Services/PlayerTrackingService.cs
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
-using mamba.TorchDiscordSync.Models;
-using mamba.TorchDiscordSync.Utils;
-using Sandbox.Game; // Za MyVisualScriptLogicProvider (slanje u global chat)
+using System.Linq;
+using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Character;
+using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using Torch.API;
+using Torch.Managers.ChatManager;
 using VRage.Game.ModAPI;
+using VRage.Game.ModAPI.Ingame;
+using mamba.TorchDiscordSync.Models;
+using mamba.TorchDiscordSync.Utils;
 
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
-    /// Service for tracking player joins/leaves and DEATHS via IMyCharacter.CharacterDied event
-    /// Sends death messages to global chat in game and Discord.
+    /// Service responsible for tracking player connections, disconnections, and deaths.
+    /// Integrates with Torch chat system and SE damage system for comprehensive event tracking.
     /// </summary>
     public class PlayerTrackingService
     {
-        private readonly EventLoggingService _eventLog;
-        private readonly ITorchBase _torch;
-        private readonly DeathLogService _deathLog;
+        private readonly DatabaseService _databaseService;
+        private readonly DeathLogService _deathLogService;
+        private readonly MambaTorchDiscordSyncPlugin _plugin;
+        private readonly Dictionary<long, MyDamageInformation> _lastDamageInfo;
+        private bool _isInitialized = false;
 
-        // Polling timer for join/leave detection only
-        private System.Timers.Timer _pollingTimer;
-
-        // Track hooked characters to prevent double-hooking
-        private HashSet<ulong> _knownPlayers = new HashSet<ulong>();
-        private Dictionary<ulong, IMyCharacter> _trackedCharacters =
-            new Dictionary<ulong, IMyCharacter>();
-
-        // Processed deaths to prevent duplicates
-        private HashSet<string> _processedDeaths = new HashSet<string>();
-
-        private object _lockObject = new object();
-
+        /// <summary>
+        /// Initializes a new instance of the PlayerTrackingService.
+        /// </summary>
+        /// <param name="databaseService">Database service for storing player data</param>
+        /// <param name="deathLogService">Death log service for analyzing death types</param>
+        /// <param name="plugin">Main plugin instance for chat message forwarding</param>
         public PlayerTrackingService(
-            EventLoggingService eventLog,
-            ITorchBase torch,
-            DeathLogService deathLog
-        )
+            DatabaseService databaseService, 
+            DeathLogService deathLogService,
+            MambaTorchDiscordSyncPlugin plugin)
         {
-            _eventLog = eventLog;
-            _torch = torch;
-            _deathLog = deathLog;
+            _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
+            _deathLogService = deathLogService ?? throw new ArgumentNullException(nameof(deathLogService));
+            _plugin = plugin ?? throw new ArgumentNullException(nameof(plugin));
+            _lastDamageInfo = new Dictionary<long, MyDamageInformation>();
         }
 
         /// <summary>
-        /// Initialize player tracking
-        /// Hook CharacterDied events for existing players
+        /// Initializes the player tracking service by subscribing to game events.
+        /// Hooks into character death events, damage system, and chat messages.
         /// </summary>
         public void Initialize()
         {
+            if (_isInitialized)
+            {
+                LoggerUtil.LogWarning("PlayerTrackingService already initialized");
+                return;
+            }
+
             try
             {
-                LoggerUtil.LogDebug(
-                    "Initializing PlayerTrackingService with CharacterDied event hooking..."
-                );
-
-                // Initialize polling for join/leave detection (5 seconds)
-                InitializePolling();
-
-                // Hook death events for all current players
-                InitializeDeathTracking();
-
-                LoggerUtil.LogSuccess("Player tracking initialized (event-based death detection)");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Player tracking initialization failed: " + ex.Message);
-                LoggerUtil.LogError("Stack: " + ex.StackTrace);
-            }
-        }
-
-        /// <summary>
-        /// Initialize polling for player join/leave detection
-        /// </summary>
-        private void InitializePolling()
-        {
-            try
-            {
-                _pollingTimer = new System.Timers.Timer(5000); // 5 seconds
-                _pollingTimer.Elapsed += OnPollingTick;
-                _pollingTimer.AutoReset = true;
-                _pollingTimer.Start();
-                LoggerUtil.LogInfo("Player polling timer started (5-second intervals)");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Polling initialization failed: " + ex.Message);
-            }
-        }
-
-        /// <summary>
-        /// Hook death tracking for all current players
-        /// Called once at startup and periodically for new joiners
-        /// </summary>
-        private void InitializeDeathTracking()
-        {
-            try
-            {
-                if (MyAPIGateway.Players == null)
+                // Hook character death event
+                MyEntities.OnEntityAdd += OnEntityAdded;
+                
+                // Hook damage system for death detection
+                if (MyAPIGateway.Session?.DamageSystem != null)
                 {
-                    LoggerUtil.LogWarning(
-                        "MyAPIGateway.Players is null - cannot initialize death tracking"
+                    MyAPIGateway.Session.DamageSystem.RegisterAfterDamageHandler(
+                        priority: 100,
+                        handler: OnDamageApplied
                     );
-                    return;
+                    LoggerUtil.LogInfo("Registered damage handler for death tracking");
                 }
-
-                var allPlayers = new List<IMyPlayer>();
-                MyAPIGateway.Players.GetPlayers(allPlayers);
-
-                if (allPlayers == null || allPlayers.Count == 0)
+                else
                 {
-                    LoggerUtil.LogDebug("No players found for death tracking initialization");
-                    return;
+                    LoggerUtil.LogWarning("DamageSystem is null - damage tracking disabled");
                 }
 
-                foreach (var player in allPlayers)
-                {
-                    try
-                    {
-                        if (player == null || player.Character == null)
-                            continue;
-
-                        HookCharacterDeath(player.Character, player.SteamUserId);
-                        _knownPlayers.Add(player.SteamUserId);
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerUtil.LogDebug($"Error hooking player character: {ex.Message}");
-                    }
-                }
-
-                LoggerUtil.LogInfo($"Death tracking hooked for {_knownPlayers.Count} players");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error initializing death tracking: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Hook CharacterDied event on a specific character
-        /// </summary>
-        private void HookCharacterDeath(IMyCharacter character, ulong steamId)
-        {
-            try
-            {
-                if (character == null)
-                    return;
-
-                // Prevent double-hooking
-                if (_trackedCharacters.ContainsKey(steamId))
-                    return;
-
-                // Hook the CharacterDied event
-                character.CharacterDied += (deadChar) => OnCharacterDied(deadChar, steamId);
-
-                // Track this character
-                _trackedCharacters[steamId] = character;
-
-                LoggerUtil.LogDebug($"Hooked CharacterDied event for SteamID {steamId}");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogDebug($"Error hooking character death: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Main polling tick - check for new/left players
-        /// </summary>
-        private void OnPollingTick(object sender, System.Timers.ElapsedEventArgs e)
-        {
-            CheckPlayerChanges();
-            HookNewPlayers();
-        }
-
-        /// <summary>
-        /// Check for player joins/leaves
-        /// </summary>
-        private void CheckPlayerChanges()
-        {
-            try
-            {
-                if (MyAPIGateway.Players == null)
-                    return;
-
-                var currentPlayers = new List<IMyPlayer>();
-                MyAPIGateway.Players.GetPlayers(currentPlayers);
-
-                var currentSteamIds = new HashSet<ulong>();
-                foreach (var player in currentPlayers)
-                {
-                    currentSteamIds.Add(player.SteamUserId);
-
-                    // Check for new players
-                    if (!_knownPlayers.Contains(player.SteamUserId))
-                    {
-                        _knownPlayers.Add(player.SteamUserId);
-                        LoggerUtil.LogInfo(
-                            $"Player joined: {player.DisplayName} ({player.SteamUserId})"
-                        );
-
-                        Task.Run(async () =>
-                        {
-                            await _eventLog.LogPlayerJoinAsync(
-                                player.DisplayName,
-                                (long)player.SteamUserId
-                            );
-                        });
-                    }
-                }
-
-                // Check for disconnected players
-                var disconnected = new List<ulong>();
-                foreach (var steamId in _knownPlayers)
-                {
-                    if (!currentSteamIds.Contains(steamId))
-                    {
-                        disconnected.Add(steamId);
-                    }
-                }
-
-                foreach (var steamId in disconnected)
-                {
-                    _knownPlayers.Remove(steamId);
-                    _trackedCharacters.Remove(steamId);
-
-                    string playerName = steamId.ToString();
-
-                    LoggerUtil.LogInfo($"Player left: {playerName} ({steamId})");
-
-                    Task.Run(async () =>
-                    {
-                        await _eventLog.LogPlayerLeaveAsync(playerName, (long)steamId);
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error checking player changes: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Hook death events for any newly joined players
-        /// </summary>
-        private void HookNewPlayers()
-        {
-            try
-            {
-                if (MyAPIGateway.Players == null)
-                    return;
-
-                var allPlayers = new List<IMyPlayer>();
-                MyAPIGateway.Players.GetPlayers(allPlayers);
-
-                if (allPlayers == null)
-                    return;
-
-                foreach (var player in allPlayers)
-                {
-                    try
-                    {
-                        if (player == null || player.Character == null)
-                            continue;
-
-                        if (!_trackedCharacters.ContainsKey(player.SteamUserId))
-                        {
-                            HookCharacterDeath(player.Character, player.SteamUserId);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerUtil.LogDebug($"Error hooking new player: {ex.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogDebug($"Error in HookNewPlayers: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Called when character dies (event handler)
-        /// </summary>
-        private void OnCharacterDied(IMyCharacter deadCharacter, ulong steamId)
-        {
-            try
-            {
-                if (deadCharacter == null)
-                    return;
-
-                var controller = MyAPIGateway.Players.GetPlayerControllingEntity(deadCharacter);
-                if (controller == null)
-                    return;
-
-                ulong victimSteamId = controller.SteamUserId;
-                string victimName = controller.DisplayName ?? "Unknown";
-
-                LoggerUtil.LogInfo($"[DEATH EVENT] {victimName} ({victimSteamId}) died");
-
-                string deathKey = $"{victimSteamId}:{DateTime.UtcNow:yyyyMMddHHmmss}";
-                if (_processedDeaths.Contains(deathKey))
-                {
-                    LoggerUtil.LogDebug("Duplicate death event suppressed");
-                    return;
-                }
-                _processedDeaths.Add(deathKey);
-
-                // Basic death message (no killer/weapon until we parse system chat)
-                string deathMessage = $"{victimName} died";
-
-                // Log to database
-                if (_deathLog != null)
-                {
-                    Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await _deathLog.LogPlayerDeathAsync(
-                                "Unknown", // killer
-                                victimName,
-                                "Unknown", // weapon
-                                0, // killerId
-                                (long)victimSteamId,
-                                deadCharacter.GetPosition().ToString() // location
-                            );
-                        }
-                        catch (Exception ex)
-                        {
-                            LoggerUtil.LogError($"Error logging death: {ex.Message}");
-                        }
-                    });
-                }
-
-                // Send to Discord (via EventLoggingService)
-                if (_eventLog != null)
-                {
-                    Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await _eventLog.LogDeathAsync(deathMessage);
-                        }
-                        catch (Exception ex)
-                        {
-                            LoggerUtil.LogError($"Error sending to Discord: {ex.Message}");
-                        }
-                    });
-                }
-
-                // FIXED: Broadcast death to global chat in game
+                // Hook Torch chat manager for chat integration
                 try
                 {
-                    MyVisualScriptLogicProvider.SendChatMessage(deathMessage, "Server", 0, "Red");
-                    LoggerUtil.LogInfo($"[DEATH CHAT] Broadcasted to game: {deathMessage}");
+                    var chatManager = TorchBase.Instance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
+                    if (chatManager != null)
+                    {
+                        chatManager.MessageRecieved += OnChatMessageReceived;
+                        LoggerUtil.LogInfo("Registered Torch chat message handler");
+                    }
+                    else
+                    {
+                        LoggerUtil.LogWarning("ChatManagerServer is null - chat integration disabled");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    LoggerUtil.LogError($"Failed to broadcast death to game chat: {ex.Message}");
+                    LoggerUtil.LogError($"Error hooking chat manager: {ex.Message}");
                 }
+
+                _isInitialized = true;
+                LoggerUtil.LogInfo("PlayerTrackingService initialized successfully");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in OnCharacterDied: {ex.Message}");
-                LoggerUtil.LogDebug($"Stack: {ex.StackTrace}");
+                LoggerUtil.LogError($"Error initializing PlayerTrackingService: {ex.Message}");
+                throw;
             }
         }
 
         /// <summary>
-        /// Process system chat messages (legacy fallback for join/leave and death parsing)
-        /// This method is called from plugin when channel == "System"
-        /// </summary>
-        public void ProcessSystemChatMessage(string message)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(message))
-                    return;
-
-                LoggerUtil.LogDebug($"System chat message received: {message}");
-
-                // Check for death messages and forward them
-                if (
-                    message.Contains(" died")
-                    || message.Contains(" was killed")
-                    || message.Contains(" suffocated")
-                    || message.Contains(" didn't survive")
-                )
-                {
-                    LoggerUtil.LogDebug($"Death message detected in system chat: {message}");
-
-                    // Use the system message directly as death info
-                    string deathMessage = message.Trim();
-
-                    // Send to Discord
-                    if (_eventLog != null)
-                    {
-                        Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _eventLog.LogDeathAsync(deathMessage);
-                            }
-                            catch (Exception ex)
-                            {
-                                LoggerUtil.LogError($"Error logging chat death: {ex.Message}");
-                            }
-                        });
-                    }
-
-                    // Broadcast to global chat in game (enhanced visibility)
-                    try
-                    {
-                        MyVisualScriptLogicProvider.SendChatMessage(
-                            deathMessage,
-                            "Server",
-                            0,
-                            "Red"
-                        );
-                        LoggerUtil.LogInfo(
-                            $"[DEATH CHAT] Broadcasted from system message: {deathMessage}"
-                        );
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerUtil.LogError(
-                            $"Failed to broadcast system death message to game chat: {ex.Message}"
-                        );
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error processing system chat message: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Cleanup - unhook all events
+        /// Unsubscribes from all game events and cleans up resources.
         /// </summary>
         public void Dispose()
         {
             try
             {
-                LoggerUtil.LogInfo("Disposing PlayerTrackingService...");
+                MyEntities.OnEntityAdd -= OnEntityAdded;
 
-                // Stop polling timer
-                if (_pollingTimer != null)
+                // Unhook chat manager
+                try
                 {
-                    _pollingTimer.Stop();
-                    _pollingTimer.Dispose();
+                    var chatManager = TorchBase.Instance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
+                    if (chatManager != null)
+                    {
+                        chatManager.MessageRecieved -= OnChatMessageReceived;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"Error unhooking chat manager: {ex.Message}");
                 }
 
-                // Clear collections
-                lock (_lockObject)
-                {
-                    _trackedCharacters.Clear();
-                    _knownPlayers.Clear();
-                    _processedDeaths.Clear();
-                }
+                _lastDamageInfo.Clear();
+                _isInitialized = false;
 
-                LoggerUtil.LogSuccess("PlayerTrackingService disposed");
+                LoggerUtil.LogInfo("PlayerTrackingService disposed");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error during disposal: {ex.Message}");
+                LoggerUtil.LogError($"Error disposing PlayerTrackingService: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Handles chat messages received from Torch chat manager.
+        /// Forwards player chat messages to Discord via the main plugin.
+        /// </summary>
+        /// <param name="msg">The chat message data</param>
+        /// <param name="consumed">Reference to consumed flag (not modified)</param>
+        private void OnChatMessageReceived(TorchChatMessage msg, ref bool consumed)
+        {
+            try
+            {
+                // Only process messages from actual players (with valid SteamID)
+                if (msg.AuthorSteamId.HasValue && msg.AuthorSteamId.Value != 0)
+                {
+                    _plugin.ProcessChatMessage(
+                        msg.AuthorSteamId.Value,  // ulong
+                        msg.Author,                // string
+                        msg.Message,               // string
+                        false                      // isSystemMessage
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error processing chat message: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Stores damage information for later use in death detection.
+        /// Called after damage is applied to any entity.
+        /// </summary>
+        /// <param name="target">The entity that received damage</param>
+        /// <param name="info">Damage information including attacker and damage type</param>
+        private void OnDamageApplied(object target, MyDamageInformation info)
+        {
+            try
+            {
+                if (target is IMyCharacter character)
+                {
+                    long characterId = character.EntityId;
+                    
+                    // Store the latest damage info for this character
+                    // This will be used in OnCharacterDied to determine cause of death
+                    _lastDamageInfo[characterId] = info;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in OnDamageApplied: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Called when a new entity is added to the game world.
+        /// Subscribes to character death events for player characters.
+        /// </summary>
+        /// <param name="entity">The entity being added</param>
+        private void OnEntityAdded(VRage.Game.Entity.MyEntity entity)
+        {
+            try
+            {
+                var character = entity as MyCharacter;
+                if (character != null)
+                {
+                    // Subscribe to character died event
+                    character.CharacterDied += OnCharacterDied;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in OnEntityAdded: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handles player connection events (currently not implemented).
+        /// </summary>
+        /// <param name="steamId">Steam ID of the connecting player</param>
+        /// <param name="playerName">Display name of the connecting player</param>
+        public void OnPlayerConnected(ulong steamId, string playerName)
+        {
+            try
+            {
+                LoggerUtil.LogInfo($"Player connected: {playerName} (SteamID: {steamId})");
+                
+                // Store player data
+                _databaseService.SavePlayer(new PlayerModel
+                {
+                    SteamID = (long)steamId,
+                    PlayerName = playerName,
+                    LastSeen = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in OnPlayerConnected: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handles player disconnection events (currently not implemented).
+        /// </summary>
+        /// <param name="steamId">Steam ID of the disconnecting player</param>
+        /// <param name="playerName">Display name of the disconnecting player</param>
+        public void OnPlayerDisconnected(ulong steamId, string playerName)
+        {
+            try
+            {
+                LoggerUtil.LogInfo($"Player disconnected: {playerName} (SteamID: {steamId})");
+                
+                // Update last seen timestamp
+                var player = _databaseService.GetPlayerBySteamID((long)steamId);
+                if (player != null)
+                {
+                    player.LastSeen = DateTime.UtcNow;
+                    _databaseService.SavePlayer(player);
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in OnPlayerDisconnected: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handles character death events.
+        /// Analyzes damage information to determine cause of death and killer.
+        /// </summary>
+        /// <param name="character">The character that died</param>
+        private void OnCharacterDied(IMyCharacter character)
+        {
+            try
+            {
+                if (character == null)
+                {
+                    LoggerUtil.LogWarning("OnCharacterDied called with null character");
+                    return;
+                }
+
+                // Get victim information
+                long victimIdentityId = MyAPIGateway.Players.TryGetIdentityId(character.ControlSteamId);
+                string victimName = character.DisplayName ?? "Unknown";
+                
+                // Initialize death data
+                long killerId = 0;
+                string killerName = "Unknown";
+                string weaponType = "Unknown";
+                
+                // Try to get damage information for this character
+                if (_lastDamageInfo.TryGetValue(character.EntityId, out MyDamageInformation damageInfo))
+                {
+                    killerId = damageInfo.AttackerId;
+                    weaponType = damageInfo.Type.String; // MyStringHash.String property
+                    
+                    // If there's an attacker, try to identify them
+                    if (killerId != 0)
+                    {
+                        var attackerEntity = MyAPIGateway.Entities.GetEntityById(killerId);
+                        
+                        if (attackerEntity is IMyCharacter attackerChar)
+                        {
+                            // Death caused by another player
+                            killerName = attackerChar.DisplayName ?? "Unknown";
+                            LoggerUtil.LogDebug($"PvP death: {victimName} killed by {killerName} using {weaponType}");
+                        }
+                        else if (attackerEntity != null)
+                        {
+                            // Death caused by a grid or other entity
+                            killerName = attackerEntity.DisplayName ?? attackerEntity.GetType().Name;
+                            LoggerUtil.LogDebug($"Grid/Entity death: {victimName} killed by {killerName}");
+                        }
+                    }
+                    else
+                    {
+                        // No attacker - likely environmental death
+                        LoggerUtil.LogDebug($"Environmental death: {victimName} - {weaponType}");
+                    }
+                    
+                    // Clean up damage info for this character
+                    _lastDamageInfo.Remove(character.EntityId);
+                }
+                else
+                {
+                    LoggerUtil.LogWarning($"No damage info found for character {victimName} (EntityId: {character.EntityId})");
+                }
+                
+                // Get character position for location tracking
+                var position = character.GetPosition();
+                string location = $"X:{(int)position.X} Y:{(int)position.Y} Z:{(int)position.Z}";
+                
+                // Log the death through DeathLogService
+                _deathLogService.LogDeath(
+                    victimIdentityId,
+                    victimName,
+                    killerName,
+                    weaponType,
+                    killerId,
+                    location
+                );
+                
+                LoggerUtil.LogInfo($"Death logged: {victimName} | Killer: {killerName} | Weapon: {weaponType}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in OnCharacterDied: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Gets the current online player count.
+        /// </summary>
+        /// <returns>Number of online players</returns>
+        public int GetOnlinePlayerCount()
+        {
+            try
+            {
+                if (MySession.Static?.Players == null)
+                    return 0;
+
+                return MySession.Static.Players.GetOnlinePlayers().Count;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error getting online player count: {ex.Message}");
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Gets all currently online players.
+        /// </summary>
+        /// <returns>List of online player models</returns>
+        public List<PlayerModel> GetOnlinePlayers()
+        {
+            var players = new List<PlayerModel>();
+
+            try
+            {
+                if (MySession.Static?.Players == null)
+                    return players;
+
+                var onlinePlayers = MySession.Static.Players.GetOnlinePlayers();
+                
+                foreach (var player in onlinePlayers)
+                {
+                    try
+                    {
+                        ulong steamId = player.SteamUserId;
+                        if (steamId == 0) continue;
+
+                        players.Add(new PlayerModel
+                        {
+                            SteamID = (long)steamId,
+                            PlayerName = player.DisplayName ?? "Unknown",
+                            LastSeen = DateTime.UtcNow
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"Error processing player: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error getting online players: {ex.Message}");
+            }
+
+            return players;
         }
     }
 }
