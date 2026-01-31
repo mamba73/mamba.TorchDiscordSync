@@ -2,16 +2,21 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.World;
 using Sandbox.ModAPI;
-using Torch.API;
+// using Torch.API;
+using Torch;
+using Torch.API.Managers;
 using Torch.Managers.ChatManager;
+using VRage.Game;
 using VRage.Game.ModAPI;
-using VRage.Game.ModAPI.Ingame;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
+using mamba.TorchDiscordSync.Plugin;
+using mamba.TorchDiscordSync;
 
 namespace mamba.TorchDiscordSync.Services
 {
@@ -21,8 +26,10 @@ namespace mamba.TorchDiscordSync.Services
     /// </summary>
     public class PlayerTrackingService
     {
-        private readonly DatabaseService _databaseService;
-        private readonly DeathLogService _deathLogService;
+        private readonly EventLoggingService _eventLog;
+        // private readonly ITorchBase _torch;
+        private readonly TorchBase _torch;
+        private readonly DeathLogService _deathLog;
         private readonly MambaTorchDiscordSyncPlugin _plugin;
         private readonly Dictionary<long, MyDamageInformation> _lastDamageInfo;
         private bool _isInitialized = false;
@@ -30,16 +37,19 @@ namespace mamba.TorchDiscordSync.Services
         /// <summary>
         /// Initializes a new instance of the PlayerTrackingService.
         /// </summary>
-        /// <param name="databaseService">Database service for storing player data</param>
-        /// <param name="deathLogService">Death log service for analyzing death types</param>
+        /// <param name="eventLog">Event logging service</param>
+        /// <param name="torch">Torch base instance</param>
+        /// <param name="deathLog">Death log service for analyzing death types</param>
         /// <param name="plugin">Main plugin instance for chat message forwarding</param>
         public PlayerTrackingService(
-            DatabaseService databaseService, 
-            DeathLogService deathLogService,
+            EventLoggingService eventLog,
+            TorchBase torch,
+            DeathLogService deathLog,
             MambaTorchDiscordSyncPlugin plugin)
         {
-            _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
-            _deathLogService = deathLogService ?? throw new ArgumentNullException(nameof(deathLogService));
+            _eventLog = eventLog ?? throw new ArgumentNullException(nameof(eventLog));
+            _torch = torch ?? throw new ArgumentNullException(nameof(torch));
+            _deathLog = deathLog ?? throw new ArgumentNullException(nameof(deathLog));
             _plugin = plugin ?? throw new ArgumentNullException(nameof(plugin));
             _lastDamageInfo = new Dictionary<long, MyDamageInformation>();
         }
@@ -60,7 +70,7 @@ namespace mamba.TorchDiscordSync.Services
             {
                 // Hook character death event
                 MyEntities.OnEntityAdd += OnEntityAdded;
-                
+
                 // Hook damage system for death detection
                 if (MyAPIGateway.Session?.DamageSystem != null)
                 {
@@ -152,10 +162,9 @@ namespace mamba.TorchDiscordSync.Services
                 if (msg.AuthorSteamId.HasValue && msg.AuthorSteamId.Value != 0)
                 {
                     _plugin.ProcessChatMessage(
-                        msg.AuthorSteamId.Value,  // ulong
-                        msg.Author,                // string
-                        msg.Message,               // string
-                        false                      // isSystemMessage
+                        msg.Message,      // string message
+                        msg.Author,       // string playerName  
+                        "Global"          // string channel
                     );
                 }
             }
@@ -178,7 +187,7 @@ namespace mamba.TorchDiscordSync.Services
                 if (target is IMyCharacter character)
                 {
                     long characterId = character.EntityId;
-                    
+
                     // Store the latest damage info for this character
                     // This will be used in OnCharacterDied to determine cause of death
                     _lastDamageInfo[characterId] = info;
@@ -213,56 +222,6 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Handles player connection events (currently not implemented).
-        /// </summary>
-        /// <param name="steamId">Steam ID of the connecting player</param>
-        /// <param name="playerName">Display name of the connecting player</param>
-        public void OnPlayerConnected(ulong steamId, string playerName)
-        {
-            try
-            {
-                LoggerUtil.LogInfo($"Player connected: {playerName} (SteamID: {steamId})");
-                
-                // Store player data
-                _databaseService.SavePlayer(new PlayerModel
-                {
-                    SteamID = (long)steamId,
-                    PlayerName = playerName,
-                    LastSeen = DateTime.UtcNow
-                });
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error in OnPlayerConnected: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Handles player disconnection events (currently not implemented).
-        /// </summary>
-        /// <param name="steamId">Steam ID of the disconnecting player</param>
-        /// <param name="playerName">Display name of the disconnecting player</param>
-        public void OnPlayerDisconnected(ulong steamId, string playerName)
-        {
-            try
-            {
-                LoggerUtil.LogInfo($"Player disconnected: {playerName} (SteamID: {steamId})");
-                
-                // Update last seen timestamp
-                var player = _databaseService.GetPlayerBySteamID((long)steamId);
-                if (player != null)
-                {
-                    player.LastSeen = DateTime.UtcNow;
-                    _databaseService.SavePlayer(player);
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error in OnPlayerDisconnected: {ex.Message}");
-            }
-        }
-
-        /// <summary>
         /// Handles character death events.
         /// Analyzes damage information to determine cause of death and killer.
         /// </summary>
@@ -278,25 +237,38 @@ namespace mamba.TorchDiscordSync.Services
                 }
 
                 // Get victim information
-                long victimIdentityId = MyAPIGateway.Players.TryGetIdentityId(character.ControlSteamId);
+                // long victimIdentityId = character.GetPlayerIdentityId();
+                var myChar = character as MyCharacter;
+                if (myChar == null)
+                    return;
+
+                long victimIdentityId = myChar.ControllerInfo?.ControllingIdentityId ?? 0;
+
+                if (victimIdentityId == 0)
+                {
+                    LoggerUtil.LogWarning("Cannot get player identity from character");
+                    return;
+                }
+
+                ulong victimSteamId = MyAPIGateway.Players.TryGetSteamId(victimIdentityId);
                 string victimName = character.DisplayName ?? "Unknown";
-                
+
                 // Initialize death data
                 long killerId = 0;
                 string killerName = "Unknown";
                 string weaponType = "Unknown";
-                
+
                 // Try to get damage information for this character
                 if (_lastDamageInfo.TryGetValue(character.EntityId, out MyDamageInformation damageInfo))
                 {
                     killerId = damageInfo.AttackerId;
                     weaponType = damageInfo.Type.String; // MyStringHash.String property
-                    
+
                     // If there's an attacker, try to identify them
                     if (killerId != 0)
                     {
                         var attackerEntity = MyAPIGateway.Entities.GetEntityById(killerId);
-                        
+
                         if (attackerEntity is IMyCharacter attackerChar)
                         {
                             // Death caused by another player
@@ -315,7 +287,7 @@ namespace mamba.TorchDiscordSync.Services
                         // No attacker - likely environmental death
                         LoggerUtil.LogDebug($"Environmental death: {victimName} - {weaponType}");
                     }
-                    
+
                     // Clean up damage info for this character
                     _lastDamageInfo.Remove(character.EntityId);
                 }
@@ -323,21 +295,21 @@ namespace mamba.TorchDiscordSync.Services
                 {
                     LoggerUtil.LogWarning($"No damage info found for character {victimName} (EntityId: {character.EntityId})");
                 }
-                
+
                 // Get character position for location tracking
                 var position = character.GetPosition();
                 string location = $"X:{(int)position.X} Y:{(int)position.Y} Z:{(int)position.Z}";
-                
+
                 // Log the death through DeathLogService
-                _deathLogService.LogDeath(
-                    victimIdentityId,
-                    victimName,
-                    killerName,
-                    weaponType,
-                    killerId,
-                    location
+                _ = _deathLog.LogPlayerDeathAsync(
+                    killerName,                    // 1. string – killer
+                    victimName,                    // 2. string – žrtva
+                    weaponType,                    // 3. string – oružje
+                    killerId,                      // 4. long   – SteamID ubojice
+                    victimIdentityId,              // 5. long   – IdentityID žrtve (NE ToString()!)
+                    location                       // 6. string – lokacija
                 );
-                
+
                 LoggerUtil.LogInfo($"Death logged: {victimName} | Killer: {killerName} | Weapon: {weaponType}");
             }
             catch (Exception ex)
@@ -364,49 +336,6 @@ namespace mamba.TorchDiscordSync.Services
                 LoggerUtil.LogError($"Error getting online player count: {ex.Message}");
                 return 0;
             }
-        }
-
-        /// <summary>
-        /// Gets all currently online players.
-        /// </summary>
-        /// <returns>List of online player models</returns>
-        public List<PlayerModel> GetOnlinePlayers()
-        {
-            var players = new List<PlayerModel>();
-
-            try
-            {
-                if (MySession.Static?.Players == null)
-                    return players;
-
-                var onlinePlayers = MySession.Static.Players.GetOnlinePlayers();
-                
-                foreach (var player in onlinePlayers)
-                {
-                    try
-                    {
-                        ulong steamId = player.SteamUserId;
-                        if (steamId == 0) continue;
-
-                        players.Add(new PlayerModel
-                        {
-                            SteamID = (long)steamId,
-                            PlayerName = player.DisplayName ?? "Unknown",
-                            LastSeen = DateTime.UtcNow
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerUtil.LogError($"Error processing player: {ex.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error getting online players: {ex.Message}");
-            }
-
-            return players;
         }
     }
 }

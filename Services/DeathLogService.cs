@@ -1,6 +1,4 @@
 // Services/DeathLogService.cs
-// FINAL VERSION - Works with extended DatabaseService signature
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,17 +10,20 @@ using mamba.TorchDiscordSync.Utils;
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
-    /// Service for logging and analyzing player deaths
-    /// Compatible with extended DatabaseService.LogDeath signature
+    /// Service responsible for tracking, logging, and analyzing player death events.
+    /// Handles in-memory history, database persistence, and Discord notifications.
     /// </summary>
     public class DeathLogService
     {
         private readonly DatabaseService _db;
         private readonly EventLoggingService _eventLog;
         private readonly DeathMessagesConfig _deathMessages;
-        
-        // Death history tracking
-        private Dictionary<string, List<DeathHistoryModel>> _playerDeathHistory = 
+
+        /// <summary>
+        /// In-memory cache for player death history to determine kill streaks and retaliation.
+        /// Key: Victim Name, Value: List of death records.
+        /// </summary>
+        private readonly Dictionary<string, List<DeathHistoryModel>> _playerDeathHistory =
             new Dictionary<string, List<DeathHistoryModel>>();
 
         public DeathLogService(DatabaseService db, EventLoggingService eventLog)
@@ -30,13 +31,13 @@ namespace mamba.TorchDiscordSync.Services
             _db = db;
             _eventLog = eventLog;
             _deathMessages = DeathMessagesConfig.Load();
-            
-            LoggerUtil.LogDebug("DeathLogService initialized");
+
+            LoggerUtil.LogDebug("DeathLogService initialized and configuration loaded.");
         }
 
         /// <summary>
-        /// Main entry point: Log a player death
-        /// Calls the extended DatabaseService signature with all parameters
+        /// Main entry point: Processes a player death event.
+        /// Orchestrates database logging, Discord messaging, and local history tracking.
         /// </summary>
         public async Task LogPlayerDeathAsync(
             string killerName,
@@ -48,43 +49,40 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                LoggerUtil.LogInfo($"[DEATH] {killerName} → {victimName} ({weaponType})");
+                LoggerUtil.LogInfo($"[DEATH EVENT] {killerName} killed {victimName} using {weaponType} at {location}");
 
-                // Ensure victim exists in history
+                // Ensure history list exists for the victim
                 if (!_playerDeathHistory.ContainsKey(victimName))
                 {
                     _playerDeathHistory[victimName] = new List<DeathHistoryModel>();
                 }
 
-                // Determine death type
+                // Identify the nature of death (Suicide, PvP, First Blood, etc.)
                 DeathTypeEnum deathType = DetermineDeathType(killerName, victimName);
 
-                // Log to database with all parameters
+                // 1. Persistence: Log to Database
                 if (_db != null)
                 {
                     try
                     {
-                        // Use extended signature: LogDeath(killer, victim, deathType, weapon, location)
+                        // Passing deathType as string for DB compatibility
                         _db.LogDeath(killerId, victimId, deathType.ToString(), weaponType, location);
-                        LoggerUtil.LogDebug("Death logged to database");
+                        LoggerUtil.LogDebug("Death record successfully saved to database.");
                     }
                     catch (Exception dbEx)
                     {
                         LoggerUtil.LogWarning($"Database logging failed: {dbEx.Message}");
-                        LoggerUtil.LogDebug($"Ensure DatabaseService.LogDeath has signature: LogDeath(long, long, string, string, string)");
                     }
                 }
 
-                // Generate Discord message
+                // 2. Notification: Generate and send Discord message
                 string discordMessage = GenerateDeathMessage(killerName, victimName, weaponType, deathType, location);
-
-                // Log to Discord
                 if (_eventLog != null)
                 {
                     await _eventLog.LogDeathAsync(discordMessage);
                 }
 
-                // Add to local history
+                // 3. Tracking: Record in local history using Reflection for flexibility with Model changes
                 try
                 {
                     var deathRecord = new DeathHistoryModel();
@@ -93,309 +91,165 @@ namespace mamba.TorchDiscordSync.Services
                     SetPropertyIfExists(deathRecord, "KillerName", killerName);
                     SetPropertyIfExists(deathRecord, "KillerSteamId", killerId.ToString());
                     SetPropertyIfExists(deathRecord, "Weapon", weaponType);
-                    SetPropertyIfExists(deathRecord, "WeaponType", weaponType);
+                    SetPropertyIfExists(deathRecord, "WeaponType", weaponType); // Backup for different model versions
                     SetPropertyIfExists(deathRecord, "Location", location);
                     SetPropertyIfExists(deathRecord, "Timestamp", DateTime.UtcNow);
                     SetPropertyIfExists(deathRecord, "DeathType", deathType.ToString());
 
                     _playerDeathHistory[victimName].Add(deathRecord);
                 }
-                catch (Exception ex)
+                catch (Exception historyEx)
                 {
-                    LoggerUtil.LogDebug($"Error adding to local history: {ex.Message}");
+                    LoggerUtil.LogDebug($"Failed to update local history: {historyEx.Message}");
                 }
 
-                LoggerUtil.LogSuccess($"Death logged: {victimName} ({deathType})");
+                LoggerUtil.LogSuccess($"Death processing complete for {victimName}");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error logging death: {ex.Message}");
+                LoggerUtil.LogError($"Critical error in LogPlayerDeathAsync: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Set property value by name (safe reflection)
-        /// </summary>
-        private void SetPropertyIfExists(object obj, string propertyName, object value)
-        {
-            try
-            {
-                var prop = obj.GetType().GetProperty(propertyName);
-                if (prop != null && prop.CanWrite)
-                {
-                    prop.SetValue(obj, value);
-                }
-            }
-            catch
-            {
-                // Silently ignore if property doesn't exist
-            }
-        }
-
-        /// <summary>
-        /// Determine death type based on killer/victim history
+        /// Logic to determine specific death categories based on player history.
         /// </summary>
         private DeathTypeEnum DetermineDeathType(string killerName, string victimName)
         {
+            if (string.Equals(killerName, victimName, StringComparison.OrdinalIgnoreCase))
+                return DeathTypeEnum.Suicide;
+
+            // Check if this is the first time the killer has gotten the victim
+            if (!HasPlayerEverKilledPlayer(victimName, killerName))
+                return DeathTypeEnum.FirstKill;
+
+            DateTime lastKillTime = GetLastKillTime(victimName, killerName);
+
+            // Retaliation within 1 hour
+            if (lastKillTime > DateTime.UtcNow.AddHours(-1))
+                return DeathTypeEnum.Retaliation;
+
+            // Long-term revenge within 24 hours
+            if (lastKillTime > DateTime.UtcNow.AddHours(-24))
+                return DeathTypeEnum.RetaliationOld;
+
+            return DeathTypeEnum.Accident;
+        }
+
+        /// <summary>
+        /// Formats the death message using templates from configuration.
+        /// </summary>
+        private string GenerateDeathMessage(string killer, string victim, string weapon, DeathTypeEnum type, string loc)
+        {
             try
             {
-                // Suicide
-                if (string.Equals(killerName, victimName, StringComparison.OrdinalIgnoreCase))
-                    return DeathTypeEnum.Suicide;
+                if (_deathMessages == null) return $"{killer} killed {victim}";
 
-                // First kill
-                if (!HasPlayerEverKilledPlayer(victimName, killerName))
-                    return DeathTypeEnum.FirstKill;
+                // Correcting the Enum-to-Config mapping
+                string template = _deathMessages.GetRandomMessage(type);
 
-                // Retaliation (< 1 hour)
-                DateTime lastKillTime = GetLastKillTime(victimName, killerName);
-                if (lastKillTime > DateTime.UtcNow.AddHours(-1))
-                    return DeathTypeEnum.Retaliation;
+                if (string.IsNullOrEmpty(template))
+                    return $"{killer} killed {victim} with {weapon}";
 
-                // Old retaliation (< 24 hours)
-                if (lastKillTime > DateTime.UtcNow.AddHours(-24))
-                    return DeathTypeEnum.RetaliationOld;
-
-                // Accident
-                return DeathTypeEnum.Accident;
+                // Replacing named placeholders from the XML config
+                return template
+                    .Replace("{victim}", victim)
+                    .Replace("{killer}", killer)
+                    .Replace("{weapon}", weapon)
+                    .Replace("{location}", loc);
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogDebug($"Error determining death type: {ex.Message}");
-                return DeathTypeEnum.Accident;
+                LoggerUtil.LogDebug($"Message generation error: {ex.Message}");
+                return $"{killer} killed {victim}";
             }
         }
 
-        /// <summary>
-        /// Check if victim ever killed killer
-        /// </summary>
-        private bool HasPlayerEverKilledPlayer(string victim, string killer)
-        {
-            try
-            {
-                if (!_playerDeathHistory.ContainsKey(killer))
-                    return false;
-
-                var killerDeaths = _playerDeathHistory[killer];
-                
-                return killerDeaths.Any(d => 
-                {
-                    try
-                    {
-                        var killerProp = d.GetType().GetProperty("KillerName");
-                        if (killerProp?.GetValue(d) is string killerVal)
-                        {
-                            return string.Equals(killerVal, victim, StringComparison.OrdinalIgnoreCase);
-                        }
-                        return false;
-                    }
-                    catch { return false; }
-                });
-            }
-            catch { return false; }
-        }
+        #region Statistics and Leaderboards
 
         /// <summary>
-        /// Get last time victim killed killer
-        /// </summary>
-        private DateTime GetLastKillTime(string victim, string killer)
-        {
-            try
-            {
-                if (!_playerDeathHistory.ContainsKey(killer))
-                    return DateTime.MinValue;
-
-                var lastKill = _playerDeathHistory[killer]
-                    .Where(d => 
-                    {
-                        try
-                        {
-                            var killerProp = d.GetType().GetProperty("KillerName");
-                            if (killerProp?.GetValue(d) is string killerVal)
-                                return string.Equals(killerVal, victim, StringComparison.OrdinalIgnoreCase);
-                            return false;
-                        }
-                        catch { return false; }
-                    })
-                    .OrderByDescending(d =>
-                    {
-                        try
-                        {
-                            var tsProp = d.GetType().GetProperty("Timestamp");
-                            if (tsProp?.GetValue(d) is DateTime ts)
-                                return ts;
-                            return DateTime.MinValue;
-                        }
-                        catch { return DateTime.MinValue; }
-                    })
-                    .FirstOrDefault();
-
-                if (lastKill == null) return DateTime.MinValue;
-
-                var tsProp2 = lastKill.GetType().GetProperty("Timestamp");
-                if (tsProp2?.GetValue(lastKill) is DateTime ts2)
-                    return ts2;
-
-                return DateTime.MinValue;
-            }
-            catch { return DateTime.MinValue; }
-        }
-
-        /// <summary>
-        /// Generate Discord message from template
-        /// </summary>
-        private string GenerateDeathMessage(
-            string killerName,
-            string victimName,
-            string weaponType,
-            DeathTypeEnum deathType,
-            string location)
-        {
-            try
-            {
-                if (_deathMessages == null)
-                    return $"{killerName} killed {victimName}";
-
-                string template = "";
-
-                switch (deathType)
-                {
-                    case DeathTypeEnum.Suicide:
-                        template = _deathMessages.GetRandomMessage("Suicide");
-                        return string.Format(template, victimName);
-
-                    case DeathTypeEnum.FirstKill:
-                        template = _deathMessages.GetRandomMessage("FirstKill");
-                        return string.Format(template, killerName, victimName, weaponType);
-
-                    case DeathTypeEnum.Retaliation:
-                        template = _deathMessages.GetRandomMessage("Retaliate");
-                        return string.Format(template, killerName, victimName);
-
-                    case DeathTypeEnum.RetaliationOld:
-                        template = _deathMessages.GetRandomMessage("RetaliateOld");
-                        return string.Format(template, killerName, victimName);
-
-                    case DeathTypeEnum.Accident:
-                        template = _deathMessages.GetRandomMessage("Accident");
-                        return string.Format(template, victimName);
-
-                    default:
-                        return $"{killerName} killed {victimName}";
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogDebug($"Error generating message: {ex.Message}");
-                return $"{killerName} killed {victimName}";
-            }
-        }
-
-        /// <summary>
-        /// Get player death history
-        /// </summary>
-        public List<DeathHistoryModel> GetPlayerDeaths(string playerName)
-        {
-            try
-            {
-                if (_playerDeathHistory.TryGetValue(playerName, out var deaths))
-                    return new List<DeathHistoryModel>(deaths);
-                return new List<DeathHistoryModel>();
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogDebug($"Error getting deaths: {ex.Message}");
-                return new List<DeathHistoryModel>();
-            }
-        }
-
-        /// <summary>
-        /// Get player stats (K/D ratio)
+        /// Calculates Kills, Deaths, and KDR for a specific player.
         /// </summary>
         public (int Deaths, int Kills, float KDRatio) GetPlayerStats(string playerName)
         {
-            try
+            int deaths = _playerDeathHistory.TryGetValue(playerName, out var pDeaths) ? pDeaths.Count : 0;
+            int kills = 0;
+
+            foreach (var history in _playerDeathHistory.Values)
             {
-                int deaths = 0;
-                int kills = 0;
-
-                if (_playerDeathHistory.TryGetValue(playerName, out var playerDeaths))
-                {
-                    deaths = playerDeaths.Count;
-
-                    foreach (var deathList in _playerDeathHistory.Values)
-                    {
-                        kills += deathList.Count(d =>
-                        {
-                            try
-                            {
-                                var killerProp = d.GetType().GetProperty("KillerName");
-                                if (killerProp?.GetValue(d) is string killerVal)
-                                    return string.Equals(killerVal, playerName, StringComparison.OrdinalIgnoreCase);
-                                return false;
-                            }
-                            catch { return false; }
-                        });
-                    }
-                }
-
-                float kd = deaths > 0 ? (float)kills / deaths : kills;
-                return (deaths, kills, kd);
+                kills += history.Count(d => IsPropertyEqual(d, "KillerName", playerName));
             }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogDebug($"Error getting stats: {ex.Message}");
-                return (0, 0, 0);
-            }
+
+            float kd = deaths > 0 ? (float)kills / deaths : kills;
+            return (deaths, kills, kd);
         }
 
         /// <summary>
-        /// Get top killers leaderboard
+        /// Generates a list of top killers from current session history.
         /// </summary>
         public List<(string PlayerName, int Kills)> GetTopKillers(int limit = 10)
         {
-            try
-            {
-                var killerStats = new Dictionary<string, int>();
+            var stats = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-                foreach (var deathList in _playerDeathHistory.Values)
+            foreach (var history in _playerDeathHistory.Values)
+            {
+                foreach (var death in history)
                 {
-                    foreach (var death in deathList)
+                    string killer = GetProperty(death, "KillerName") as string;
+                    if (!string.IsNullOrEmpty(killer))
                     {
-                        try
-                        {
-                            var killerProp = death.GetType().GetProperty("KillerName");
-                            if (killerProp?.GetValue(death) is string killerName && !string.IsNullOrEmpty(killerName))
-                            {
-                                if (!killerStats.ContainsKey(killerName))
-                                    killerStats[killerName] = 0;
-                                killerStats[killerName]++;
-                            }
-                        }
-                        catch { }
+                        if (!stats.ContainsKey(killer)) stats[killer] = 0;
+                        stats[killer]++;
                     }
                 }
+            }
 
-                return killerStats
-                    .OrderByDescending(x => x.Value)
-                    .Take(limit)
-                    .Select(x => (x.Key, x.Value))
-                    .ToList();
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogDebug($"Error getting leaderboard: {ex.Message}");
-                return new List<(string, int)>();
-            }
+            return stats.OrderByDescending(x => x.Value).Take(limit).Select(x => (x.Key, x.Value)).ToList();
         }
+
+        #endregion
+
+        #region Reflection Helpers
 
         /// <summary>
-        /// Clear history
+        /// Safely sets a property value on a model if it exists.
         /// </summary>
-        public void ClearHistory()
+        private void SetPropertyIfExists(object obj, string propertyName, object value)
         {
-            _playerDeathHistory.Clear();
-            LoggerUtil.LogInfo("Death history cleared");
+            var prop = obj.GetType().GetProperty(propertyName);
+            if (prop != null && prop.CanWrite) prop.SetValue(obj, value);
         }
+
+        private object GetProperty(object obj, string propName)
+        {
+            return obj.GetType().GetProperty(propName)?.GetValue(obj);
+        }
+
+        private bool IsPropertyEqual(object obj, string propName, string value)
+        {
+            return string.Equals(GetProperty(obj, propName) as string, value, StringComparison.OrdinalIgnoreCase);
+        }
+
+        #endregion
+
+        private bool HasPlayerEverKilledPlayer(string victim, string killer)
+        {
+            if (!_playerDeathHistory.ContainsKey(killer)) return false;
+            return _playerDeathHistory[killer].Any(d => IsPropertyEqual(d, "KillerName", victim));
+        }
+
+        private DateTime GetLastKillTime(string victim, string killer)
+        {
+            if (!_playerDeathHistory.ContainsKey(killer)) return DateTime.MinValue;
+
+            var lastKill = _playerDeathHistory[killer]
+                .Where(d => IsPropertyEqual(d, "KillerName", victim))
+                .OrderByDescending(d => GetProperty(d, "Timestamp") as DateTime? ?? DateTime.MinValue)
+                .FirstOrDefault();
+
+            return lastKill != null ? (GetProperty(lastKill, "Timestamp") as DateTime? ?? DateTime.MinValue) : DateTime.MinValue;
+        }
+
+        public void ClearHistory() => _playerDeathHistory.Clear();
     }
 }

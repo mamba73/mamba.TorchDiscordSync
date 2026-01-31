@@ -39,16 +39,13 @@ namespace mamba.TorchDiscordSync.Plugin
         private VerificationCommandHandler _verificationCommandHandler;
         private SyncOrchestrator _orchestrator;
         private PlayerTrackingService _playerTracking; // EXISTS
-
         // NEW: Handlers (renamed to avoid conflicts)
         private CommandProcessor _commandProcessor;
         private EventManager _eventManager;
         private ChatModerator _chatModerator;
-
         // Configurations
         private MainConfig _config;
         private DiscordBotConfig _discordBotConfig;
-
         // Timers and state
         private Timer _syncTimer;
         private ITorchSession _currentSession;
@@ -116,7 +113,19 @@ namespace mamba.TorchDiscordSync.Plugin
                 _deathLog = new DeathLogService(_db, _eventLog);
 
                 // Initialize player tracking service - UPDATED CONSTRUCTOR WITH DeathLogService
-                _playerTracking = new PlayerTrackingService(_eventLog, torch, _deathLog);
+                // _playerTracking = new PlayerTrackingService(_eventLog, torch, _deathLog, this);
+                var torchBase = torch as Torch.TorchBase;
+                if (torchBase == null)
+                {
+                    LoggerUtil.LogError("Torch instance nije TorchBase! Kompatibilnost s ovom verzijom Torch nije osigurana.");
+                    // Možeš ovdje throwati ili samo preskočiti inicijalizaciju player trackinga
+                    // Za sada samo logiramo i nastavljamo s null-om ili defaultom
+                    _playerTracking = null; // ili new PlayerTrackingService(...) bez torch-a ako postoji overload
+                    return; // ili continue, ovisi o logici
+                }
+
+                _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog, this);
+
 
                 // Initialize faction sync service
                 _factionSync = new FactionSyncService(_db, _discordWrapper);
@@ -147,7 +156,6 @@ namespace mamba.TorchDiscordSync.Plugin
                                 msg.Author.Username,
                                 msg.Content
                             );
-
                             LoggerUtil.LogDebug(
                                 $"[DISCORD→GAME] Forwarded message from {msg.Author.Username}"
                             );
@@ -190,7 +198,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 // Hook Discord bot verification event
                 if (_discordBot != null)
                 {
-                    _discordBot.OnVerificationAttempt += delegate(
+                    _discordBot.OnVerificationAttempt += delegate (
                         string code,
                         ulong discordID,
                         string discordUsername
@@ -239,6 +247,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 _syncTimer = new Timer(syncInterval);
                 _syncTimer.Elapsed += OnSyncTimerElapsed;
                 _syncTimer.AutoReset = true;
+
                 _isInitialized = true;
                 PrintBanner("INITIALIZATION COMPLETE");
 
@@ -345,7 +354,6 @@ namespace mamba.TorchDiscordSync.Plugin
                     {
                         // FIXED: Safe conversion bool? → bool (null-coalescing)
                         bool monitoringEnabled = _config?.Monitoring?.Enabled == true;
-
                         if (monitoringEnabled)
                         {
                             Task.Run(async () =>
@@ -372,7 +380,6 @@ namespace mamba.TorchDiscordSync.Plugin
                     {
                         // FIXED: Same safe conversion bool? → bool
                         bool monitoringEnabled = _config?.Monitoring?.Enabled == true;
-
                         if (monitoringEnabled)
                         {
                             Task.Run(async () =>
@@ -396,6 +403,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     return;
                 _serverStartupLogged = true;
                 LoggerUtil.LogInfo("[STARTUP] Initializing server sync...");
+
                 // Get current SimSpeed from session - SAFER VERSION
                 float currentSimSpeed = 1.0f;
                 try
@@ -409,8 +417,10 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogError("Error getting SimSpeed: " + ex.Message);
                     currentSimSpeed = 1.0f;
                 }
+
                 // Check server status
                 _orchestrator.CheckServerStatusAsync(currentSimSpeed).Wait();
+
                 // Load factions from save - KEEP EXISTING LOGIC FOR NOW
                 var factions = LoadFactionsFromSession(session);
                 if (factions.Count > 0)
@@ -422,6 +432,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 {
                     LoggerUtil.LogWarning("[STARTUP] No player factions found (tag length != 3)");
                 }
+
                 // Start periodic sync timer
                 if (_syncTimer != null && !_syncTimer.Enabled)
                 {
@@ -432,6 +443,7 @@ namespace mamba.TorchDiscordSync.Plugin
                             + "s)"
                     );
                 }
+
                 LoggerUtil.LogSuccess("[STARTUP] Server startup sync complete!");
             }
             catch (Exception ex)
@@ -476,14 +488,14 @@ namespace mamba.TorchDiscordSync.Plugin
             // Forward system messages to player tracking (join/leave/death fallback)
             if (channel == "System" && _playerTracking != null)
             {
-                _playerTracking.ProcessSystemChatMessage(message);
+                // _playerTracking.ProcessSystemChatMessage(message);
+                ProcessChatMessage(message, author, "System");
             }
 
             // Normal messages (global) → send to Discord
             if (_chatSync != null && _config?.Chat != null)
             {
                 bool serverToDiscordEnabled = _config.Chat.ServerToDiscord;
-
                 LoggerUtil.LogDebug(
                     $"Chat sync check - ServerToDiscord: {serverToDiscordEnabled}, channel: {channel}, message: {message}"
                 );
@@ -497,7 +509,6 @@ namespace mamba.TorchDiscordSync.Plugin
                     }
 
                     LoggerUtil.LogDebug($"Sending game chat to Discord: {author}: {message}");
-
                     string formatted = _config
                         .Chat.GameToDiscordFormat.Replace("{p}", author)
                         .Replace("{msg}", message)
@@ -528,6 +539,7 @@ namespace mamba.TorchDiscordSync.Plugin
             {
                 if (session == null)
                     return factions;
+
                 // TODO: Replace with real data loading
                 var testFaction = new FactionModel();
                 testFaction.Tag = "ABC";
@@ -553,18 +565,21 @@ namespace mamba.TorchDiscordSync.Plugin
             {
                 _playerTracking.Dispose();
             }
+
             // Stop timers
             if (_syncTimer != null)
             {
                 _syncTimer.Stop();
                 _syncTimer.Dispose();
             }
+
             // Detach Discord bot events
             if (_discordBot != null)
             {
                 _discordBot.OnVerificationAttempt -= null;
                 // No need to detach OnMessageReceivedEvent - GC will clean it
             }
+
             base.Dispose();
         }
     }
