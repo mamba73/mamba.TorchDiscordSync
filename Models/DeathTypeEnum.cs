@@ -1,56 +1,68 @@
 // Models/DeathTypeEnum.cs
 using System;
-using System.Xml.Serialization;
 
 namespace mamba.TorchDiscordSync.Models
 {
     /// <summary>
-    /// Enumeration of death types for categorization and message templates
-    /// Used by DeathLogService to determine which message template to use
+    /// Enumeration of different death types for categorizing player deaths.
+    /// Used by DeathLogService to select appropriate death messages.
     /// </summary>
     [Serializable]
-    [XmlType("DeathType")]
     public enum DeathTypeEnum
     {
         /// <summary>
-        /// Player killed themselves (no attacker or attacker is victim)
-        /// Template: "{0} forgot they needed oxygen."
+        /// Unknown or unclassified death type
         /// </summary>
-        [XmlEnum("Suicide")]
-        Suicide = 0,
+        Unknown = 0,
 
         /// <summary>
-        /// Player's first kill (victim never killed killer before)
-        /// Template: "{0} obliterated {1} with {2}."
+        /// Player died to their own actions or weapons
         /// </summary>
-        [XmlEnum("FirstKill")]
-        FirstKill = 1,
+        Suicide = 1,
 
         /// <summary>
-        /// Recent retaliation (victim killed killer within 1 hour)
-        /// Template: "{0} got their revenge on {1}."
+        /// First kill by this player against the victim
         /// </summary>
-        [XmlEnum("Retaliation")]
-        Retaliation = 2,
+        FirstKill = 2,
 
         /// <summary>
-        /// Old retaliation (victim killed killer between 1-24 hours ago)
-        /// Template: "{0} finally caught up with {1}."
+        /// Retaliation kill (victim killed the killer recently)
         /// </summary>
-        [XmlEnum("RetaliationOld")]
-        RetaliationOld = 3,
+        Retaliation = 3,
 
         /// <summary>
-        /// Accident or environmental death (no player involved)
-        /// Template: "{0} didn't expect gravity to be that strong."
+        /// Old retaliation kill (victim killed the killer, but not recently)
         /// </summary>
-        [XmlEnum("Accident")]
-        Accident = 4,
+        RetaliationOld = 4,
 
         /// <summary>
-        /// Unknown death type (fallback)
+        /// Accidental death (non-PvP, non-environmental)
         /// </summary>
-        [XmlEnum("Unknown")]
-        Unknown = 5
+        Accident = 5,
+
+        /// <summary>
+        /// Death caused by lack of oxygen
+        /// </summary>
+        Environment_Oxygen = 6,
+
+        /// <summary>
+        /// Death caused by pressure damage (depressurization)
+        /// </summary>
+        Environment_Pressure = 7,
+
+        /// <summary>
+        /// Death caused by collision or fall damage
+        /// </summary>
+        Environment_Collision = 8,
+
+        /// <summary>
+        /// Death caused by a grid (ship/station crushing)
+        /// </summary>
+        Grid = 9,
+
+        /// <summary>
+        /// Player vs Player combat death
+        /// </summary>
+        PvP = 10
     }
 }

@@ -3,128 +3,207 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
+using mamba.TorchDiscordSync.Models;
+using mamba.TorchDiscordSync.Utils;
 
 namespace mamba.TorchDiscordSync.Config
 {
-    [Serializable]
+    /// <summary>
+    /// Configuration for death message templates.
+    /// Contains randomized messages for different death types.
+    /// </summary>
     [XmlRoot("DeathMessages")]
     public class DeathMessagesConfig
     {
+        private static Random _random = new Random();
+
         [XmlArray("Suicide")]
         [XmlArrayItem("Message")]
-        public List<string> SuicideMessages { get; set; } = new List<string>();
+        public List<string> SuicideMessages { get; set; } = new List<string>
+        {
+            "{victim} committed suicide",
+            "{victim} chose the easy way out",
+            "{victim} decided to leave this world",
+            "{victim} embraced the void",
+            "{victim} pressed the big red button... on themselves",
+            "{victim} became a permanent part of the scenery"
+        };
+
+        [XmlArray("PvP")]
+        [XmlArrayItem("Message")]
+        public List<string> PvPMessages { get; set; } = new List<string>
+        {
+            "{killer} killed {victim} with {weapon}",
+            "{victim} was eliminated by {killer} using {weapon}",
+            "{killer} blasted {victim} into space dust with {weapon}",
+            "{killer} sent {victim} to the respawn screen with {weapon}",
+            "{victim} tried to parry {killer}'s {weapon} with their face",
+            "{killer} introduced {victim} to their little friend: {weapon}"
+        };
+
+        [XmlArray("Environment_Oxygen")]
+        [XmlArrayItem("Message")]
+        public List<string> EnvironmentOxygenMessages { get; set; } = new List<string>
+        {
+            "{victim} died from lack of oxygen",
+            "{victim} held their breath for too long in the vacuum",
+            "{victim} forgot to refill their oxygen tanks",
+            "{victim} realized too late that space is empty",
+            "{victim} tried to breathe the aesthetics, but needed oxygen",
+            "{victim} is now a very cold, very breathless popsicle"
+        };
+
+        [XmlArray("Environment_Pressure")]
+        [XmlArrayItem("Message")]
+        public List<string> EnvironmentPressureMessages { get; set; } = new List<string>
+        {
+            "{victim} died from environmental pressure",
+            "{victim} couldn't handle the pressure",
+            "{victim} was victimized by sudden depressurization",
+            "{victim} popped like a balloon",
+            "{victim}'s suit had a 'minor' leak",
+            "{victim} discovered that ears aren't supposed to do that"
+        };
+
+        [XmlArray("Environment_Collision")]
+        [XmlArrayItem("Message")]
+        public List<string> EnvironmentCollisionMessages { get; set; } = new List<string>
+        {
+            "{victim} hit something very fast",
+            "{victim} fell from a great height",
+            "{victim} died in a collision",
+            "{victim} slammed into an asteroid",
+            "{victim} forgot how brakes work",
+            "{victim} successfully turned into a pancake"
+        };
+
+        [XmlArray("Grid")]
+        [XmlArrayItem("Message")]
+        public List<string> GridMessages { get; set; } = new List<string>
+        {
+            "{victim} was run over by a grid",
+            "{victim} died in a collision with a ship",
+            "{victim} was crushed between grids",
+            "{victim} met the business end of a landing gear",
+            "Lord Clang claimed {victim} as a sacrifice",
+            "{victim} was personalized by a moving ship"
+        };
 
         [XmlArray("FirstKill")]
         [XmlArrayItem("Message")]
-        public List<string> FirstKillMessages { get; set; } = new List<string>();
+        public List<string> FirstKillMessages { get; set; } = new List<string>
+        {
+            "🩸 FIRST BLOOD! {killer} took their first victim - {victim}",
+            "⚔️ {killer} started a massacre with {victim}!",
+            "📢 Attention! {killer} has opened the hunting season on {victim}!",
+            "💀 The first sacrifice has been made: {victim} fell to {killer}!"
+        };
 
-        [XmlArray("Retaliate")]
+        [XmlArray("Retaliation")]
         [XmlArrayItem("Message")]
-        public List<string> RetaliateMessages { get; set; } = new List<string>();
-
-        [XmlArray("RetaliateOld")]
-        [XmlArrayItem("Message")]
-        public List<string> RetaliateOldMessages { get; set; } = new List<string>();
+        public List<string> RetaliationMessages { get; set; } = new List<string>
+        {
+            "💀 RETALIATION! {killer} got revenge on {victim}",
+            "⚡ {killer} strikes back against {victim}!",
+            "🔄 The tables have turned! {killer} just schooled {victim}",
+            "⚖️ Karma is a ship: {killer} just rammed justice into {victim}"
+        };
 
         [XmlArray("Accident")]
         [XmlArrayItem("Message")]
-        public List<string> AccidentMessages { get; set; } = new List<string>();
-
-        private static string ConfigPath
+        public List<string> AccidentMessages { get; set; } = new List<string>
         {
-            get
+            "{victim} died in an accident",
+            "{victim} is no more",
+            "{victim} met an unfortunate end",
+            "{victim} experienced a rapid unplanned disassembly",
+            "{victim} disconnected from life unexpectedly",
+            "Error 404: {victim}'s pulse not found"
+        };
+
+        public string GetRandomMessage(DeathTypeEnum deathType)
+        {
+            List<string> messages = GetMessagesForType(deathType);
+
+            if (messages == null || messages.Count == 0)
+                return "{victim} died"; // Fallback
+
+            int index = _random.Next(messages.Count);
+            return messages[index];
+        }
+
+        private List<string> GetMessagesForType(DeathTypeEnum deathType)
+        {
+            switch (deathType)
             {
-                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                var instanceDir = Path.Combine(baseDir, "Instance");
-                var mambaDir = Path.Combine(instanceDir, "mambaTorchDiscordSync");
-                return Path.Combine(mambaDir, "DeathMessages.xml");
+                case DeathTypeEnum.Suicide:
+                    return SuicideMessages;
+                case DeathTypeEnum.PvP:
+                    return PvPMessages;
+                case DeathTypeEnum.FirstKill:
+                    return FirstKillMessages;
+                case DeathTypeEnum.Retaliation:
+                case DeathTypeEnum.RetaliationOld:
+                    return RetaliationMessages;
+                case DeathTypeEnum.Grid:
+                    return GridMessages;
+                case DeathTypeEnum.Environment_Oxygen:
+                    return EnvironmentOxygenMessages;
+                case DeathTypeEnum.Environment_Pressure:
+                    return EnvironmentPressureMessages;
+                case DeathTypeEnum.Environment_Collision:
+                    return EnvironmentCollisionMessages;
+                case DeathTypeEnum.Accident:
+                case DeathTypeEnum.Unknown:
+                default:
+                    return AccidentMessages;
             }
         }
 
         public static DeathMessagesConfig Load()
         {
-            if (!File.Exists(ConfigPath))
+            string path = Path.Combine("Instance", "mambaTorchDiscordSync", "DeathMessages.xml");
+            try
             {
-                var defaultConfig = new DeathMessagesConfig
+                if (File.Exists(path))
                 {
-                    SuicideMessages = new List<string>
+                    XmlSerializer serializer = new XmlSerializer(typeof(DeathMessagesConfig));
+                    using (FileStream fs = new FileStream(path, FileMode.Open))
                     {
-                        "{0} forgot they needed oxygen.",
-                        "{0} achieved instant decompression.",
-                        "{0} discovered the vacuum's embrace.",
-                        "{0} took an unplanned spacewalk.",
-                        "{0} forgot to wear a helmet.",
-                        "{0} became one with the stars."
-                    },
-                    FirstKillMessages = new List<string>
-                    {
-                        "{0} obliterated {1} with their {2} on {3}.",
-                        "{1} didn't survive {0}'s {2}.",
-                        "{0} introduced {1} to the void using a {2}.",
-                        "{1} met their maker courtesy of {0}'s {2}.",
-                        "{0} sent {1} to respawn with a {2}."
-                    },
-                    RetaliateMessages = new List<string>
-                    {
-                        "{0} got their revenge on {1}.",
-                        "{1} paid the price for their actions against {0}.",
-                        "{0} settled the score with {1}.",
-                        "{1} should've seen {0}'s payback coming.",
-                        "{0} remembered what {1} did and responded accordingly."
-                    },
-                    RetaliateOldMessages = new List<string>
-                    {
-                        "{0} finally caught up with {1}.",
-                        "{1} never expected {0} to remember that old grudge.",
-                        "{0} plays the long game. {1} just learned that.",
-                        "{1} thought they were safe. {0} disagreed.",
-                        "Revenge served cold by {0} against {1}."
-                    },
-                    AccidentMessages = new List<string>
-                    {
-                        "{0} didn't expect gravity to be that strong.",
-                        "{0} underestimated the asteroid field.",
-                        "{0} forgot about the solar flare.",
-                        "{0} made friends with a radiation cloud.",
-                        "{0} collided with something larger on {1}.",
-                        "{0} forgot how to dock properly."
+                        return (DeathMessagesConfig)serializer.Deserialize(fs);
                     }
-                };
-
-                defaultConfig.Save();
-                return defaultConfig;
+                }
+                else
+                {
+                    var config = new DeathMessagesConfig();
+                    config.Save();
+                    return config;
+                }
             }
-
-            XmlSerializer serializer = new XmlSerializer(typeof(DeathMessagesConfig));
-            using (FileStream fs = new FileStream(ConfigPath, FileMode.Open))
+            catch (Exception ex)
             {
-                return (DeathMessagesConfig)serializer.Deserialize(fs);
+                LoggerUtil.LogError("Failed to load DeathMessages.xml: " + ex.Message);
+                return new DeathMessagesConfig();
             }
         }
 
         public void Save()
         {
-            XmlSerializer serializer = new XmlSerializer(typeof(DeathMessagesConfig));
-            using (FileStream fs = new FileStream(ConfigPath, FileMode.Create))
+            string path = Path.Combine("Instance", "mambaTorchDiscordSync", "DeathMessages.xml");
+            try
             {
-                serializer.Serialize(fs, this);
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                XmlSerializer serializer = new XmlSerializer(typeof(DeathMessagesConfig));
+                using (FileStream fs = new FileStream(path, FileMode.Create))
+                {
+                    serializer.Serialize(fs, this);
+                }
+                LoggerUtil.LogInfo("DeathMessages.xml saved");
             }
-        }
-
-        public string GetRandomMessage(string category)
-        {
-            List<string> messages = category switch
+            catch (Exception ex)
             {
-                "Suicide" => SuicideMessages,
-                "FirstKill" => FirstKillMessages,
-                "Retaliate" => RetaliateMessages,
-                "RetaliateOld" => RetaliateOldMessages,
-                "Accident" => AccidentMessages,
-                _ => new List<string>()
-            };
-
-            if (messages.Count == 0) return "{0} died.";
-            return messages[new Random().Next(messages.Count)];
+                LoggerUtil.LogError("Failed to save DeathMessages.xml: " + ex.Message);
+            }
         }
     }
 }
