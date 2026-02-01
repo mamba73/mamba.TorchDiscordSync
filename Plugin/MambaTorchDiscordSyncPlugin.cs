@@ -248,26 +248,28 @@ namespace mamba.TorchDiscordSync.Plugin
                 // This ensures ChatManagerServer and DamageSystem are available
                 LoggerUtil.LogInfo("Player tracking will initialize when session loads");
 
-                // Initialize sync timer
+                // Initialize sync timer (only if faction sync is enabled)
                 int syncInterval = 5000;
                 if (_config != null)
                 {
                     syncInterval = _config.SyncIntervalSeconds * 1000;
                 }
+
+                // Check if faction sync is enabled before creating timer
                 if (syncInterval <= 0 || (_config != null && _config.Faction != null && !_config.Faction.Enabled))
                 {
-                    LoggerUtil.LogInfo("Faction sync timer NOT started - disabled or interval is 0");
+                    LoggerUtil.LogInfo("Faction sync timer NOT created - disabled or interval is 0");
                 }
                 else
                 {
-                        _syncTimer = new Timer(syncInterval);
+                    _syncTimer = new Timer(syncInterval);
                     _syncTimer.Elapsed += OnSyncTimerElapsed;
                     _syncTimer.AutoReset = true;
-
-                    _isInitialized = true;
-                    PrintBanner("INITIALIZATION COMPLETE");
+                    LoggerUtil.LogInfo($"Faction sync timer created (interval: {syncInterval}ms)");
                 }
-                LoggerUtil.LogInfo("INITIALIZATION COMPLETE");
+
+                _isInitialized = true;
+                PrintBanner("INITIALIZATION COMPLETE");
 
                 // Save config after load (ensures any merged/default values are persisted)
                 if (_config != null)
@@ -309,29 +311,53 @@ namespace mamba.TorchDiscordSync.Plugin
         }
 
         /// <summary>
-        /// Processes chat messages for commands and regular chat sync
+        /// CRITICAL: Primary chat message handler - processes ALL chat messages
+        /// Priority order:
+        /// 1. Detect and handle /tds commands (with proper SteamID)
+        /// 2. Filter out faction chat (security - don't leak to Discord)
+        /// 3. Forward global chat to Discord sync
         /// </summary>
         private void OnChatMessageProcessing(TorchChatMessage msg, ref bool consumed)
         {
             try
             {
-                // if (msg == null || string.IsNullOrEmpty(msg.Message))
                 if (string.IsNullOrEmpty(msg.Message))
                     return;
 
-                // Check if message is a /tds command
-                if (msg.Message.StartsWith("/tds "))
+                string channelName = msg.Channel.ToString() ?? "Unknown";
+
+                LoggerUtil.LogDebug($"[CHAT] Channel: {channelName}, Message: {msg.Message}");
+
+                // PRIORITY 1: Check for /tds commands FIRST (before any filtering)
+                // This ensures commands work in ALL channels (Global and Faction)
+                if (msg.Message.StartsWith("/tds ") || msg.Message.Equals("/tds"))
                 {
                     if (msg.AuthorSteamId.HasValue)
                     {
+                        LoggerUtil.LogInfo($"[COMMAND] Detected: {msg.Message} from {msg.Author}");
                         HandleChatCommand(msg.Message, (long)msg.AuthorSteamId.Value, msg.Author);
                         consumed = true; // Prevent further processing
                     }
-                    return;
+                    else
+                    {
+                        LoggerUtil.LogWarning($"[COMMAND] No SteamID for command: {msg.Message}");
+                    }
+                    return; // CRITICAL: Stop processing - don't forward commands to Discord
                 }
 
-                // Forward regular chat to ProcessChatMessage for Discord sync
-                ProcessChatMessage(msg.Message, msg.Author, msg.Channel.ToString());
+                // PRIORITY 2: Filter out faction chat (security - don't leak to Discord)
+                if (channelName.StartsWith("Faction"))
+                {
+                    LoggerUtil.LogDebug("[CHAT] Skipping faction chat (not forwarded to Discord)");
+                    return; // Stop processing - faction chat stays private
+                }
+
+                // PRIORITY 3: Forward ONLY global chat to Discord sync
+                if (channelName == "Global" || channelName.StartsWith("Global"))
+                {
+                    LoggerUtil.LogDebug($"[CHAT] Forwarding global chat to Discord: {msg.Message}");
+                    ProcessChatMessage(msg.Message, msg.Author, "Global");
+                }
             }
             catch (Exception ex)
             {
@@ -519,7 +545,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogWarning("[STARTUP] No player factions found (tag length != 3)");
                 }
 
-                // Start periodic sync timer
+                // Start periodic sync timer (only if enabled and timer was created)
                 if (_syncTimer != null && !_syncTimer.Enabled)
                 {
                     _syncTimer.Start();
@@ -542,8 +568,13 @@ namespace mamba.TorchDiscordSync.Plugin
             }
         }
 
+        /// <summary>
+        /// Periodic faction sync timer handler
+        /// Only runs if faction sync is enabled in config
+        /// </summary>
         private void OnSyncTimerElapsed(object sender, ElapsedEventArgs e)
         {
+            // Double-check that faction sync is enabled before running
             if (_config != null && _config.Faction != null && _config.Faction.Enabled)
             {
                 if (_orchestrator != null)
@@ -553,83 +584,62 @@ namespace mamba.TorchDiscordSync.Plugin
             }
             else
             {
-                LoggerUtil.LogInfo("[STARTUP] Sync timer NOT started - faction sync is disabled in config");
+                LoggerUtil.LogDebug("[SYNC] Faction sync disabled - timer fired but skipped");
             }
         }
 
         /// <summary>
         /// Handles /tds commands from in-game chat
-        /// Delegates to CommandProcessor
+        /// Delegates to CommandProcessor for actual processing
         /// </summary>
         public void HandleChatCommand(string command, long playerSteamID, string playerName)
         {
             if (_commandProcessor != null)
             {
+                LoggerUtil.LogDebug($"[COMMAND] Forwarding to CommandProcessor: {command}");
                 _commandProcessor.ProcessCommand(command, playerSteamID, playerName);
-                // commandManager.RegisterCommand("tds", HandleChatCommand);  // Prefix "tds" for all commands
-                LoggerUtil.LogSuccess("TDS commands registered with Torch");
+            }
+            else
+            {
+                LoggerUtil.LogError("[COMMAND] CommandProcessor is null - cannot process command");
             }
         }
 
         /// <summary>
-        /// Process chat messages to detect player joins/leaves/deaths
-        /// This is called from chat hook when chat messages arrive
+        /// Process chat messages for Discord sync
+        /// Called from OnChatMessageProcessing ONLY for global chat (commands and faction chat filtered out)
         /// </summary>
         public void ProcessChatMessage(string message, string author, string channel)
         {
             if (string.IsNullOrEmpty(message) || string.IsNullOrEmpty(author))
                 return;
 
-            // FIXED: Forward system messages to player tracking WITHOUT infinite recursion
+            // Forward system messages to player tracking
             if (channel == "System" && _playerTracking != null)
             {
                 _playerTracking.ProcessSystemMessage(message);
-                return; // Early return - do not process further
+                return; // Early return - system messages don't go to Discord
             }
 
-            // Normal messages (global) → send to Discord
+            // Send global chat to Discord
+            // NOTE: Commands and faction chat are already filtered in OnChatMessageProcessing
             if (_chatSync != null && _config?.Chat != null)
             {
                 bool serverToDiscordEnabled = _config.Chat.ServerToDiscord;
-                LoggerUtil.LogDebug(
-                    $"Chat sync check - ServerToDiscord: {serverToDiscordEnabled}, channel: {channel}, message: {message}"
-                );
 
                 if (serverToDiscordEnabled)
                 {
-                    // Preskoči ako je komanda ili system
-                    if (message.StartsWith("/") || channel == "System" || channel == "Faction")
-                    {
-                        LoggerUtil.LogDebug("Skipped: command, system message, or faction channel");
-                        return;
-                    }
-
-                    // Preskoči ako poruka sadrži faction prefiks (prilagoditi po potrebi)
-                    if (message.Contains("[Faction:") || message.StartsWith("[Faction") || message.Contains("faction chat"))  // ← dodaj ono što vidiš u logu
-                    {
-                        LoggerUtil.LogDebug("Skipped: faction chat message");
-                        return;
-                    }
-
-                    // Ako prođe – šalji na Discord (samo globalne)
-                    LoggerUtil.LogDebug($"Sending GLOBAL game chat to Discord: {author}: {message}");
-                    string formatted = _config.Chat.GameToDiscordFormat
-                        .Replace("{p}", author)
-                        .Replace("{msg}", message)
-                        .Replace("{c}", channel);
-
+                    LoggerUtil.LogDebug($"[CHAT→DISCORD] Sending: {author}: {message}");
                     _ = _chatSync.SendGameMessageToDiscordAsync(author, message);
                 }
                 else
                 {
-                    LoggerUtil.LogDebug("ServerToDiscord is false - skipping game → Discord");
+                    LoggerUtil.LogDebug("[CHAT→DISCORD] Disabled in config - skipping");
                 }
             }
             else
             {
-                LoggerUtil.LogWarning(
-                    "ChatSyncService or Chat config is null - cannot sync game chat to Discord"
-                );
+                LoggerUtil.LogWarning("[CHAT→DISCORD] ChatSyncService or config is null - cannot sync");
             }
         }
 
