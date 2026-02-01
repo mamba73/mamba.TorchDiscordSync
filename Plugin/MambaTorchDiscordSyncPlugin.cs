@@ -10,14 +10,15 @@ using mamba.TorchDiscordSync.Handlers;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Services;
 using mamba.TorchDiscordSync.Utils;
-using Sandbox.Engine.Multiplayer;
-using Sandbox.Game.Entities.Character.Components;
+using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using Torch;
 using Torch.API;
+using Torch.API.Managers;
 using Torch.API.Plugins;
 using Torch.API.Session;
-using VRage.Game.ModAPI;
+using Torch.Commands;
+using Torch.Managers.ChatManager;
 
 namespace mamba.TorchDiscordSync.Plugin
 {
@@ -38,19 +39,24 @@ namespace mamba.TorchDiscordSync.Plugin
         private VerificationService _verification;
         private VerificationCommandHandler _verificationCommandHandler;
         private SyncOrchestrator _orchestrator;
-        private PlayerTrackingService _playerTracking; // EXISTS
-        // NEW: Handlers (renamed to avoid conflicts)
+        private PlayerTrackingService _playerTracking;
+        private FactionReaderService _factionReader;
+
+        // Handlers
         private CommandProcessor _commandProcessor;
         private EventManager _eventManager;
         private ChatModerator _chatModerator;
+
         // Configurations
         private MainConfig _config;
         private DiscordBotConfig _discordBotConfig;
+
         // Timers and state
         private Timer _syncTimer;
         private ITorchSession _currentSession;
         private bool _isInitialized = false;
         private bool _serverStartupLogged = false;
+        private bool _playerTrackingInitialized = false;
 
         /// <summary>
         /// Plugin initialization - called when Torch loads the plugin
@@ -112,25 +118,26 @@ namespace mamba.TorchDiscordSync.Plugin
                 // Initialize death log service FIRST so we can pass it to PlayerTrackingService
                 _deathLog = new DeathLogService(_db, _eventLog);
 
-                // Initialize player tracking service - UPDATED CONSTRUCTOR WITH DeathLogService
-                // _playerTracking = new PlayerTrackingService(_eventLog, torch, _deathLog, this);
+                // Initialize faction reader service for loading real faction data
+                _factionReader = new FactionReaderService();
+
+                // CRITICAL FIX: Safe cast to TorchBase for PlayerTrackingService
                 var torchBase = torch as Torch.TorchBase;
                 if (torchBase == null)
                 {
-                    LoggerUtil.LogError("Torch instance nije TorchBase! Kompatibilnost s ovom verzijom Torch nije osigurana.");
-                    // Možeš ovdje throwati ili samo preskočiti inicijalizaciju player trackinga
-                    // Za sada samo logiramo i nastavljamo s null-om ili defaultom
-                    _playerTracking = null; // ili new PlayerTrackingService(...) bez torch-a ako postoji overload
-                    return; // ili continue, ovisi o logici
+                    LoggerUtil.LogError("Torch instance is not TorchBase! Compatibility with this Torch version is not guaranteed.");
+                    _playerTracking = null;
+                    return;
                 }
 
+                // Initialize player tracking service - DO NOT call Initialize() yet
+                // It will be called in OnSessionStateChanged when session is loaded
                 _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog, this);
-
 
                 // Initialize faction sync service
                 _factionSync = new FactionSyncService(_db, _discordWrapper);
 
-                // Initialize chat sync service - FIX PARAMETER ORDER
+                // Initialize chat sync service
                 _chatSync = new ChatSyncService(_discordWrapper, _config, _db);
 
                 // Hook Discord messages for chat sync using public event
@@ -163,7 +170,16 @@ namespace mamba.TorchDiscordSync.Plugin
                     };
                 }
 
-                // NEW: Initialize handlers (renamed)
+                // Initialize sync orchestrator
+                _orchestrator = new SyncOrchestrator(
+                    _db,
+                    _discordWrapper,
+                    _factionSync,
+                    _eventLog,
+                    _config
+                );
+
+                // Initialize handlers
                 _commandProcessor = new CommandProcessor(
                     _config,
                     _discordWrapper,
@@ -182,15 +198,6 @@ namespace mamba.TorchDiscordSync.Plugin
                     _config,
                     _discordBot,
                     _discordBotConfig
-                );
-
-                // Initialize sync orchestrator
-                _orchestrator = new SyncOrchestrator(
-                    _db,
-                    _discordWrapper,
-                    _factionSync,
-                    _eventLog,
-                    _config
                 );
 
                 LoggerUtil.LogSuccess("All services initialized");
@@ -213,7 +220,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     };
                 }
 
-                // Register session event handler - FIXED: use 'as' cast for compatibility
+                // Register session event handler
                 var sessionManagerObj = torch.Managers.GetManager(typeof(ITorchSessionManager));
                 var sessionManager = sessionManagerObj as ITorchSessionManager;
                 if (sessionManager != null)
@@ -228,15 +235,12 @@ namespace mamba.TorchDiscordSync.Plugin
                     );
                 }
 
-                // Note: Chat message handling will be done through PlayerTrackingService
-                // This relies on polling and external message injection
-                LoggerUtil.LogInfo(
-                    "Chat message handling configured - relying on external injection"
-                );
+                // CRITICAL FIX: Hook Torch chat system for command processing
+                HookChatCommands(torch);
 
-                // Initialize player tracking - NEW
-                _playerTracking.Initialize();
-                LoggerUtil.LogSuccess("Player tracking service initialized");
+                // NOTE: PlayerTrackingService.Initialize() will be called in OnSessionStateChanged(Loaded)
+                // This ensures ChatManagerServer and DamageSystem are available
+                LoggerUtil.LogInfo("Player tracking will initialize when session loads");
 
                 // Initialize sync timer
                 int syncInterval = 5000;
@@ -251,8 +255,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 _isInitialized = true;
                 PrintBanner("INITIALIZATION COMPLETE");
 
-                // Optional: Save config after load (ensures any merged/default values are persisted)
-                // This calls the existing Save() from MainConfig.cs - no duplicate logic
+                // Save config after load (ensures any merged/default values are persisted)
                 if (_config != null)
                 {
                     _config.Save();
@@ -264,6 +267,61 @@ namespace mamba.TorchDiscordSync.Plugin
                 LoggerUtil.LogError("Plugin initialization failed: " + ex.Message);
                 LoggerUtil.LogError("Stack trace: " + ex.StackTrace);
                 _isInitialized = false;
+            }
+        }
+
+        /// <summary>
+        /// Hooks Torch chat system for command processing (/tds commands)
+        /// </summary>
+        private void HookChatCommands(ITorchBase torch)
+        {
+            try
+            {
+                var chatManagerServer = torch.Managers.GetManager<ChatManagerServer>();
+                if (chatManagerServer != null)
+                {
+                    chatManagerServer.MessageProcessing += OnChatMessageProcessing;
+                    LoggerUtil.LogSuccess("Chat command hook registered");
+                }
+                else
+                {
+                    LoggerUtil.LogWarning("ChatManagerServer not available for command hookup");
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error hooking chat commands: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Processes chat messages for commands and regular chat sync
+        /// </summary>
+        private void OnChatMessageProcessing(TorchChatMessage msg, ref bool consumed)
+        {
+            try
+            {
+                // if (msg == null || string.IsNullOrEmpty(msg.Message))
+                if (string.IsNullOrEmpty(msg.Message))
+                    return;
+
+                // Check if message is a /tds command
+                if (msg.Message.StartsWith("/tds "))
+                {
+                    if (msg.AuthorSteamId.HasValue)
+                    {
+                        HandleChatCommand(msg.Message, (long)msg.AuthorSteamId.Value, msg.Author);
+                        consumed = true; // Prevent further processing
+                    }
+                    return;
+                }
+
+                // Forward regular chat to ProcessChatMessage for Discord sync
+                ProcessChatMessage(msg.Message, msg.Author, msg.Channel.ToString());
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in chat message processing: {ex.Message}");
             }
         }
 
@@ -324,24 +382,35 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogInfo("═══ Server session LOADING ═══");
                     _serverStartupLogged = false;
                     break;
+
                 case TorchSessionState.Loaded:
                     LoggerUtil.LogSuccess("═══ Server session LOADED ═══");
                     _serverStartupLogged = false;
-                    // Get actual simulation speed - SAFER VERSION WITHOUT GetServerSimulationRatio
+
+                    // CRITICAL FIX: Initialize PlayerTrackingService NOW when session is loaded
+                    // This ensures ChatManagerServer and DamageSystem are available
+                    if (_playerTracking != null && !_playerTrackingInitialized)
+                    {
+                        try
+                        {
+                            _playerTracking.Initialize();
+                            _playerTrackingInitialized = true;
+                            LoggerUtil.LogSuccess("Player tracking service initialized after session load");
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError($"Failed to initialize player tracking: {ex.Message}");
+                        }
+                    }
+
+                    // Get actual simulation speed
                     float currentSimSpeed = 1.0f;
                     try
                     {
-                        // Use a safer approach to get simulation ratio
-                        if (
-                            MyAPIGateway.Session != null
-                            && MyAPIGateway.Session.LocalHumanPlayer != null
-                        )
+                        if (MyAPIGateway.Session != null)
                         {
-                            // Fallback to default 1.0 if we can't get the real value
-                            currentSimSpeed = 1.0f;
-                            LoggerUtil.LogDebug(
-                                "Using default SimSpeed (1.0) - GetServerSimulationRatio not available"
-                            );
+                            currentSimSpeed = 1.0f; // Default fallback
+                            LoggerUtil.LogDebug("Using default SimSpeed (1.0)");
                         }
                     }
                     catch (Exception ex)
@@ -349,10 +418,10 @@ namespace mamba.TorchDiscordSync.Plugin
                         LoggerUtil.LogError("Error getting SimSpeed: " + ex.Message);
                         currentSimSpeed = 1.0f;
                     }
+
                     // Send server startup message with real SimSpeed
                     if (_eventLog != null && _config != null && _config.Monitoring != null)
                     {
-                        // FIXED: Safe conversion bool? → bool (null-coalescing)
                         bool monitoringEnabled = _config?.Monitoring?.Enabled == true;
                         if (monitoringEnabled)
                         {
@@ -362,23 +431,27 @@ namespace mamba.TorchDiscordSync.Plugin
                             });
                         }
                     }
+
                     // Run startup routines
                     if (_isInitialized)
                     {
                         OnServerLoadedAsync(session);
                     }
                     break;
+
                 case TorchSessionState.Unloading:
                     LoggerUtil.LogInfo("═══ Server session UNLOADING ═══");
                     if (_syncTimer != null && _syncTimer.Enabled)
                         _syncTimer.Stop();
                     break;
+
                 case TorchSessionState.Unloaded:
                     LoggerUtil.LogWarning("═══ Server session UNLOADED ═══");
+                    _playerTrackingInitialized = false;
+
                     // Send server shutdown message
                     if (_eventLog != null && _config != null && _config.Monitoring != null)
                     {
-                        // FIXED: Same safe conversion bool? → bool
                         bool monitoringEnabled = _config?.Monitoring?.Enabled == true;
                         if (monitoringEnabled)
                         {
@@ -404,11 +477,10 @@ namespace mamba.TorchDiscordSync.Plugin
                 _serverStartupLogged = true;
                 LoggerUtil.LogInfo("[STARTUP] Initializing server sync...");
 
-                // Get current SimSpeed from session - SAFER VERSION
+                // Get current SimSpeed from session
                 float currentSimSpeed = 1.0f;
                 try
                 {
-                    // Use safer approach without problematic casting
                     currentSimSpeed = 1.0f; // Default value
                     LoggerUtil.LogDebug("Using default SimSpeed (1.0) in startup");
                 }
@@ -421,8 +493,8 @@ namespace mamba.TorchDiscordSync.Plugin
                 // Check server status
                 _orchestrator.CheckServerStatusAsync(currentSimSpeed).Wait();
 
-                // Load factions from save - KEEP EXISTING LOGIC FOR NOW
-                var factions = LoadFactionsFromSession(session);
+                // CRITICAL FIX: Load real factions from game using FactionReaderService
+                var factions = LoadFactionsFromGame();
                 if (factions.Count > 0)
                 {
                     LoggerUtil.LogInfo("[STARTUP] Found " + factions.Count + " player factions");
@@ -478,7 +550,7 @@ namespace mamba.TorchDiscordSync.Plugin
 
         /// <summary>
         /// Process chat messages to detect player joins/leaves/deaths
-        /// This is called from Torch when chat messages arrive
+        /// This is called from chat hook when chat messages arrive
         /// </summary>
         public void ProcessChatMessage(string message, string author, string channel)
         {
@@ -488,7 +560,7 @@ namespace mamba.TorchDiscordSync.Plugin
             // FIXED: Forward system messages to player tracking WITHOUT infinite recursion
             if (channel == "System" && _playerTracking != null)
             {
-                _playerTracking.ProcessSystemMessage(message);  // Calls ProcessSystemMessage instead of ProcessChatMessage
+                _playerTracking.ProcessSystemMessage(message);
                 return; // Early return - do not process further
             }
 
@@ -531,30 +603,27 @@ namespace mamba.TorchDiscordSync.Plugin
         }
 
         /// <summary>
-        /// Loads factions from Space Engineers save
+        /// CRITICAL FIX: Loads real factions from Space Engineers save using FactionReaderService
+        /// Replaces test data with actual faction data from game session
         /// </summary>
-        private List<FactionModel> LoadFactionsFromSession(ITorchSession session)
+        private List<FactionModel> LoadFactionsFromGame()
         {
             var factions = new List<FactionModel>();
             try
             {
-                if (session == null)
-                    return factions;
-
-                // TODO: Replace with real data loading
-                var testFaction = new FactionModel();
-                testFaction.Tag = "ABC";
-                testFaction.Name = "Test Faction";
-                testFaction.Players = new List<FactionPlayerModel>
+                if (_factionReader == null)
                 {
-                    new FactionPlayerModel { SteamID = 123456789, DiscordUserID = 987654321 },
-                    new FactionPlayerModel { SteamID = 234567890, DiscordUserID = 876543210 },
-                };
-                factions.Add(testFaction);
+                    LoggerUtil.LogWarning("FactionReaderService is null - cannot load factions");
+                    return factions;
+                }
+
+                // Load real faction data from game
+                factions = _factionReader.LoadFactionsFromGame();
+                LoggerUtil.LogInfo($"Loaded {factions.Count} factions from game session");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("Error loading factions from session: " + ex.Message);
+                LoggerUtil.LogError("Error loading factions from game: " + ex.Message);
             }
             return factions;
         }
@@ -578,7 +647,6 @@ namespace mamba.TorchDiscordSync.Plugin
             if (_discordBot != null)
             {
                 _discordBot.OnVerificationAttempt -= null;
-                // No need to detach OnMessageReceivedEvent - GC will clean it
             }
 
             base.Dispose();
