@@ -34,6 +34,7 @@ namespace mamba.TorchDiscordSync.Plugin
         private DiscordBotService _discordBot;
         private DiscordService _discordWrapper;
         private EventLoggingService _eventLog;
+        private ITorchBase _torch;
         private ChatSyncService _chatSync;
         private DeathLogService _deathLog;
         private VerificationService _verification;
@@ -73,6 +74,9 @@ namespace mamba.TorchDiscordSync.Plugin
             try
             {
                 PrintBanner("INITIALIZING");
+                
+                base.Init(torch);
+                _torch = torch;
 
                 // Load configurations
                 _config = MainConfig.Load();
@@ -241,9 +245,6 @@ namespace mamba.TorchDiscordSync.Plugin
                     );
                 }
 
-                // CRITICAL FIX: Hook Torch chat system for command processing
-                HookChatCommands(torch);
-
                 // NOTE: PlayerTrackingService.Initialize() will be called in OnSessionStateChanged(Loaded)
                 // This ensures ChatManagerServer and DamageSystem are available
                 LoggerUtil.LogInfo("Player tracking will initialize when session loads");
@@ -293,15 +294,17 @@ namespace mamba.TorchDiscordSync.Plugin
         {
             try
             {
-                var chatManagerServer = torch.Managers.GetManager<ChatManagerServer>();
-                if (chatManagerServer != null)
+                LoggerUtil.LogInfo("Hooking Torch chat message handler for command processing");
+                var torchInstance = _torch as ITorchServer;
+                var chatManager = torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
+                if (chatManager != null)
                 {
-                    chatManagerServer.MessageProcessing += OnChatMessageProcessing;
-                    LoggerUtil.LogSuccess("Chat command hook registered");
+                    chatManager.MessageRecieved += OnChatMessageProcessing;
+                    LoggerUtil.LogInfo("Registered Torch chat message handler");
                 }
                 else
                 {
-                    LoggerUtil.LogWarning("ChatManagerServer not available for command hookup");
+                    LoggerUtil.LogWarning("ChatManagerServer is null - chat integration disabled");
                 }
             }
             catch (Exception ex)
@@ -345,14 +348,26 @@ namespace mamba.TorchDiscordSync.Plugin
                     return; // CRITICAL: Stop processing - don't forward commands to Discord
                 }
 
-                // PRIORITY 2: Filter out faction chat (security - don't leak to Discord)
-                if (channelName.StartsWith("Faction"))
+                // PRIORITY 2: Filter out private /w (security - don't leak to Discord)
+                if (channelName.StartsWith("Private") || channelName == "Private")
+                {
+                    LoggerUtil.LogDebug("[CHAT] Skipping private chat (not forwarded to Discord)");
+                    return; // Stop processing - private chat stays private
+                }
+                // PRIORITY 3: Filter out faction chat (security - don't leak to Discord)
+                if (channelName.StartsWith("Faction") || channelName == "Faction")
                 {
                     LoggerUtil.LogDebug("[CHAT] Skipping faction chat (not forwarded to Discord)");
                     return; // Stop processing - faction chat stays private
                 }
+                // PRIORITY 4: Prevent Discord loop messages
+                if (msg.Message.StartsWith("[Discord] "))
+                {
+                    LoggerUtil.LogDebug("[CHAT] Skipped Discord → Discord loop: " + msg.Message);
+                    return; // Prevent Discord loop messages
+                }
 
-                // PRIORITY 3: Forward ONLY global chat to Discord sync
+                // PRIORITY 5: Forward ONLY global chat to Discord sync
                 if (channelName == "Global" || channelName.StartsWith("Global"))
                 {
                     LoggerUtil.LogDebug($"[CHAT] Forwarding global chat to Discord: {msg.Message}");
@@ -427,7 +442,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogSuccess("═══ Server session LOADED ═══");
                     _serverStartupLogged = false;
 
-                    // CRITICAL FIX: Initialize PlayerTrackingService NOW when session is loaded
+                    // Initialize PlayerTrackingService NOW when session is loaded
                     // This ensures ChatManagerServer and DamageSystem are available
                     if (_playerTracking != null && !_playerTrackingInitialized)
                     {
@@ -441,6 +456,33 @@ namespace mamba.TorchDiscordSync.Plugin
                         {
                             LoggerUtil.LogError($"Failed to initialize player tracking: {ex.Message}");
                         }
+                    }
+
+                    // NEW: Hook chat commands NOW when session is loaded
+                    try
+                    {
+                        var torchInstance = _torch as ITorchServer;
+                        if (torchInstance != null && torchInstance.CurrentSession != null && torchInstance.CurrentSession.Managers != null)
+                        {
+                            var chatManager = torchInstance.CurrentSession.Managers.GetManager<ChatManagerServer>();
+                            if (chatManager != null)
+                            {
+                                chatManager.MessageRecieved += OnChatMessageProcessing;
+                                LoggerUtil.LogSuccess("Torch chat message handler registered for /tds commands");
+                            }
+                            else
+                            {
+                                LoggerUtil.LogWarning("ChatManagerServer is still null after session loaded - chat commands disabled");
+                            }
+                        }
+                        else
+                        {
+                            LoggerUtil.LogWarning("CurrentSession or Managers is null after session loaded - chat commands disabled");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError("Failed to hook chat commands after session load: " + ex.Message);
                     }
 
                     // Get actual simulation speed
@@ -538,7 +580,8 @@ namespace mamba.TorchDiscordSync.Plugin
                 if (factions.Count > 0)
                 {
                     LoggerUtil.LogInfo("[STARTUP] Found " + factions.Count + " player factions");
-                    _orchestrator.ExecuteFullSyncAsync(factions).Wait();
+                    // disabled
+                    // _orchestrator.ExecuteFullSyncAsync(factions).Wait();
                 }
                 else
                 {
@@ -688,6 +731,24 @@ namespace mamba.TorchDiscordSync.Plugin
             if (_discordBot != null)
             {
                 _discordBot.OnVerificationAttempt -= null;
+            }
+
+            try
+            {
+                var torchInstance = _torch as ITorchServer;
+                if (torchInstance != null && torchInstance.CurrentSession != null && torchInstance.CurrentSession.Managers != null)
+                {
+                    var chatManager = torchInstance.CurrentSession.Managers.GetManager<ChatManagerServer>();
+                    if (chatManager != null)
+                    {
+                        chatManager.MessageRecieved -= OnChatMessageProcessing;
+                        LoggerUtil.LogInfo("Unhooked chat message handler");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("Error unhooking chat handler: " + ex.Message);
             }
 
             base.Dispose();

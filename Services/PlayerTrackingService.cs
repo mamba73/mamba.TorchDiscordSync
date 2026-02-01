@@ -91,26 +91,6 @@ namespace mamba.TorchDiscordSync.Services
                     LoggerUtil.LogWarning("DamageSystem is null - damage tracking disabled");
                 }
 
-                // Hook Torch chat manager for chat integration
-                try
-                {
-                    var torchInstance = _torch as Torch.API.ITorchServer;
-                    var chatManager = torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
-                    if (chatManager != null)
-                    {
-                        chatManager.MessageRecieved += OnChatMessageReceived;
-                        LoggerUtil.LogInfo("Registered Torch chat message handler");
-                    }
-                    else
-                    {
-                        LoggerUtil.LogWarning("ChatManagerServer is null - chat integration disabled");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError("Error hooking chat manager: " + ex.Message);
-                }
-
                 _isInitialized = true;
                 LoggerUtil.LogInfo("PlayerTrackingService initialized successfully");
             }
@@ -133,22 +113,6 @@ namespace mamba.TorchDiscordSync.Services
                 MyVisualScriptLogicProvider.PlayerDisconnected -= OnPlayerLeft;
                 MyEntities.OnEntityAdd -= OnEntityAdded;
 
-                // Unhook chat manager
-                try
-                {
-                    var torchInstance = _torch as Torch.API.ITorchServer;
-                    var chatManager = torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
-                    if (chatManager != null)
-                    {
-                        chatManager.MessageRecieved -= OnChatMessageReceived;
-                        LoggerUtil.LogInfo("Unregistered Torch chat message handler");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError("Error unhooking chat manager: " + ex.Message);
-                }
-
                 _lastDamageInfo.Clear();
                 _isInitialized = false;
                 LoggerUtil.LogInfo("PlayerTrackingService disposed");
@@ -156,41 +120,6 @@ namespace mamba.TorchDiscordSync.Services
             catch (Exception ex)
             {
                 LoggerUtil.LogError("Error disposing PlayerTrackingService: " + ex.Message);
-            }
-        }
-
-        /// <summary>
-        /// Handles chat messages received from Torch chat manager.
-        /// Forwards player chat messages to Discord via the main plugin.
-        /// </summary>
-        /// <param name="msg">The chat message data</param>
-        /// <param name="consumed">Reference to consumed flag (not modified)</param>
-        private void OnChatMessageReceived(TorchChatMessage msg, ref bool consumed)
-        {
-            try
-            {
-                // Only process messages from actual players (with valid SteamID)
-                if (msg.AuthorSteamId.HasValue && msg.AuthorSteamId.Value != 0)
-                {
-                    LoggerUtil.LogDebug("TorchChatMessage dump:");
-                    LoggerUtil.LogDebug("  Author: " + (msg.Author ?? "null"));
-                    LoggerUtil.LogDebug("  AuthorSteamId: " + (msg.AuthorSteamId.HasValue ? msg.AuthorSteamId.Value.ToString() : "null"));
-                    LoggerUtil.LogDebug("  Message: " + (msg.Message ?? "null"));
-                    LoggerUtil.LogDebug("  Timestamp: " + msg.Timestamp.ToString());
-                    LoggerUtil.LogDebug("  Color: " + (msg.Color != null ? msg.Color.ToString() : "null"));
-                    LoggerUtil.LogDebug("  Chat message channel: " + msg.Channel.ToString());
-
-                    _plugin.ProcessChatMessage(
-                        msg.Message,                    // string message
-                        msg.Author,                     // string playerName  
-                        msg.Channel.ToString()          // string channel
-                    );
-                    LoggerUtil.LogDebug("Raw chat msg: Author=" + msg.Author + ", SteamId=" + (msg.AuthorSteamId.HasValue ? msg.AuthorSteamId.Value.ToString() : "null") + ", Message=" + msg.Message);
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Error processing chat message: " + ex.Message);
             }
         }
 
