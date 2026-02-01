@@ -166,7 +166,11 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                string message = playerName + " (" + steamID + ") joined the server";
+                string template = _config.Chat.JoinMessage ?? ":sunny: {p} joined the server";
+                string message = template.Replace("{p}", playerName);
+                
+                // ili sa SteamID
+                // if (steamID != 0 && !_config.Privacy.HideSteamId) message += " (" + steamID + ")";                
 
                 if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
                 {
@@ -190,7 +194,9 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                string message = playerName + " (" + steamID + ") left the server";
+                string template = _config.Chat.LeaveMessage ?? ":sunny: {p} left the server";
+                string message = template.Replace("{p}", playerName);
+                // string message = playerName + " (" + steamID + ") left the server";
 
                 if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
                 {

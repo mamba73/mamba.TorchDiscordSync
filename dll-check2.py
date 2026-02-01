@@ -11,6 +11,7 @@ script_base_name = os.path.splitext(os.path.basename(__file__))[0]
 # config_file = os.path.join(script_dir, f"{script_base_name}.ini")
 config_file = os.path.join(script_dir, f"check2.ini")
 
+
 config = configparser.ConfigParser()
 
 def load_config():
@@ -34,6 +35,22 @@ def load_config():
     }
 
 cfg = load_config()
+
+def print_help():
+    help_text = f"""
+.NET DLL INSPECTOR - HELP (v2.25)
+=================================================
+USAGE: python {os.path.basename(__file__)} [OPTIONS]
+
+OPTIONS:
+  -s, --search <term>   : Keyword for Class/Namespace
+  -f, --filter <term>   : Keyword for Member (Method/Field/Property)
+  -e, --ext             : Include Properties [P]
+  -d, --deep            : Include Fields [F] and Events [E]
+  -y, --default         : Skip path prompt (Use INI path)
+  -h, --help            : Show this help text
+================================================="""
+    print(help_text)
 
 def get_unique_filename(directory, base_name, extension):
     full_log_dir = os.path.join(script_dir, directory)
@@ -66,27 +83,21 @@ def inspect_dll(dll_path, search_term=None, member_filter=None, ext_mode=False, 
                 if not t.IsPublic or not (t.IsClass or t.IsInterface or t.IsValueType): continue
                 
                 type_name_full = f"{t.Namespace}.{t.Name}"
-                # Ako imamo search_term, tip MORA odgovarati tome
                 if search_term and search_term.lower() not in type_name_full.lower(): continue
                 
                 flags = (Reflection.BindingFlags.Public | Reflection.BindingFlags.Instance | 
                          Reflection.BindingFlags.Static | Reflection.BindingFlags.FlattenHierarchy)
                 
                 temp_items = []
-
-                # Helper za filtriranje članova
                 def match_filter(name):
-                    if not member_filter: return True
-                    return member_filter.lower() in name.lower()
+                    return not member_filter or member_filter.lower() in name.lower()
 
-                # 1. FIELDS
                 if deep_mode:
                     for f in t.GetFields(flags):
                         if match_filter(f.Name):
                             prefix = "[ST] " if f.IsStatic else ""
                             temp_items.append(f"  [F] {prefix}{f.FieldType.Name} {f.Name}")
 
-                # 2. METHODS
                 for m in t.GetMethods(flags):
                     if m.IsSpecialName: continue
                     if match_filter(m.Name):
@@ -94,11 +105,9 @@ def inspect_dll(dll_path, search_term=None, member_filter=None, ext_mode=False, 
                         prefix = "[ST] " if m.IsStatic else ""
                         temp_items.append(f"  - {prefix}{m.ReturnType.Name} {m.Name}({params})")
 
-                # 3. PROPERTIES
                 if ext_mode or deep_mode:
                     for p in t.GetProperties(flags):
                         if match_filter(p.Name):
-                            # Provjera statičnosti za property preko get metode
                             is_static = any(m.IsStatic for m in p.GetAccessors())
                             prefix = "[ST] " if is_static else ""
                             temp_items.append(f"  [P] {prefix}{p.PropertyType.Name} {p.Name}")
@@ -112,7 +121,13 @@ def inspect_dll(dll_path, search_term=None, member_filter=None, ext_mode=False, 
     return (version, results)
 
 def main():
-    switches = ["--ext", "-e", "--deep", "-d", "--default", "-y", "--search", "-s", "--filter", "-f"]
+    # --- 1. HELP CHECK (FIXED) ---
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print_help()
+        return
+
+    # --- 2. SWITCHES & ARGUMENTS ---
+    switches = ["--ext", "-e", "--deep", "-d", "--default", "-y", "--search", "-s", "--filter", "-f", "--help", "-h"]
     ext_mode = "--ext" in sys.argv or "-e" in sys.argv
     deep_mode = "--deep" in sys.argv or "-d" in sys.argv
     use_default = "--default" in sys.argv or "-y" in sys.argv
@@ -130,10 +145,15 @@ def main():
         if idx + 1 < len(sys.argv) and sys.argv[idx+1] not in switches:
             member_filter = sys.argv[idx+1]
 
-    print(f"--- DLL Inspector v2.24 ---")
-    target_dir = os.path.abspath(cfg['path']) if use_default else input("Path: ").strip() or cfg['path']
-    sys.path.append(target_dir)
+    # --- 3. UI HEADER ---
+    print(f"--- DLL Inspector v2.25 ---")
+    print(f"Switches: [Search: -s] [Filter: -f] [Extended: -e] [Deep: -d] [DefaultPath: -y] [Help: -h]")
+    
+    target_dir = os.path.abspath(cfg['path']) if use_default else input(f"Path (Enter for default {os.path.basename(cfg['path'])}): ").strip() or cfg['path']
+    if not os.path.isdir(target_dir):
+        print(f"Error: Directory '{target_dir}' not found."); return
 
+    sys.path.append(target_dir)
     all_dlls = [f for f in os.listdir(target_dir) if f.lower().endswith('.dll')]
     dll_files = [f for f in all_dlls if any(k.strip().lower() in f.lower() for k in cfg['keywords'])] if cfg['keywords'] else all_dlls
 
@@ -144,14 +164,15 @@ def main():
     print(f"[INFO] Search: {search_term} | Filter: {member_filter} | Log: {log_path}")
 
     with open(log_path, "w", encoding="utf-8") as f:
+        f.write(f"REPORT: {target_dir}\nSEARCH: {search_term} | FILTER: {member_filter}\n" + "="*40 + "\n")
         for index, dll in enumerate(dll_files, start=1):
-            print(f"\r[{index}/{len(dll_files)}] Analyzing {dll[:30]}...", end="")
+            print(f"\r[{index}/{len(dll_files)}] Analyzing {dll[:30].ljust(30)}...", end="", flush=True)
             v, matches = inspect_dll(os.path.join(target_dir, dll), search_term, member_filter, ext_mode, deep_mode)
             if matches:
                 f.write(f"\n{'='*60}\nFILE: {dll} (v{v})\n{'='*60}\n")
                 f.write("\n".join(matches) + "\n")
 
-    print(f"\n\nDONE! Check {log_path}")
+    print(f"\n\nDONE! Results: {log_path}")
 
 if __name__ == "__main__":
     main()

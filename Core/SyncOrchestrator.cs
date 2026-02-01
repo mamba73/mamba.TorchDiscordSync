@@ -114,6 +114,7 @@ namespace mamba.TorchDiscordSync.Core
 
         public Task SyncFactionsAsync()
         {
+            
             if (_config != null && _config.Debug)
             {
                 LoggerUtil.LogInfo("Starting faction sync...");

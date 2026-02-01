@@ -51,6 +51,12 @@ namespace mamba.TorchDiscordSync.Plugin
         private MainConfig _config;
         private DiscordBotConfig _discordBotConfig;
 
+        // Public accessor for configuration (read-only)
+        public MainConfig Config
+        {
+            get { return _config; }
+        }
+
         // Timers and state
         private Timer _syncTimer;
         private ITorchSession _currentSession;
@@ -135,7 +141,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog, this);
 
                 // Initialize faction sync service
-                _factionSync = new FactionSyncService(_db, _discordWrapper);
+                _factionSync = new FactionSyncService(_db, _discordWrapper, _config);
 
                 // Initialize chat sync service
                 _chatSync = new ChatSyncService(_discordWrapper, _config, _db);
@@ -248,12 +254,20 @@ namespace mamba.TorchDiscordSync.Plugin
                 {
                     syncInterval = _config.SyncIntervalSeconds * 1000;
                 }
-                _syncTimer = new Timer(syncInterval);
-                _syncTimer.Elapsed += OnSyncTimerElapsed;
-                _syncTimer.AutoReset = true;
+                if (syncInterval <= 0 || (_config != null && _config.Faction != null && !_config.Faction.Enabled))
+                {
+                    LoggerUtil.LogInfo("Faction sync timer NOT started - disabled or interval is 0");
+                }
+                else
+                {
+                        _syncTimer = new Timer(syncInterval);
+                    _syncTimer.Elapsed += OnSyncTimerElapsed;
+                    _syncTimer.AutoReset = true;
 
-                _isInitialized = true;
-                PrintBanner("INITIALIZATION COMPLETE");
+                    _isInitialized = true;
+                    PrintBanner("INITIALIZATION COMPLETE");
+                }
+                LoggerUtil.LogInfo("INITIALIZATION COMPLETE");
 
                 // Save config after load (ensures any merged/default values are persisted)
                 if (_config != null)
@@ -530,9 +544,16 @@ namespace mamba.TorchDiscordSync.Plugin
 
         private void OnSyncTimerElapsed(object sender, ElapsedEventArgs e)
         {
-            if (_orchestrator != null)
+            if (_config != null && _config.Faction != null && _config.Faction.Enabled)
             {
-                _orchestrator.SyncFactionsAsync().Wait();
+                if (_orchestrator != null)
+                {
+                    _orchestrator.SyncFactionsAsync().Wait();
+                }
+            }
+            else
+            {
+                LoggerUtil.LogInfo("[STARTUP] Sync timer NOT started - faction sync is disabled in config");
             }
         }
 
@@ -545,6 +566,8 @@ namespace mamba.TorchDiscordSync.Plugin
             if (_commandProcessor != null)
             {
                 _commandProcessor.ProcessCommand(command, playerSteamID, playerName);
+                // commandManager.RegisterCommand("tds", HandleChatCommand);  // Prefix "tds" for all commands
+                LoggerUtil.LogSuccess("TDS commands registered with Torch");
             }
         }
 
@@ -574,16 +597,24 @@ namespace mamba.TorchDiscordSync.Plugin
 
                 if (serverToDiscordEnabled)
                 {
-                    if (message.StartsWith("/"))
+                    // Preskoči ako je komanda ili system
+                    if (message.StartsWith("/") || channel == "System" || channel == "Faction")
                     {
-                        LoggerUtil.LogDebug("Skipped: command message");
+                        LoggerUtil.LogDebug("Skipped: command, system message, or faction channel");
                         return;
                     }
 
-                    LoggerUtil.LogDebug($"Sending game chat to Discord: {author}: {message}");
+                    // Preskoči ako poruka sadrži faction prefiks (prilagoditi po potrebi)
+                    if (message.Contains("[Faction:") || message.StartsWith("[Faction") || message.Contains("faction chat"))  // ← dodaj ono što vidiš u logu
+                    {
+                        LoggerUtil.LogDebug("Skipped: faction chat message");
+                        return;
+                    }
 
-                    string formatted = _config
-                        .Chat.GameToDiscordFormat.Replace("{p}", author)
+                    // Ako prođe – šalji na Discord (samo globalne)
+                    LoggerUtil.LogDebug($"Sending GLOBAL game chat to Discord: {author}: {message}");
+                    string formatted = _config.Chat.GameToDiscordFormat
+                        .Replace("{p}", author)
                         .Replace("{msg}", message)
                         .Replace("{c}", channel);
 

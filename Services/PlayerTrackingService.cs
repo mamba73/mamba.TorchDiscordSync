@@ -17,6 +17,8 @@ using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
 using mamba.TorchDiscordSync.Plugin;
 using Sandbox.Game;
+using System.Text.RegularExpressions;
+using NLog.Fluent;
 
 namespace mamba.TorchDiscordSync.Services
 {
@@ -92,7 +94,6 @@ namespace mamba.TorchDiscordSync.Services
                 // Hook Torch chat manager for chat integration
                 try
                 {
-                    // var torchInstance = _torch as Torch.Server.TorchServer;
                     var torchInstance = _torch as Torch.API.ITorchServer;
                     var chatManager = torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
                     if (chatManager != null)
@@ -107,7 +108,7 @@ namespace mamba.TorchDiscordSync.Services
                 }
                 catch (Exception ex)
                 {
-                    LoggerUtil.LogError($"Error hooking chat manager: {ex.Message}");
+                    LoggerUtil.LogError("Error hooking chat manager: " + ex.Message);
                 }
 
                 _isInitialized = true;
@@ -115,7 +116,7 @@ namespace mamba.TorchDiscordSync.Services
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error initializing PlayerTrackingService: {ex.Message}");
+                LoggerUtil.LogError("Error initializing PlayerTrackingService: " + ex.Message);
                 throw;
             }
         }
@@ -130,33 +131,31 @@ namespace mamba.TorchDiscordSync.Services
                 // Unhook player events
                 MyVisualScriptLogicProvider.PlayerConnected -= OnPlayerJoined;
                 MyVisualScriptLogicProvider.PlayerDisconnected -= OnPlayerLeft;
-
                 MyEntities.OnEntityAdd -= OnEntityAdded;
 
                 // Unhook chat manager
                 try
                 {
-                    // var torchInstance = _torch as Torch.Server.TorchServer;
                     var torchInstance = _torch as Torch.API.ITorchServer;
                     var chatManager = torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
                     if (chatManager != null)
                     {
                         chatManager.MessageRecieved -= OnChatMessageReceived;
+                        LoggerUtil.LogInfo("Unregistered Torch chat message handler");
                     }
                 }
                 catch (Exception ex)
                 {
-                    LoggerUtil.LogError($"Error unhooking chat manager: {ex.Message}");
+                    LoggerUtil.LogError("Error unhooking chat manager: " + ex.Message);
                 }
 
                 _lastDamageInfo.Clear();
                 _isInitialized = false;
-
                 LoggerUtil.LogInfo("PlayerTrackingService disposed");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error disposing PlayerTrackingService: {ex.Message}");
+                LoggerUtil.LogError("Error disposing PlayerTrackingService: " + ex.Message);
             }
         }
 
@@ -173,16 +172,25 @@ namespace mamba.TorchDiscordSync.Services
                 // Only process messages from actual players (with valid SteamID)
                 if (msg.AuthorSteamId.HasValue && msg.AuthorSteamId.Value != 0)
                 {
+                    LoggerUtil.LogDebug("TorchChatMessage dump:");
+                    LoggerUtil.LogDebug("  Author: " + (msg.Author ?? "null"));
+                    LoggerUtil.LogDebug("  AuthorSteamId: " + (msg.AuthorSteamId.HasValue ? msg.AuthorSteamId.Value.ToString() : "null"));
+                    LoggerUtil.LogDebug("  Message: " + (msg.Message ?? "null"));
+                    LoggerUtil.LogDebug("  Timestamp: " + msg.Timestamp.ToString());
+                    LoggerUtil.LogDebug("  Color: " + (msg.Color != null ? msg.Color.ToString() : "null"));
+                    LoggerUtil.LogDebug("  Chat message channel: " + msg.Channel.ToString());
+
                     _plugin.ProcessChatMessage(
-                        msg.Message,      // string message
-                        msg.Author,       // string playerName  
-                        "Global"          // string channel
+                        msg.Message,                    // string message
+                        msg.Author,                     // string playerName  
+                        msg.Channel.ToString()          // string channel
                     );
+                    LoggerUtil.LogDebug("Raw chat msg: Author=" + msg.Author + ", SteamId=" + (msg.AuthorSteamId.HasValue ? msg.AuthorSteamId.Value.ToString() : "null") + ", Message=" + msg.Message);
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error processing chat message: {ex.Message}");
+                LoggerUtil.LogError("Error processing chat message: " + ex.Message);
             }
         }
 
@@ -199,15 +207,13 @@ namespace mamba.TorchDiscordSync.Services
                 if (target is IMyCharacter character)
                 {
                     long characterId = character.EntityId;
-
                     // Store the latest damage info for this character
-                    // This will be used in OnCharacterDied to determine cause of death
                     _lastDamageInfo[characterId] = info;
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in OnDamageApplied: {ex.Message}");
+                LoggerUtil.LogError("Error in OnDamageApplied: " + ex.Message);
             }
         }
 
@@ -229,7 +235,7 @@ namespace mamba.TorchDiscordSync.Services
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in OnEntityAdded: {ex.Message}");
+                LoggerUtil.LogError("Error in OnEntityAdded: " + ex.Message);
             }
         }
 
@@ -280,25 +286,24 @@ namespace mamba.TorchDiscordSync.Services
                     if (killerId != 0)
                     {
                         var attackerEntity = MyAPIGateway.Entities.GetEntityById(killerId);
-
                         if (attackerEntity is IMyCharacter attackerChar)
                         {
                             // Death caused by another player
                             killerName = attackerChar.DisplayName ?? "Unknown";
-                            LoggerUtil.LogDebug($"PvP death: {victimName} killed by {killerName} using {weaponType}");
+                            LoggerUtil.LogDebug("PvP death: " + victimName + " killed by " + killerName + " using " + weaponType);
                         }
                         else if (attackerEntity != null)
                         {
                             // Death caused by a grid or other entity
                             killerName = attackerEntity.DisplayName ?? "Grid";
-                            LoggerUtil.LogDebug($"Grid/Entity death: {victimName} killed by {killerName}");
+                            LoggerUtil.LogDebug("Grid/Entity death: " + victimName + " killed by " + killerName);
                         }
                     }
                     else
                     {
                         // No attacker - likely environmental death
                         killerName = "Environment";
-                        LoggerUtil.LogDebug($"Environmental death: {victimName} - {weaponType}");
+                        LoggerUtil.LogDebug("Environmental death: " + victimName + " - " + weaponType);
                     }
 
                     // Clean up damage info for this character
@@ -306,15 +311,13 @@ namespace mamba.TorchDiscordSync.Services
                 }
                 else
                 {
-                    LoggerUtil.LogWarning($"No damage info found for character {victimName} (EntityId: {character.EntityId})");
+                    LoggerUtil.LogWarning("No damage info found for character " + victimName + " (EntityId: " + character.EntityId + ")");
                 }
 
                 // Get character position for location tracking
                 var position = character.GetPosition();
-                string location = $"X:{(int)position.X} Y:{(int)position.Y} Z:{(int)position.Z}";
+                string location = "X:" + ((int)position.X).ToString() + " Y:" + ((int)position.Y).ToString() + " Z:" + ((int)position.Z).ToString();
 
-                // CRITICAL FIX: Correct parameter order for LogPlayerDeathAsync
-                // Expected: (killerName, victimName, weaponType, killerId, victimId, location)
                 Task.Run(async () =>
                 {
                     await _deathLog.LogPlayerDeathAsync(
@@ -327,11 +330,11 @@ namespace mamba.TorchDiscordSync.Services
                     );
                 });
 
-                LoggerUtil.LogInfo($"Death logged: {victimName} | Killer: {killerName} | Weapon: {weaponType}");
+                LoggerUtil.LogInfo("Death logged: " + victimName + " | Killer: " + killerName + " | Weapon: " + weaponType);
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in OnCharacterDied: {ex.Message}");
+                LoggerUtil.LogError("Error in OnCharacterDied: " + ex.Message);
             }
         }
 
@@ -344,20 +347,19 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                LoggerUtil.LogDebug($"Processing system message: {message}");
-
+                LoggerUtil.LogDebug("Processing system message: " + message);
                 // System messages are already handled by PlayerConnected/Disconnected events
                 // This is a fallback for any other system messages
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error processing system message: {ex.Message}");
+                LoggerUtil.LogError("Error processing system message: " + ex.Message);
             }
         }
 
         /// <summary>
         /// Handles player join events.
-        /// Logs to Discord and broadcasts to game chat.
+        /// Logs to Discord and broadcasts to game chat using configurable messages.
         /// </summary>
         /// <param name="playerId">Player identity ID</param>
         private async void OnPlayerJoined(long playerId)
@@ -370,34 +372,50 @@ namespace mamba.TorchDiscordSync.Services
                 string playerName = identity.DisplayName;
                 ulong steamId = MyAPIGateway.Players.TryGetSteamId(playerId);
 
-                LoggerUtil.LogInfo($"Player joined: {playerName} (ID: {playerId})");
+                LoggerUtil.LogInfo("Player joined: " + playerName + " (ID: " + playerId + ")");
 
-                // Format message without SteamID (default disabled as per requirement)
-                string joinMessage = $"✅ {playerName} joined the server";
+                string joinTemplate = null;
+                if (_plugin.Config != null && _plugin.Config.Chat != null && _plugin.Config.Chat.JoinMessage != null)
+                {
+                    joinTemplate = _plugin.Config.Chat.JoinMessage;
+                }
 
-                // 1. Broadcast to game chat (global)
-                MyVisualScriptLogicProvider.SendChatMessage(
-                    joinMessage,
-                    "Server",
-                    0, // 0 = broadcast to all
-                    "Green"
-                );
+                string joinMessage = null;
+                if (joinTemplate != null)
+                {
+                    joinMessage = joinTemplate.Replace("{p}", playerName);
+                }
 
-                // 2. Log to Discord via EventLoggingService
+                if (joinMessage != null)
+                {
+                    // Strip emojis only for in-game if option is enabled
+                    if (_plugin.Config.Chat.StripEmojisForInGameChat)
+                    {
+                        joinMessage = RemoveEmojis(joinMessage);
+                        LoggerUtil.LogInfo("Message after emoji removal: " + joinMessage);
+                    }
+                    MyVisualScriptLogicProvider.SendChatMessage(
+                        joinMessage,
+                        "Server",
+                        0,
+                        "Green"
+                    );
+                }
+
                 if (_eventLog != null)
                 {
-                    await _eventLog.LogPlayerJoinAsync(playerName, steamId);
+                    await _eventLog.LogPlayerJoinAsync(playerName, 0UL);
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in OnPlayerJoined: {ex.Message}");
+                LoggerUtil.LogError("Error in OnPlayerJoined: " + ex.Message);
             }
         }
 
         /// <summary>
         /// Handles player leave events.
-        /// Logs to Discord and broadcasts to game chat.
+        /// Logs to Discord and broadcasts to game chat using configurable messages.
         /// </summary>
         /// <param name="playerId">Player identity ID</param>
         private async void OnPlayerLeft(long playerId)
@@ -410,28 +428,45 @@ namespace mamba.TorchDiscordSync.Services
                 string playerName = identity.DisplayName;
                 ulong steamId = MyAPIGateway.Players.TryGetSteamId(playerId);
 
-                LoggerUtil.LogInfo($"Player left: {playerName} (ID: {playerId})");
+                LoggerUtil.LogInfo("Player left: " + playerName + " (ID: " + playerId + ")");
 
-                // Format message without SteamID (default disabled as per requirement)
-                string leaveMessage = $"❌ {playerName} left the server";
-
-                // 1. Broadcast to game chat (global)
-                MyVisualScriptLogicProvider.SendChatMessage(
-                    leaveMessage,
-                    "Server",
-                    0, // 0 = broadcast to all
-                    "Red"
-                );
-
-                // 2. Log to Discord via EventLoggingService
-                if (_eventLog != null)
+                string leaveTemplate = null;
+                if (_plugin.Config != null && _plugin.Config.Chat != null && _plugin.Config.Chat.LeaveMessage != null)
                 {
-                    await _eventLog.LogPlayerLeaveAsync(playerName, steamId);
+                    leaveTemplate = _plugin.Config.Chat.LeaveMessage;
+                }
+
+                string leaveMessage = null;
+                if (leaveTemplate != null)
+                {
+                    leaveMessage = leaveTemplate.Replace("{p}", playerName);
+                }
+
+                if (leaveMessage != null)
+                {
+                    // Strip emojis only for in-game if option is enabled
+                    if (_plugin.Config.Chat.StripEmojisForInGameChat)
+                    {
+                        leaveMessage = RemoveEmojis(leaveMessage);
+                        LoggerUtil.LogInfo("Message after emoji removal: " + leaveMessage);
+                    }
+
+                    MyVisualScriptLogicProvider.SendChatMessage(
+                        leaveMessage,
+                        "Server",
+                        0,
+                        "Red"
+                    );
+
+                    if (_eventLog != null)
+                    {
+                        await _eventLog.LogPlayerLeaveAsync(playerName, 0UL);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in OnPlayerLeft: {ex.Message}");
+                LoggerUtil.LogError("Error in OnPlayerLeft: " + ex.Message);
             }
         }
 
@@ -450,9 +485,36 @@ namespace mamba.TorchDiscordSync.Services
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error getting online player count: {ex.Message}");
+                LoggerUtil.LogError("Error getting online player count: " + ex.Message);
                 return 0;
             }
+        }
+
+        /// <summary>
+        /// Removes emojis and common emoji shortcuts (like :sunny:) from the string.
+        /// Logs original and cleaned message.
+        /// </summary>
+        public static string RemoveEmojis(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+            {
+                return input;
+            }
+
+            LoggerUtil.LogDebug("Original message before emoji removal: " + input);
+
+            // Korak 1: Ukloni Discord shortcode-ove :ime: (sa ili bez razmaka oko njih)
+            string cleaned = System.Text.RegularExpressions.Regex.Replace(input, @"\s*:[a-zA-Z0-9_+-]+:\s*", " ");
+
+            // Korak 2: Ukloni preostale Unicode emojije (ako ih ima)
+            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"[^\x00-\x7F]+", " ");
+
+            // Korak 3: Zamijeni višak razmaka sa jednim i trim
+            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s+", " ").Trim();
+
+            LoggerUtil.LogDebug("Message after emoji removal: " + cleaned);
+
+            return cleaned;
         }
     }
 }
