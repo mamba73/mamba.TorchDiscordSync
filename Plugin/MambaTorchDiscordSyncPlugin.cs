@@ -485,11 +485,11 @@ namespace mamba.TorchDiscordSync.Plugin
             if (string.IsNullOrEmpty(message) || string.IsNullOrEmpty(author))
                 return;
 
-            // Forward system messages to player tracking (join/leave/death fallback)
+            // FIXED: Forward system messages to player tracking WITHOUT infinite recursion
             if (channel == "System" && _playerTracking != null)
             {
-                // _playerTracking.ProcessSystemChatMessage(message);
-                ProcessChatMessage(message, author, "System");
+                _playerTracking.ProcessSystemMessage(message);  // Calls ProcessSystemMessage instead of ProcessChatMessage
+                return; // Early return - do not process further
             }
 
             // Normal messages (global) → send to Discord
@@ -502,13 +502,14 @@ namespace mamba.TorchDiscordSync.Plugin
 
                 if (serverToDiscordEnabled)
                 {
-                    if (message.StartsWith("/") || channel == "System")
+                    if (message.StartsWith("/"))
                     {
-                        LoggerUtil.LogDebug("Skipped: command or system message");
+                        LoggerUtil.LogDebug("Skipped: command message");
                         return;
                     }
 
                     LoggerUtil.LogDebug($"Sending game chat to Discord: {author}: {message}");
+
                     string formatted = _config
                         .Chat.GameToDiscordFormat.Replace("{p}", author)
                         .Replace("{msg}", message)

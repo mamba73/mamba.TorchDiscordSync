@@ -162,7 +162,7 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        public Task LogPlayerJoinAsync(string playerName, long steamID)
+        public Task LogPlayerJoinAsync(string playerName, ulong steamID)
         {
             try
             {
@@ -186,7 +186,7 @@ namespace mamba.TorchDiscordSync.Services
             return Task.FromResult(0);
         }
 
-        public Task LogPlayerLeaveAsync(string playerName, long steamID)
+        public Task LogPlayerLeaveAsync(string playerName, ulong steamID)
         {
             try
             {

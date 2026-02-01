@@ -138,6 +138,7 @@ namespace mamba.TorchDiscordSync.Services
 
         /// <summary>
         /// Formats the death message using templates from configuration.
+        /// FIXED: Now supports BOTH {0}/{1}/{2}/{3} AND {victim}/{killer}/{weapon}/{location} placeholders
         /// </summary>
         private string GenerateDeathMessage(string killer, string victim, string weapon, DeathTypeEnum type, string loc)
         {
@@ -145,22 +146,31 @@ namespace mamba.TorchDiscordSync.Services
             {
                 if (_deathMessages == null) return $"{killer} killed {victim}";
 
-                // Correcting the Enum-to-Config mapping
+                // Get random message template for this death type
                 string template = _deathMessages.GetRandomMessage(type);
 
                 if (string.IsNullOrEmpty(template))
                     return $"{killer} killed {victim} with {weapon}";
 
-                // Replacing named placeholders from the XML config
-                return template
+                // CRITICAL FIX: Support BOTH old-style {0}/{1}/{2} AND new-style {victim}/{killer}
+                string formatted = template
+                    // Old-style numbered placeholders (for backward compatibility)
+                    .Replace("{0}", killer)
+                    .Replace("{1}", victim)
+                    .Replace("{2}", weapon)
+                    .Replace("{3}", loc)
+                    // New-style named placeholders
                     .Replace("{victim}", victim)
                     .Replace("{killer}", killer)
                     .Replace("{weapon}", weapon)
                     .Replace("{location}", loc);
+
+                LoggerUtil.LogDebug($"Generated death message: {formatted}");
+                return formatted;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogDebug($"Message generation error: {ex.Message}");
+                LoggerUtil.LogError($"Message generation error: {ex.Message}");
                 return $"{killer} killed {victim}";
             }
         }

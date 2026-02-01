@@ -7,16 +7,16 @@ using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.World;
 using Sandbox.ModAPI;
-// using Torch.API;
-using Torch;
+using Torch.API;
 using Torch.API.Managers;
 using Torch.Managers.ChatManager;
 using VRage.Game;
 using VRage.Game.ModAPI;
+using VRage.Scripting;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
 using mamba.TorchDiscordSync.Plugin;
-using mamba.TorchDiscordSync;
+using Sandbox.Game;
 
 namespace mamba.TorchDiscordSync.Services
 {
@@ -27,8 +27,7 @@ namespace mamba.TorchDiscordSync.Services
     public class PlayerTrackingService
     {
         private readonly EventLoggingService _eventLog;
-        // private readonly ITorchBase _torch;
-        private readonly TorchBase _torch;
+        private readonly ITorchBase _torch;
         private readonly DeathLogService _deathLog;
         private readonly MambaTorchDiscordSyncPlugin _plugin;
         private readonly Dictionary<long, MyDamageInformation> _lastDamageInfo;
@@ -43,7 +42,7 @@ namespace mamba.TorchDiscordSync.Services
         /// <param name="plugin">Main plugin instance for chat message forwarding</param>
         public PlayerTrackingService(
             EventLoggingService eventLog,
-            TorchBase torch,
+            ITorchBase torch,
             DeathLogService deathLog,
             MambaTorchDiscordSyncPlugin plugin)
         {
@@ -56,7 +55,7 @@ namespace mamba.TorchDiscordSync.Services
 
         /// <summary>
         /// Initializes the player tracking service by subscribing to game events.
-        /// Hooks into character death events, damage system, and chat messages.
+        /// Hooks into character death events, damage system, chat messages, and player join/leave events.
         /// </summary>
         public void Initialize()
         {
@@ -68,6 +67,11 @@ namespace mamba.TorchDiscordSync.Services
 
             try
             {
+                // Hook player join/leave events
+                MyVisualScriptLogicProvider.PlayerConnected += OnPlayerJoined;
+                MyVisualScriptLogicProvider.PlayerDisconnected += OnPlayerLeft;
+                LoggerUtil.LogInfo("Registered player join/leave handlers");
+
                 // Hook character death event
                 MyEntities.OnEntityAdd += OnEntityAdded;
 
@@ -88,7 +92,9 @@ namespace mamba.TorchDiscordSync.Services
                 // Hook Torch chat manager for chat integration
                 try
                 {
-                    var chatManager = TorchBase.Instance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
+                    // var torchInstance = _torch as Torch.Server.TorchServer;
+                    var torchInstance = _torch as Torch.API.ITorchServer;
+                    var chatManager = torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
                     if (chatManager != null)
                     {
                         chatManager.MessageRecieved += OnChatMessageReceived;
@@ -121,12 +127,18 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
+                // Unhook player events
+                MyVisualScriptLogicProvider.PlayerConnected -= OnPlayerJoined;
+                MyVisualScriptLogicProvider.PlayerDisconnected -= OnPlayerLeft;
+
                 MyEntities.OnEntityAdd -= OnEntityAdded;
 
                 // Unhook chat manager
                 try
                 {
-                    var chatManager = TorchBase.Instance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
+                    // var torchInstance = _torch as Torch.Server.TorchServer;
+                    var torchInstance = _torch as Torch.API.ITorchServer;
+                    var chatManager = torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
                     if (chatManager != null)
                     {
                         chatManager.MessageRecieved -= OnChatMessageReceived;
@@ -237,20 +249,20 @@ namespace mamba.TorchDiscordSync.Services
                 }
 
                 // Get victim information
-                // long victimIdentityId = character.GetPlayerIdentityId();
-                var myChar = character as MyCharacter;
-                if (myChar == null)
+                var myCharacter = character as MyCharacter;
+                if (myCharacter == null)
+                {
+                    LoggerUtil.LogWarning("Cannot cast IMyCharacter to MyCharacter");
                     return;
+                }
 
-                long victimIdentityId = myChar.ControllerInfo?.ControllingIdentityId ?? 0;
-
+                long victimIdentityId = myCharacter.GetPlayerIdentityId();
                 if (victimIdentityId == 0)
                 {
                     LoggerUtil.LogWarning("Cannot get player identity from character");
                     return;
                 }
 
-                ulong victimSteamId = MyAPIGateway.Players.TryGetSteamId(victimIdentityId);
                 string victimName = character.DisplayName ?? "Unknown";
 
                 // Initialize death data
@@ -278,13 +290,14 @@ namespace mamba.TorchDiscordSync.Services
                         else if (attackerEntity != null)
                         {
                             // Death caused by a grid or other entity
-                            killerName = attackerEntity.DisplayName ?? attackerEntity.GetType().Name;
+                            killerName = attackerEntity.DisplayName ?? "Grid";
                             LoggerUtil.LogDebug($"Grid/Entity death: {victimName} killed by {killerName}");
                         }
                     }
                     else
                     {
                         // No attacker - likely environmental death
+                        killerName = "Environment";
                         LoggerUtil.LogDebug($"Environmental death: {victimName} - {weaponType}");
                     }
 
@@ -300,21 +313,125 @@ namespace mamba.TorchDiscordSync.Services
                 var position = character.GetPosition();
                 string location = $"X:{(int)position.X} Y:{(int)position.Y} Z:{(int)position.Z}";
 
-                // Log the death through DeathLogService
-                _ = _deathLog.LogPlayerDeathAsync(
-                    killerName,                    // 1. string – killer
-                    victimName,                    // 2. string – žrtva
-                    weaponType,                    // 3. string – oružje
-                    killerId,                      // 4. long   – SteamID ubojice
-                    victimIdentityId,              // 5. long   – IdentityID žrtve (NE ToString()!)
-                    location                       // 6. string – lokacija
-                );
+                // CRITICAL FIX: Correct parameter order for LogPlayerDeathAsync
+                // Expected: (killerName, victimName, weaponType, killerId, victimId, location)
+                Task.Run(async () =>
+                {
+                    await _deathLog.LogPlayerDeathAsync(
+                        killerName,         // 1. string killerName
+                        victimName,         // 2. string victimName
+                        weaponType,         // 3. string weaponType
+                        killerId,           // 4. long killerId
+                        victimIdentityId,   // 5. long victimId
+                        location            // 6. string location
+                    );
+                });
 
                 LoggerUtil.LogInfo($"Death logged: {victimName} | Killer: {killerName} | Weapon: {weaponType}");
             }
             catch (Exception ex)
             {
                 LoggerUtil.LogError($"Error in OnCharacterDied: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Processes system chat messages to detect special events.
+        /// Called from Plugin.ProcessChatMessage for system channel messages.
+        /// </summary>
+        /// <param name="message">System message text</param>
+        public void ProcessSystemMessage(string message)
+        {
+            try
+            {
+                LoggerUtil.LogDebug($"Processing system message: {message}");
+
+                // System messages are already handled by PlayerConnected/Disconnected events
+                // This is a fallback for any other system messages
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error processing system message: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handles player join events.
+        /// Logs to Discord and broadcasts to game chat.
+        /// </summary>
+        /// <param name="playerId">Player identity ID</param>
+        private async void OnPlayerJoined(long playerId)
+        {
+            try
+            {
+                var identity = MySession.Static.Players.TryGetIdentity(playerId);
+                if (identity == null) return;
+
+                string playerName = identity.DisplayName;
+                ulong steamId = MyAPIGateway.Players.TryGetSteamId(playerId);
+
+                LoggerUtil.LogInfo($"Player joined: {playerName} (ID: {playerId})");
+
+                // Format message without SteamID (default disabled as per requirement)
+                string joinMessage = $"✅ {playerName} joined the server";
+
+                // 1. Broadcast to game chat (global)
+                MyVisualScriptLogicProvider.SendChatMessage(
+                    joinMessage,
+                    "Server",
+                    0, // 0 = broadcast to all
+                    "Green"
+                );
+
+                // 2. Log to Discord via EventLoggingService
+                if (_eventLog != null)
+                {
+                    await _eventLog.LogPlayerJoinAsync(playerName, steamId);
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in OnPlayerJoined: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handles player leave events.
+        /// Logs to Discord and broadcasts to game chat.
+        /// </summary>
+        /// <param name="playerId">Player identity ID</param>
+        private async void OnPlayerLeft(long playerId)
+        {
+            try
+            {
+                var identity = MySession.Static.Players.TryGetIdentity(playerId);
+                if (identity == null) return;
+
+                string playerName = identity.DisplayName;
+                ulong steamId = MyAPIGateway.Players.TryGetSteamId(playerId);
+
+                LoggerUtil.LogInfo($"Player left: {playerName} (ID: {playerId})");
+
+                // Format message without SteamID (default disabled as per requirement)
+                string leaveMessage = $"❌ {playerName} left the server";
+
+                // 1. Broadcast to game chat (global)
+                MyVisualScriptLogicProvider.SendChatMessage(
+                    leaveMessage,
+                    "Server",
+                    0, // 0 = broadcast to all
+                    "Red"
+                );
+
+                // 2. Log to Discord via EventLoggingService
+                if (_eventLog != null)
+                {
+                    await _eventLog.LogPlayerLeaveAsync(playerName, steamId);
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in OnPlayerLeft: {ex.Message}");
             }
         }
 
