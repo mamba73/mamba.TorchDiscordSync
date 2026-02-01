@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
 
@@ -15,11 +16,14 @@ namespace mamba.TorchDiscordSync.Services
     {
         private readonly DatabaseService _db;
         private readonly DiscordService _discord;
+        // NEW: Reference to config for checking if faction sync is enabled
+        private readonly MainConfig _config;
 
-        public FactionSyncService(DatabaseService db, DiscordService discord)
+        public FactionSyncService(DatabaseService db, DiscordService discord, MainConfig config)
         {
             _db = db;
             _discord = discord;
+            _config = config;
         }
 
         /// <summary>
@@ -27,6 +31,13 @@ namespace mamba.TorchDiscordSync.Services
         /// </summary>
         public async Task SyncFactionsAsync(List<FactionModel> factions)
         {
+            // NEW: Skip entire sync if faction sync is disabled in config
+            if (_config.Faction == null || !_config.Faction.Enabled)
+            // if (_config?.Faction?.Enabled != true)
+            {
+                LoggerUtil.LogDebug("Faction sync is disabled in config - skipping synchronization");
+                return;
+            }
             try
             {
                 LoggerUtil.LogInfo("[FACTION_SYNC] Starting faction synchronization");
