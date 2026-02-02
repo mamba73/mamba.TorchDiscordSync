@@ -146,7 +146,7 @@ namespace mamba.TorchDiscordSync.Plugin
 
                 // Initialize player tracking service - DO NOT call Initialize() yet
                 // It will be called in OnSessionStateChanged when session is loaded
-                _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog, this);
+                _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog);
 
                 // Initialize faction sync service
                 _factionSync = new FactionSyncService(_db, _discordWrapper, _config);
@@ -677,42 +677,77 @@ namespace mamba.TorchDiscordSync.Plugin
         }
 
         /// <summary>
-        /// Process chat messages for Discord sync
-        /// Called from OnChatMessageProcessing ONLY for global chat (commands and faction chat filtered out)
+        /// Process chat messages to detect player joins/leaves/deaths
+        /// This is called from Torch when chat messages arrive
         /// </summary>
         public void ProcessChatMessage(string message, string author, string channel)
         {
+            LoggerUtil.LogDebug($@"[CHAT PROCESS] Channel: {channel} | Author: {author} | Message: {message}");
+            
             if (string.IsNullOrEmpty(message) || string.IsNullOrEmpty(author))
-                return;
-
-            // Forward system messages to player tracking
-            if (channel == "System" && _playerTracking != null)
             {
-                _playerTracking.ProcessSystemMessage(message);
-                return; // Early return - system messages don't go to Discord
+                LoggerUtil.LogDebug($"[CHAT PROCESS] - returned due to null/empty");
+                return;
             }
 
-            // Send global chat to Discord
-            // NOTE: Commands and faction chat are already filtered in OnChatMessageProcessing
+            // Prevent duplication: skip Server death messages that were already sent from death event
+            if (author == "Server" && (message.Contains("died") || message.Contains("killed")))
+            {
+                LoggerUtil.LogDebug(
+                    "[CHAT PROCESS] Skipped Server death message to prevent duplication on Discord"
+                );
+                return;
+            }
+
+            // System messages
+            if (channel == "System" && _playerTracking != null)
+            {
+                LoggerUtil.LogDebug("[CHAT PROCESS] Forwarding system message to tracking");
+                _playerTracking.ProcessSystemChatMessage(message);
+                return;
+            }
+
+            // Normal chat → Discord
             if (_chatSync != null && _config?.Chat != null)
             {
-                bool serverToDiscordEnabled = _config.Chat.ServerToDiscord;
+                bool enabled = _config.Chat.ServerToDiscord;
+                LoggerUtil.LogDebug($"[CHAT PROCESS] ServerToDiscord enabled: {enabled}");
 
-                if (serverToDiscordEnabled)
+                if (enabled)
                 {
-                    LoggerUtil.LogDebug($"[CHAT›DISCORD] Sending: {author}: {message}");
-                    _ = _chatSync.SendGameMessageToDiscordAsync(author, message);
+                    if (message.StartsWith("/"))
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Skipped command");
+                        return;
+                    }
+
+                    if (channel == "Global")
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Global chat - sending to Discord");
+                        _ = _chatSync.SendGameMessageToDiscordAsync(author, message);
+                    }
+                    else if (channel.StartsWith("Faction:"))
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Faction chat - skipped for now");
+                    }
+                    else if (channel == "Private")
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Private chat - skipped for security");
+                    }
+                    else
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Unknown channel - fallback to global");
+                        _ = _chatSync.SendGameMessageToDiscordAsync(author, message);
+                    }
                 }
                 else
                 {
-                    LoggerUtil.LogDebug("[CHAT›DISCORD] Disabled in config - skipping");
+                    LoggerUtil.LogDebug("[CHAT PROCESS] ServerToDiscord disabled in config");
                 }
             }
             else
             {
-                LoggerUtil.LogWarning(
-                    "[CHAT›DISCORD] ChatSyncService or config is null - cannot sync"
-                );
+                LoggerUtil.LogWarning("[CHAT PROCESS] ChatSyncService or config null");
             }
         }
 
