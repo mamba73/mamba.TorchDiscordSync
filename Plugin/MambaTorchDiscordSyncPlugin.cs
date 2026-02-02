@@ -370,10 +370,11 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogDebug("[CHAT] Skipping faction chat (not forwarded to Discord)");
                     return; // Stop processing - faction chat stays private
                 }
+
                 // PRIORITY 4: Prevent Discord loop messages
-                if (msg.Message.StartsWith("[Discord] "))
+                if (msg.Message.StartsWith("[Discord] ") || msg.Message.StartsWith("Discord") || msg.Message.StartsWith("Server:"))
                 {
-                    LoggerUtil.LogDebug("[CHAT] Skipped Discord › Discord loop: " + msg.Message);
+                    LoggerUtil.LogDebug("[CHAT] Skipped Discord loop: " + msg.Message);
                     return; // Prevent Discord loop messages
                 }
 
