@@ -25,6 +25,7 @@ namespace mamba.TorchDiscordSync.Services
         /// </summary>
         private readonly Dictionary<string, List<DeathHistoryModel>> _playerDeathHistory =
             new Dictionary<string, List<DeathHistoryModel>>();
+        private MainConfig config;
 
         public DeathLogService(DatabaseService db, EventLoggingService eventLog)
         {
@@ -33,6 +34,11 @@ namespace mamba.TorchDiscordSync.Services
             _deathMessages = DeathMessagesConfig.Load();
 
             LoggerUtil.LogDebug("DeathLogService initialized and configuration loaded.");
+        }
+
+        public DeathLogService(DatabaseService db, EventLoggingService eventLog, MainConfig config) : this(db, eventLog)
+        {
+            this.config = config;
         }
 
         /// <summary>
@@ -45,11 +51,13 @@ namespace mamba.TorchDiscordSync.Services
             string weaponType,
             long killerId,
             long victimId,
-            string location)
+            string location,
+            string character
+            )
         {
             try
             {
-                LoggerUtil.LogInfo($"[DEATH EVENT] {killerName} killed {victimName} using {weaponType} at {location}");
+                LoggerUtil.LogInfo($"[DEATH EVENT] {killerName} killed {victimName} using {weaponType} at {location} in character {character}");
 
                 // Ensure history list exists for the victim
                 if (!_playerDeathHistory.ContainsKey(victimName))
