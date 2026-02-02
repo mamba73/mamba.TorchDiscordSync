@@ -25,6 +25,7 @@ namespace mamba.TorchDiscordSync.Plugin
     /// <summary>
     /// mamba.TorchDiscordSync - Advanced Space Engineers faction/Discord sync plugin
     /// with death logging, chat sync, server monitoring, and admin commands.
+    /// NEW: Integrated with Death Location Zones system.
     /// </summary>
     public class MambaTorchDiscordSyncPlugin : TorchPluginBase
     {
@@ -74,7 +75,7 @@ namespace mamba.TorchDiscordSync.Plugin
             try
             {
                 PrintBanner("INITIALIZING");
-                
+
                 base.Init(torch);
                 _torch = torch;
 
@@ -126,7 +127,8 @@ namespace mamba.TorchDiscordSync.Plugin
                 _eventLog = new EventLoggingService(_db, _discordWrapper, _config);
 
                 // Initialize death log service FIRST so we can pass it to PlayerTrackingService
-                _deathLog = new DeathLogService(_db, _eventLog);
+                // NEW: Pass MainConfig to DeathLogService for location zones configuration
+                _deathLog = new DeathLogService(_db, _eventLog, _config);
 
                 // Initialize faction reader service for loading real faction data
                 _factionReader = new FactionReaderService();
@@ -135,7 +137,9 @@ namespace mamba.TorchDiscordSync.Plugin
                 var torchBase = torch as Torch.TorchBase;
                 if (torchBase == null)
                 {
-                    LoggerUtil.LogError("Torch instance is not TorchBase! Compatibility with this Torch version is not guaranteed.");
+                    LoggerUtil.LogError(
+                        "Torch instance is not TorchBase! Compatibility with this Torch version is not guaranteed."
+                    );
                     _playerTracking = null;
                     return;
                 }
@@ -174,7 +178,7 @@ namespace mamba.TorchDiscordSync.Plugin
                                 msg.Content
                             );
                             LoggerUtil.LogDebug(
-                                $"[DISCORD→GAME] Forwarded message from {msg.Author.Username}"
+                                $"[DISCORD›GAME] Forwarded message from {msg.Author.Username}"
                             );
                         }
                     };
@@ -215,7 +219,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 // Hook Discord bot verification event
                 if (_discordBot != null)
                 {
-                    _discordBot.OnVerificationAttempt += delegate (
+                    _discordBot.OnVerificationAttempt += delegate(
                         string code,
                         ulong discordID,
                         string discordUsername
@@ -257,9 +261,14 @@ namespace mamba.TorchDiscordSync.Plugin
                 }
 
                 // Check if faction sync is enabled before creating timer
-                if (syncInterval <= 0 || (_config != null && _config.Faction != null && !_config.Faction.Enabled))
+                if (
+                    syncInterval <= 0
+                    || (_config != null && _config.Faction != null && !_config.Faction.Enabled)
+                )
                 {
-                    LoggerUtil.LogInfo("Faction sync timer NOT created - disabled or interval is 0");
+                    LoggerUtil.LogInfo(
+                        "Faction sync timer NOT created - disabled or interval is 0"
+                    );
                 }
                 else
                 {
@@ -296,7 +305,8 @@ namespace mamba.TorchDiscordSync.Plugin
             {
                 LoggerUtil.LogInfo("Hooking Torch chat message handler for command processing");
                 var torchInstance = _torch as ITorchServer;
-                var chatManager = torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
+                var chatManager =
+                    torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
                 if (chatManager != null)
                 {
                     chatManager.MessageRecieved += OnChatMessageProcessing;
@@ -363,7 +373,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 // PRIORITY 4: Prevent Discord loop messages
                 if (msg.Message.StartsWith("[Discord] "))
                 {
-                    LoggerUtil.LogDebug("[CHAT] Skipped Discord → Discord loop: " + msg.Message);
+                    LoggerUtil.LogDebug("[CHAT] Skipped Discord › Discord loop: " + msg.Message);
                     return; // Prevent Discord loop messages
                 }
 
@@ -414,17 +424,17 @@ namespace mamba.TorchDiscordSync.Plugin
         private void PrintBanner(string title)
         {
             Console.WriteLine("");
-            Console.WriteLine("╔════════════════════════════════════════════════════╗");
+            Console.WriteLine("-====================================================¬");
             Console.WriteLine(
-                "║ "
+                "¦ "
                     + VersionUtil.GetPluginName()
                     + " "
                     + VersionUtil.GetVersionString()
                     + " - "
                     + title.PadRight(20)
-                    + "║"
+                    + "¦"
             );
-            Console.WriteLine("╚════════════════════════════════════════════════════╝");
+            Console.WriteLine("L====================================================-");
             Console.WriteLine("");
         }
 
@@ -434,12 +444,12 @@ namespace mamba.TorchDiscordSync.Plugin
             switch (state)
             {
                 case TorchSessionState.Loading:
-                    LoggerUtil.LogInfo("═══ Server session LOADING ═══");
+                    LoggerUtil.LogInfo("=== Server session LOADING ===");
                     _serverStartupLogged = false;
                     break;
 
                 case TorchSessionState.Loaded:
-                    LoggerUtil.LogSuccess("═══ Server session LOADED ═══");
+                    LoggerUtil.LogSuccess("=== Server session LOADED ===");
                     _serverStartupLogged = false;
 
                     // Initialize PlayerTrackingService NOW when session is loaded
@@ -450,11 +460,15 @@ namespace mamba.TorchDiscordSync.Plugin
                         {
                             _playerTracking.Initialize();
                             _playerTrackingInitialized = true;
-                            LoggerUtil.LogSuccess("Player tracking service initialized after session load");
+                            LoggerUtil.LogSuccess(
+                                "Player tracking service initialized after session load"
+                            );
                         }
                         catch (Exception ex)
                         {
-                            LoggerUtil.LogError($"Failed to initialize player tracking: {ex.Message}");
+                            LoggerUtil.LogError(
+                                $"Failed to initialize player tracking: {ex.Message}"
+                            );
                         }
                     }
 
@@ -462,27 +476,40 @@ namespace mamba.TorchDiscordSync.Plugin
                     try
                     {
                         var torchInstance = _torch as ITorchServer;
-                        if (torchInstance != null && torchInstance.CurrentSession != null && torchInstance.CurrentSession.Managers != null)
+                        if (
+                            torchInstance != null
+                            && torchInstance.CurrentSession != null
+                            && torchInstance.CurrentSession.Managers != null
+                        )
                         {
-                            var chatManager = torchInstance.CurrentSession.Managers.GetManager<ChatManagerServer>();
+                            var chatManager =
+                                torchInstance.CurrentSession.Managers.GetManager<ChatManagerServer>();
                             if (chatManager != null)
                             {
                                 chatManager.MessageRecieved += OnChatMessageProcessing;
-                                LoggerUtil.LogSuccess("Torch chat message handler registered for /tds commands");
+                                LoggerUtil.LogSuccess(
+                                    "Torch chat message handler registered for /tds commands"
+                                );
                             }
                             else
                             {
-                                LoggerUtil.LogWarning("ChatManagerServer is still null after session loaded - chat commands disabled");
+                                LoggerUtil.LogWarning(
+                                    "ChatManagerServer is still null after session loaded - chat commands disabled"
+                                );
                             }
                         }
                         else
                         {
-                            LoggerUtil.LogWarning("CurrentSession or Managers is null after session loaded - chat commands disabled");
+                            LoggerUtil.LogWarning(
+                                "CurrentSession or Managers is null after session loaded - chat commands disabled"
+                            );
                         }
                     }
                     catch (Exception ex)
                     {
-                        LoggerUtil.LogError("Failed to hook chat commands after session load: " + ex.Message);
+                        LoggerUtil.LogError(
+                            "Failed to hook chat commands after session load: " + ex.Message
+                        );
                     }
 
                     // Get actual simulation speed
@@ -522,13 +549,13 @@ namespace mamba.TorchDiscordSync.Plugin
                     break;
 
                 case TorchSessionState.Unloading:
-                    LoggerUtil.LogInfo("═══ Server session UNLOADING ═══");
+                    LoggerUtil.LogInfo("=== Server session UNLOADING ===");
                     if (_syncTimer != null && _syncTimer.Enabled)
                         _syncTimer.Stop();
                     break;
 
                 case TorchSessionState.Unloaded:
-                    LoggerUtil.LogWarning("═══ Server session UNLOADED ═══");
+                    LoggerUtil.LogWarning("=== Server session UNLOADED ===");
                     _playerTrackingInitialized = false;
 
                     // Send server shutdown message
@@ -672,17 +699,19 @@ namespace mamba.TorchDiscordSync.Plugin
 
                 if (serverToDiscordEnabled)
                 {
-                    LoggerUtil.LogDebug($"[CHAT→DISCORD] Sending: {author}: {message}");
+                    LoggerUtil.LogDebug($"[CHAT›DISCORD] Sending: {author}: {message}");
                     _ = _chatSync.SendGameMessageToDiscordAsync(author, message);
                 }
                 else
                 {
-                    LoggerUtil.LogDebug("[CHAT→DISCORD] Disabled in config - skipping");
+                    LoggerUtil.LogDebug("[CHAT›DISCORD] Disabled in config - skipping");
                 }
             }
             else
             {
-                LoggerUtil.LogWarning("[CHAT→DISCORD] ChatSyncService or config is null - cannot sync");
+                LoggerUtil.LogWarning(
+                    "[CHAT›DISCORD] ChatSyncService or config is null - cannot sync"
+                );
             }
         }
 
@@ -736,9 +765,14 @@ namespace mamba.TorchDiscordSync.Plugin
             try
             {
                 var torchInstance = _torch as ITorchServer;
-                if (torchInstance != null && torchInstance.CurrentSession != null && torchInstance.CurrentSession.Managers != null)
+                if (
+                    torchInstance != null
+                    && torchInstance.CurrentSession != null
+                    && torchInstance.CurrentSession.Managers != null
+                )
                 {
-                    var chatManager = torchInstance.CurrentSession.Managers.GetManager<ChatManagerServer>();
+                    var chatManager =
+                        torchInstance.CurrentSession.Managers.GetManager<ChatManagerServer>();
                     if (chatManager != null)
                     {
                         chatManager.MessageRecieved -= OnChatMessageProcessing;

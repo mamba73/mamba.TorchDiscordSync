@@ -1,7 +1,7 @@
 // Config/MainConfig.cs
 using System;
-using System.Xml.Serialization;
 using System.IO;
+using System.Xml.Serialization;
 using mamba.TorchDiscordSync.Utils;
 
 namespace mamba.TorchDiscordSync.Config
@@ -11,16 +11,16 @@ namespace mamba.TorchDiscordSync.Config
     {
         // Static field for instance-specific config directory name
         private static readonly string CONFIG_DIR_NAME = "mambaTorchDiscordSync";
-        
+
         // Property to get correct config path based on Torch instance directory
-        private static string ConfigPath 
-        { 
-            get 
-            { 
+        private static string ConfigPath
+        {
+            get
+            {
                 // Get instance directory from environment or use default
                 string instancePath = GetInstancePath();
                 string pluginConfigDir = Path.Combine(instancePath, CONFIG_DIR_NAME);
-                
+
                 // Ensure directory exists
                 if (!Directory.Exists(pluginConfigDir))
                 {
@@ -30,12 +30,17 @@ namespace mamba.TorchDiscordSync.Config
                     }
                     catch (Exception ex)
                     {
-                        LoggerUtil.LogError("Failed to create config directory " + pluginConfigDir + ": " + ex.Message);
+                        LoggerUtil.LogError(
+                            "Failed to create config directory "
+                                + pluginConfigDir
+                                + ": "
+                                + ex.Message
+                        );
                     }
                 }
-                
+
                 return Path.Combine(pluginConfigDir, "MainConfig.xml");
-            } 
+            }
         }
 
         // Method to determine correct instance path
@@ -43,14 +48,14 @@ namespace mamba.TorchDiscordSync.Config
         {
             // Try to get from environment variable (set by Torch)
             string instancePath = Environment.GetEnvironmentVariable("TORCH_INSTANCE_PATH");
-            
+
             // Fallback to current directory structure
             if (string.IsNullOrEmpty(instancePath))
             {
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 instancePath = Path.Combine(baseDir, "Instance");
             }
-            
+
             return instancePath;
         }
 
@@ -285,13 +290,14 @@ namespace mamba.TorchDiscordSync.Config
             FactionColor = "Green";
             StripEmojisForInGameChat = true;
             EnableModeration = false;
-            BlacklistedWords = new string[] { "hack", "cheat", "exploit", "http"  };
+            BlacklistedWords = new string[] { "hack", "cheat", "exploit", "http" };
             MaxWarningsBeforeMute = 3;
             MuteDurationMinutes = 10;
             MaxMutesBeforeKick = 2;
-            WarningMessage = "⚠️ Please avoid using inappropriate language.";
-            MuteMessage = "🔇 You have been muted for {minutes} minutes due to repeated violations.";
-            KickMessage = "🚫 You have been removed from the channel for repeated violations.";
+            WarningMessage = "?? Please avoid using inappropriate language.";
+            MuteMessage =
+                "?? You have been muted for {minutes} minutes due to repeated violations.";
+            KickMessage = "?? You have been removed from the channel for repeated violations.";
             AdminLogChannelId = 0;
         }
     }
@@ -318,6 +324,16 @@ namespace mamba.TorchDiscordSync.Config
         [XmlElement]
         public int OldRevengeWindowHours { get; set; }
 
+        // NEW: Death Location Zones configuration
+        [XmlElement]
+        public bool EnableLocationZones { get; set; }
+
+        [XmlElement]
+        public bool GridDetectionEnabled { get; set; }
+
+        [XmlElement]
+        public bool ShowGridName { get; set; }
+
         public DeathConfig()
         {
             Enabled = false;
@@ -326,6 +342,10 @@ namespace mamba.TorchDiscordSync.Config
             DetectRetaliation = false;
             RetaliationWindowMinutes = 60;
             OldRevengeWindowHours = 24;
+            // NEW: Default values for location zones
+            EnableLocationZones = true;
+            GridDetectionEnabled = true;
+            ShowGridName = true;
         }
     }
 

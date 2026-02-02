@@ -2,7 +2,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using mamba.TorchDiscordSync.Models;
+using mamba.TorchDiscordSync.Plugin;
+using mamba.TorchDiscordSync.Utils;
+using NLog.Fluent;
+using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.World;
@@ -13,18 +19,13 @@ using Torch.Managers.ChatManager;
 using VRage.Game;
 using VRage.Game.ModAPI;
 using VRage.Scripting;
-using mamba.TorchDiscordSync.Models;
-using mamba.TorchDiscordSync.Utils;
-using mamba.TorchDiscordSync.Plugin;
-using Sandbox.Game;
-using System.Text.RegularExpressions;
-using NLog.Fluent;
 
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
     /// Service responsible for tracking player connections, disconnections, and deaths.
     /// Integrates with Torch chat system and SE damage system for comprehensive event tracking.
+    /// NEW: Passes character to death logging for location zone detection.
     /// </summary>
     public class PlayerTrackingService
     {
@@ -46,7 +47,8 @@ namespace mamba.TorchDiscordSync.Services
             EventLoggingService eventLog,
             ITorchBase torch,
             DeathLogService deathLog,
-            MambaTorchDiscordSyncPlugin plugin)
+            MambaTorchDiscordSyncPlugin plugin
+        )
         {
             _eventLog = eventLog ?? throw new ArgumentNullException(nameof(eventLog));
             _torch = torch ?? throw new ArgumentNullException(nameof(torch));
@@ -171,6 +173,7 @@ namespace mamba.TorchDiscordSync.Services
         /// <summary>
         /// Handles character death events.
         /// Analyzes damage information to determine cause of death and killer.
+        /// NEW: Passes character to death logging for location zone detection.
         /// </summary>
         /// <param name="character">The character that died</param>
         private void OnCharacterDied(IMyCharacter character)
@@ -206,7 +209,12 @@ namespace mamba.TorchDiscordSync.Services
                 string weaponType = "Unknown";
 
                 // Try to get damage information for this character
-                if (_lastDamageInfo.TryGetValue(character.EntityId, out MyDamageInformation damageInfo))
+                if (
+                    _lastDamageInfo.TryGetValue(
+                        character.EntityId,
+                        out MyDamageInformation damageInfo
+                    )
+                )
                 {
                     killerId = damageInfo.AttackerId;
                     weaponType = damageInfo.Type.String; // MyStringHash.String property
@@ -219,20 +227,31 @@ namespace mamba.TorchDiscordSync.Services
                         {
                             // Death caused by another player
                             killerName = attackerChar.DisplayName ?? "Unknown";
-                            LoggerUtil.LogDebug("PvP death: " + victimName + " killed by " + killerName + " using " + weaponType);
+                            LoggerUtil.LogDebug(
+                                "PvP death: "
+                                    + victimName
+                                    + " killed by "
+                                    + killerName
+                                    + " using "
+                                    + weaponType
+                            );
                         }
                         else if (attackerEntity != null)
                         {
                             // Death caused by a grid or other entity
                             killerName = attackerEntity.DisplayName ?? "Grid";
-                            LoggerUtil.LogDebug("Grid/Entity death: " + victimName + " killed by " + killerName);
+                            LoggerUtil.LogDebug(
+                                "Grid/Entity death: " + victimName + " killed by " + killerName
+                            );
                         }
                     }
                     else
                     {
                         // No attacker - likely environmental death
                         killerName = "Environment";
-                        LoggerUtil.LogDebug("Environmental death: " + victimName + " - " + weaponType);
+                        LoggerUtil.LogDebug(
+                            "Environmental death: " + victimName + " - " + weaponType
+                        );
                     }
 
                     // Clean up damage info for this character
@@ -240,26 +259,49 @@ namespace mamba.TorchDiscordSync.Services
                 }
                 else
                 {
-                    LoggerUtil.LogWarning("No damage info found for character " + victimName + " (EntityId: " + character.EntityId + ")");
+                    LoggerUtil.LogWarning(
+                        "No damage info found for character "
+                            + victimName
+                            + " (EntityId: "
+                            + character.EntityId
+                            + ")"
+                    );
                 }
 
-                // Get character position for location tracking
+                // Get character position for location tracking (fallback)
                 var position = character.GetPosition();
-                string location = "X:" + ((int)position.X).ToString() + " Y:" + ((int)position.Y).ToString() + " Z:" + ((int)position.Z).ToString();
+                string location =
+                    "X:"
+                    + ((int)position.X).ToString()
+                    + " Y:"
+                    + ((int)position.Y).ToString()
+                    + " Z:"
+                    + ((int)position.Z).ToString();
 
                 Task.Run(async () =>
                 {
+                    // NEW: Pass character to death logging for zone detection
                     await _deathLog.LogPlayerDeathAsync(
-                        killerName,         // 1. string killerName
-                        victimName,         // 2. string victimName
-                        weaponType,         // 3. string weaponType
-                        killerId,           // 4. long killerId
-                        victimIdentityId,   // 5. long victimId
-                        location            // 6. string location
+                        killerName, // 1. string killerName
+                        victimName, // 2. string victimName
+                        weaponType, // 3. string weaponType
+                        killerId, // 4. long killerId
+                        victimIdentityId, // 5. long victimId
+                        location, // 6. string location (fallback)
+                        character.DisplayName // 7. string characterName for zone detection
                     );
                 });
 
-                LoggerUtil.LogInfo("Death logged: " + victimName + " | Killer: " + killerName + " | Weapon: " + weaponType);
+                LoggerUtil.LogInfo(
+                    "Death logged: "
+                        + victimName
+                        + " | Killer: "
+                        + killerName
+                        + " | Weapon: "
+                        + weaponType
+                        + " | Character: "
+                        + character.DisplayName
+                );
             }
             catch (Exception ex)
             {
@@ -296,7 +338,8 @@ namespace mamba.TorchDiscordSync.Services
             try
             {
                 var identity = MySession.Static.Players.TryGetIdentity(playerId);
-                if (identity == null) return;
+                if (identity == null)
+                    return;
 
                 string playerName = identity.DisplayName;
                 ulong steamId = MyAPIGateway.Players.TryGetSteamId(playerId);
@@ -304,7 +347,11 @@ namespace mamba.TorchDiscordSync.Services
                 LoggerUtil.LogInfo("Player joined: " + playerName + " (ID: " + playerId + ")");
 
                 string joinTemplate = null;
-                if (_plugin.Config != null && _plugin.Config.Chat != null && _plugin.Config.Chat.JoinMessage != null)
+                if (
+                    _plugin.Config != null
+                    && _plugin.Config.Chat != null
+                    && _plugin.Config.Chat.JoinMessage != null
+                )
                 {
                     joinTemplate = _plugin.Config.Chat.JoinMessage;
                 }
@@ -323,12 +370,7 @@ namespace mamba.TorchDiscordSync.Services
                         joinMessage = RemoveEmojis(joinMessage);
                         LoggerUtil.LogInfo("Message after emoji removal: " + joinMessage);
                     }
-                    MyVisualScriptLogicProvider.SendChatMessage(
-                        joinMessage,
-                        "Server",
-                        0,
-                        "Green"
-                    );
+                    MyVisualScriptLogicProvider.SendChatMessage(joinMessage, "Server", 0, "Green");
                 }
 
                 if (_eventLog != null)
@@ -352,7 +394,8 @@ namespace mamba.TorchDiscordSync.Services
             try
             {
                 var identity = MySession.Static.Players.TryGetIdentity(playerId);
-                if (identity == null) return;
+                if (identity == null)
+                    return;
 
                 string playerName = identity.DisplayName;
                 ulong steamId = MyAPIGateway.Players.TryGetSteamId(playerId);
@@ -360,7 +403,11 @@ namespace mamba.TorchDiscordSync.Services
                 LoggerUtil.LogInfo("Player left: " + playerName + " (ID: " + playerId + ")");
 
                 string leaveTemplate = null;
-                if (_plugin.Config != null && _plugin.Config.Chat != null && _plugin.Config.Chat.LeaveMessage != null)
+                if (
+                    _plugin.Config != null
+                    && _plugin.Config.Chat != null
+                    && _plugin.Config.Chat.LeaveMessage != null
+                )
                 {
                     leaveTemplate = _plugin.Config.Chat.LeaveMessage;
                 }
@@ -380,12 +427,7 @@ namespace mamba.TorchDiscordSync.Services
                         LoggerUtil.LogInfo("Message after emoji removal: " + leaveMessage);
                     }
 
-                    MyVisualScriptLogicProvider.SendChatMessage(
-                        leaveMessage,
-                        "Server",
-                        0,
-                        "Red"
-                    );
+                    MyVisualScriptLogicProvider.SendChatMessage(leaveMessage, "Server", 0, "Red");
 
                     if (_eventLog != null)
                     {
@@ -433,7 +475,11 @@ namespace mamba.TorchDiscordSync.Services
             LoggerUtil.LogDebug("Original message before emoji removal: " + input);
 
             // Korak 1: Ukloni Discord shortcode-ove :ime: (sa ili bez razmaka oko njih)
-            string cleaned = System.Text.RegularExpressions.Regex.Replace(input, @"\s*:[a-zA-Z0-9_+-]+:\s*", " ");
+            string cleaned = System.Text.RegularExpressions.Regex.Replace(
+                input,
+                @"\s*:[a-zA-Z0-9_+-]+:\s*",
+                " "
+            );
 
             // Korak 2: Ukloni preostale Unicode emojije (ako ih ima)
             cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"[^\x00-\x7F]+", " ");
