@@ -334,6 +334,16 @@ namespace mamba.TorchDiscordSync.Config
         [XmlElement]
         public bool ShowGridName { get; set; }
 
+        // NEW: Location detection thresholds (in kilometers)
+        [XmlElement]
+        public double InnerSystemMaxKm { get; set; }
+
+        [XmlElement]
+        public double OuterSpaceMaxKm { get; set; }
+
+        [XmlElement]
+        public double PlanetProximityMultiplier { get; set; }
+
         public DeathConfig()
         {
             Enabled = false;
@@ -342,10 +352,16 @@ namespace mamba.TorchDiscordSync.Config
             DetectRetaliation = false;
             RetaliationWindowMinutes = 60;
             OldRevengeWindowHours = 24;
-            // NEW: Default values for location zones
+
+            // Death Location Zones defaults
             EnableLocationZones = true;
             GridDetectionEnabled = true;
             ShowGridName = true;
+
+            // Location detection thresholds (in kilometers)
+            InnerSystemMaxKm = 5000.0;
+            OuterSpaceMaxKm = 10000.0;
+            PlanetProximityMultiplier = 3.0;
         }
     }
 

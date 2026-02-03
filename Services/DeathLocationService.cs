@@ -1,6 +1,7 @@
 // Services/DeathLocationService.cs
 using System;
 using System.Collections.Generic;
+using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
 using Sandbox.Game.Entities;
@@ -13,19 +14,32 @@ using VRageMath;
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
-    /// NEW: Service responsible for death location detection and zone-based messaging.
+    /// Service responsible for death location detection and zone-based messaging.
     /// Detects which zone a player died in (planet, inner system, outer space, deep space).
     /// Generates location-based descriptions and integrates grid/ship detection.
     /// </summary>
     public class DeathLocationService
     {
-        // Configuration constants (in kilometers)
-        private const double INNER_SYSTEM_MAX_KM = 5000.0;
-        private const double OUTER_SPACE_MAX_KM = 10000.0;
-        private const double PLANET_PROXIMITY_MULTIPLIER = 3.0;
+        private readonly MainConfig _config;
+
+        // Default constants (fallback values if config not available)
+        private const double DEFAULT_INNER_SYSTEM_MAX_KM = 5000.0;
+        private const double DEFAULT_OUTER_SPACE_MAX_KM = 10000.0;
+        private const double DEFAULT_PLANET_PROXIMITY_MULTIPLIER = 3.0;
 
         // Origin point for distance calculations (0,0,0)
         private static readonly Vector3D ORIGIN = Vector3D.Zero;
+
+        // Properties that read from config with fallback to defaults
+        private double InnerSystemMaxKm => _config?.Death?.InnerSystemMaxKm ?? DEFAULT_INNER_SYSTEM_MAX_KM;
+        private double OuterSpaceMaxKm => _config?.Death?.OuterSpaceMaxKm ?? DEFAULT_OUTER_SPACE_MAX_KM;
+        private double PlanetProximityMultiplier => _config?.Death?.PlanetProximityMultiplier ?? DEFAULT_PLANET_PROXIMITY_MULTIPLIER;
+
+        public DeathLocationService(MainConfig config = null)
+        {
+            _config = config;
+            LoggerUtil.LogDebug("[LOCATION] DeathLocationService initialized with config");
+        }
 
         /// <summary>
         /// Detects the death location zone and returns detailed location information.
@@ -33,7 +47,6 @@ namespace mamba.TorchDiscordSync.Services
         /// </summary>
         public LocationZoneResult DetectDeathZone(IMyCharacter character)
         {
-            LoggerUtil.LogDebug("[LOCATION] Detecting death zone...");
             var result = new LocationZoneResult();
 
             try
@@ -46,9 +59,6 @@ namespace mamba.TorchDiscordSync.Services
                     result.Zone = LocationZoneEnum.UNKNOWN;
                     return result;
                 }
-                LoggerUtil.LogDebug(
-                    $"[LOCATION] character {character.DisplayName} detected for location analysis"
-                    );
 
                 // Get character position from world matrix
                 Vector3D deathPosition = character.GetPosition();
@@ -63,29 +73,28 @@ namespace mamba.TorchDiscordSync.Services
                         nearestPlanet.PositionComp.GetPosition()
                     );
                     double planetProximityRadius =
-                        nearestPlanet.AverageRadius * PLANET_PROXIMITY_MULTIPLIER;
-                        
-                    LoggerUtil.LogDebug(
-                        $"[LOCATION] planetProximityRadius= {planetProximityRadius:F2} km for {character.DisplayName}"
-                    );
-                    LoggerUtil.LogDebug(
-                        $"[LOCATION] distanceToPlanet= {distanceToPlanet:F2}"
-                    );
-                    LoggerUtil.LogDebug(
-                        $"[LOCATION] nearestPlanet.AverageRadius= {nearestPlanet.AverageRadius:F2} km"
-                    );
-                    LoggerUtil.LogDebug(
-                        $"[LOCATION] nearestPlanet.DisplayNameText= {nearestPlanet.DisplayNameText}"
-                    );
-                    LoggerUtil.LogDebug(
-                        $"[LOCATION] PLANET_PROXIMITY_MULTIPLIER= {PLANET_PROXIMITY_MULTIPLIER:F2}"
-                    );
+                        nearestPlanet.AverageRadius * PlanetProximityMultiplier;
+
+                    // DEBUG: Print all planet properties
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] ===== PLANET DEBUG INFO =====");
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] DisplayNameText: '{nearestPlanet.DisplayNameText}'");
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] StorageName: '{nearestPlanet.StorageName}'");
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Name: '{nearestPlanet.Name}'");
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] DisplayName: '{nearestPlanet.DisplayName}'");
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] AverageRadius: {nearestPlanet.AverageRadius} km");
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Distance to planet: {distanceToPlanet:F2} km");
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Proximity radius: {planetProximityRadius:F2} km");
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] ===== END DEBUG INFO =====");
 
                     if (distanceToPlanet < planetProximityRadius)
                     {
                         result.Zone = LocationZoneEnum.AROUND_PLANET;
-                        result.PlanetName = nearestPlanet.DisplayNameText ?? "Unknown Planet";
+
+                        // Use enhanced planet name detection
+                        string planetName = GetPlanetName(nearestPlanet);
+                        result.PlanetName = planetName;
                         result.DistanceToPlanet = distanceToPlanet;
+
                         LoggerUtil.LogDebug(
                             $"[LOCATION] Death near planet: {result.PlanetName} (distance: {distanceToPlanet:F2} km)"
                         );
@@ -94,14 +103,14 @@ namespace mamba.TorchDiscordSync.Services
                 }
 
                 // STEP 2: Classify by distance from origin
-                if (result.DistanceFromOrigin < INNER_SYSTEM_MAX_KM)
+                if (result.DistanceFromOrigin < InnerSystemMaxKm)
                 {
                     result.Zone = LocationZoneEnum.INNER_SYSTEM;
                     LoggerUtil.LogDebug(
                         $"[LOCATION] Death in inner system (distance: {result.DistanceFromOrigin:F2} km)"
                     );
                 }
-                else if (result.DistanceFromOrigin < OUTER_SPACE_MAX_KM)
+                else if (result.DistanceFromOrigin < OuterSpaceMaxKm)
                 {
                     result.Zone = LocationZoneEnum.OUTER_SPACE;
                     LoggerUtil.LogDebug(
@@ -116,19 +125,64 @@ namespace mamba.TorchDiscordSync.Services
                     );
                 }
 
+                // STEP 3: Detect if inside a grid
+                DetectGridContext(character, result);
+
                 return result;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in DetectDeathZone: {ex.Message}");
+                LoggerUtil.LogError($"Error in DetectDeathZone: {ex.Message}\n{ex.StackTrace}");
                 result.Zone = LocationZoneEnum.UNKNOWN;
                 return result;
             }
         }
 
         /// <summary>
-        /// NEW: Detects if character is inside a grid/ship and returns grid information.
-        /// Grid detection is called separately to allow for optional inclusion in messages.
+        /// Enhanced method for finding planet/moon name.
+        /// Tries multiple properties without using non-existent ChildList.
+        /// </summary>
+        private string GetPlanetName(MyPlanet planet)
+        {
+            try
+            {
+                // Try each property in order - NO CHILDLIST!
+                if (!string.IsNullOrEmpty(planet.DisplayNameText))
+                {
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from DisplayNameText: {planet.DisplayNameText}");
+                    return planet.DisplayNameText;
+                }
+
+                if (!string.IsNullOrEmpty(planet.StorageName))
+                {
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from StorageName: {planet.StorageName}");
+                    return planet.StorageName;
+                }
+
+                if (!string.IsNullOrEmpty(planet.Name))
+                {
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from Name: {planet.Name}");
+                    return planet.Name;
+                }
+
+                if (!string.IsNullOrEmpty(planet.DisplayName))
+                {
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from DisplayName: {planet.DisplayName}");
+                    return planet.DisplayName;
+                }
+
+                LoggerUtil.LogDebug($"[LOCATION_DEBUG] No valid planet name found, using Unknown Planet");
+                return "Unknown Planet";
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"Error in GetPlanetName: {ex.Message}");
+                return "Unknown Planet";
+            }
+        }
+
+        /// <summary>
+        /// Detects if character is inside a grid/ship and returns grid information.
         /// </summary>
         public void DetectGridContext(IMyCharacter character, LocationZoneResult result)
         {
@@ -163,8 +217,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// NEW: Generates location-based text for death messages.
-        /// Used by DeathLogService.GenerateDeathMessage() to create zone-specific descriptions.
+        /// Generates location-based text for death messages.
         /// </summary>
         public string GenerateLocationText(LocationZoneResult zoneResult, bool includeGridName)
         {
@@ -199,8 +252,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// NEW: Gets a zone-specific description for the death location.
-        /// Returns randomized descriptions based on zone classification.
+        /// Gets a zone-specific description for the death location.
         /// </summary>
         private string GetZoneDescription(LocationZoneResult result)
         {
@@ -233,7 +285,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// NEW: Gets random planet-based message from hardcoded variations.
+        /// Gets random planet-based message.
         /// </summary>
         private string GetRandomPlanetMessage(string planetName)
         {
@@ -249,7 +301,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// NEW: Gets random inner system message from hardcoded variations.
+        /// Gets random inner system message.
         /// </summary>
         private string GetRandomInnerSystemMessage()
         {
@@ -265,7 +317,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// NEW: Gets random outer space message from hardcoded variations.
+        /// Gets random outer space message.
         /// </summary>
         private string GetRandomOuterSpaceMessage()
         {
@@ -281,7 +333,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// NEW: Gets random deep space message from hardcoded variations.
+        /// Gets random deep space message.
         /// </summary>
         private string GetRandomDeepSpaceMessage()
         {
@@ -297,8 +349,7 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// NEW: Finds the nearest planet to the given position.
-        /// Returns null if no planets exist in the session.
+        /// Finds the nearest planet to the given position.
         /// </summary>
         private MyPlanet FindNearestPlanet(Vector3D position)
         {
