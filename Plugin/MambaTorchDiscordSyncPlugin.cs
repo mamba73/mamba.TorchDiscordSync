@@ -330,7 +330,7 @@ namespace mamba.TorchDiscordSync.Plugin
 
                 string channelName = msg.Channel.ToString() ?? "Unknown";
 
-                LoggerUtil.LogDebug($"[CHAT] Channel: {channelName}, Message: {msg.Message}");
+                LoggerUtil.LogDebug($"[CHAT] Author: {msg.Author}, Channel: {channelName}, Message: {msg.Message}");
 
                 // PRIORITY 1: Check for /tds commands FIRST (before any filtering)
                 // This ensures commands work in ALL channels (Global and Faction)
@@ -369,14 +369,21 @@ namespace mamba.TorchDiscordSync.Plugin
                     || msg.Message.StartsWith("Server:")
                 )
                 {
-                    LoggerUtil.LogDebug("[CHAT] Skipped Discord loop: " + msg.Message);
+                    LoggerUtil.LogDebug($"[CHAT] Skipped Discord loop: Author: {msg.Author}, Message: {msg.Message}");
                     return; // Prevent Discord loop messages
                 }
 
-                // PRIORITY 5: Forward ONLY global chat to Discord sync
-                if (channelName == "Global" || channelName.StartsWith("Global"))
+                // PRIORITY 5: Prevent duplication of Server event messages
+                if (msg.Author == "Server")
                 {
-                    LoggerUtil.LogDebug($"[CHAT] Forwarding global chat to Discord: {msg.Message}");
+                    LoggerUtil.LogDebug($"[CHAT] Skipped Server message to prevent duplication on Discord: Author: {msg.Author}, Message: {msg.Message}");
+                    return;
+                }
+
+                // PRIORITY 6: Forward ONLY global chat to Discord sync
+                if (channelName == "Global" || channelName.StartsWith("Global") )
+                {
+                    LoggerUtil.LogDebug($"[CHAT] Forwarding global chat to Discord: Author: {msg.Author}, Message: {msg.Message}");
                     ProcessChatMessage(msg.Message, msg.Author, "Global");
                 }
             }
@@ -676,6 +683,9 @@ namespace mamba.TorchDiscordSync.Plugin
             // Prevent duplication: skip Server event messages that are already sent from event handlers
             if (author == "Server")
             {
+                // Skip all messages from server to prevent duplication
+
+                /*
                 // Skip death messages - already sent from OnCharacterDied
                 if (message.Contains("died") || message.Contains("killed"))
                 {
@@ -693,6 +703,11 @@ namespace mamba.TorchDiscordSync.Plugin
                     );
                     return;
                 }
+                // */
+                LoggerUtil.LogDebug(
+                    "[CHAT PROCESS] SKIPPED ALL: Skipped Server message to prevent duplication on Discord"
+                );
+                return;
             }
 
             // System messages
