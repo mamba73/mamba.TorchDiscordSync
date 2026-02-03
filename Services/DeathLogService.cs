@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
+using VRage.Game.ModAPI;
 
 namespace mamba.TorchDiscordSync.Services
 {
@@ -18,6 +19,7 @@ namespace mamba.TorchDiscordSync.Services
         private readonly DatabaseService _db;
         private readonly EventLoggingService _eventLog;
         private readonly DeathMessagesConfig _deathMessages;
+        private readonly DeathLocationService _deathLocation;
 
         /// <summary>
         /// In-memory cache for player death history to determine kill streaks and retaliation.
@@ -32,6 +34,7 @@ namespace mamba.TorchDiscordSync.Services
             _db = db;
             _eventLog = eventLog;
             _deathMessages = DeathMessagesConfig.Load();
+            _deathLocation = new DeathLocationService();
 
             LoggerUtil.LogDebug("DeathLogService initialized and configuration loaded.");
         }
@@ -52,7 +55,8 @@ namespace mamba.TorchDiscordSync.Services
             long killerId,
             long victimId,
             string location,
-            string character
+            // string character
+            IMyCharacter character = null
             )
         {
             try
@@ -84,7 +88,39 @@ namespace mamba.TorchDiscordSync.Services
                 }
 
                 // 2. Notification: Generate and send Discord message
-                string discordMessage = GenerateDeathMessage(killerName, victimName, weaponType, deathType, location);
+                string finalLocation = location;
+                if (
+                    character != null
+                    && _deathLocation != null
+                    && config != null
+                    && config.Death != null
+                    && config.Death.EnableLocationZones
+                )
+                {
+                    try
+                    {
+                        var zoneResult = _deathLocation.DetectDeathZone(character);
+                        if (zoneResult != null)
+                        {
+                            finalLocation = _deathLocation.GenerateLocationText(
+                                zoneResult,
+                                config.Death.GridDetectionEnabled
+                            );
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"Error processing death location: {ex.Message}");
+                    }
+                }
+
+                string discordMessage = GenerateDeathMessage(
+                    killerName,
+                    victimName,
+                    weaponType,
+                    deathType,
+                    finalLocation
+                );
                 if (_eventLog != null)
                 {
                     await _eventLog.LogDeathAsync(discordMessage);
