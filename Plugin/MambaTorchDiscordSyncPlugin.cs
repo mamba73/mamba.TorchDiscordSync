@@ -10,6 +10,7 @@ using mamba.TorchDiscordSync.Handlers;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Services;
 using mamba.TorchDiscordSync.Utils;
+using Sandbox;
 using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using Torch;
@@ -523,8 +524,8 @@ namespace mamba.TorchDiscordSync.Plugin
                     {
                         if (MyAPIGateway.Session != null)
                         {
-                            currentSimSpeed = 1.0f; // Default fallback
-                            LoggerUtil.LogDebug("Using default SimSpeed (1.0)");
+                            currentSimSpeed = MySandboxGame.SimulationRatio;
+                            LoggerUtil.LogDebug("Using actual SimSpeed: " + currentSimSpeed);
                         }
                     }
                     catch (Exception ex)

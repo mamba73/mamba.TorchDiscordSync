@@ -90,12 +90,41 @@ namespace mamba.TorchDiscordSync.Services
 
         private void HookCharacterDeath(IMyCharacter character, ulong steamId)
         {
-            if (character == null || _trackedCharacters.ContainsKey(steamId))
+            if (character == null)
+            {
+                LoggerUtil.LogDebug(
+                    $"[HOOK_DEBUG] HookCharacterDeath called but character is NULL for SteamID {steamId}"
+                );
                 return;
+            }
 
-            character.CharacterDied += deadChar => OnCharacterDied(deadChar, steamId);
-            _trackedCharacters[steamId] = character;
-            LoggerUtil.LogDebug($"Hooked CharacterDied for SteamID {steamId}");
+            if (_trackedCharacters.ContainsKey(steamId))
+            {
+                var existing = _trackedCharacters[steamId];
+                if (existing == character)
+                {
+                    LoggerUtil.LogDebug($"[HOOK_DEBUG] Character already hooked for {steamId}");
+                    return;
+                }
+                LoggerUtil.LogDebug(
+                    $"[HOOK_DEBUG] Replacing old character with new character for {steamId}"
+                );
+            }
+
+            try
+            {
+                character.CharacterDied += deadChar => OnCharacterDied(deadChar, steamId);
+                _trackedCharacters[steamId] = character;
+                LoggerUtil.LogDebug(
+                    $"Hooked CharacterDied for SteamID {steamId}, character: {character.DisplayName}"
+                );
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError(
+                    $"[HOOK_ERROR] Failed to hook character for {steamId}: {ex.Message}"
+                );
+            }
         }
 
         private void OnPollingTick(object sender, System.Timers.ElapsedEventArgs e)
@@ -152,9 +181,9 @@ namespace mamba.TorchDiscordSync.Services
 
         private void HookNewPlayers()
         {
-            LoggerUtil.LogDebug(
-                $"[HOOK] Starting HookNewPlayers - currently tracking {_trackedCharacters.Count} characters"
-            );
+            // LoggerUtil.LogDebug(
+            //     $"[HOOK] Starting HookNewPlayers - currently tracking {_trackedCharacters.Count} characters"
+            // );
             if (MyAPIGateway.Players == null)
                 return;
 
@@ -166,23 +195,21 @@ namespace mamba.TorchDiscordSync.Services
                 if (player?.Character == null)
                     continue;
 
-                // Check if this is a new player (not in tracked list)
                 if (!_trackedCharacters.ContainsKey(player.SteamUserId))
                 {
-                    // NEW PLAYER
                     HookCharacterDeath(player.Character, player.SteamUserId);
                     _playerNames[player.SteamUserId] = player.DisplayName;
                     _knownPlayers.Add(player.SteamUserId);
                     LoggerUtil.LogDebug($"[HOOK] New player hooked: {player.DisplayName}");
-                    _ = _eventLog.LogPlayerJoinAsync(player.DisplayName, player.SteamUserId);
+                    // REMOVED: _ = _eventLog.LogPlayerJoinAsync(...);
+                    // Join event is already called in CheckPlayerChanges()
                 }
                 else
                 {
-                    // EXISTING PLAYER - Check if character changed (respawn)
+                    // Existing player - check if character changed (respawn)
                     var oldCharacter = _trackedCharacters[player.SteamUserId];
                     if (oldCharacter != player.Character)
                     {
-                        // CHARACTER CHANGED (player respawned)
                         LoggerUtil.LogDebug(
                             $"[HOOK] Character changed for {player.DisplayName} - re-hooking death event"
                         );
@@ -192,6 +219,7 @@ namespace mamba.TorchDiscordSync.Services
                 }
             }
         }
+        
 
         private void OnCharacterDied(IMyCharacter deadCharacter, ulong steamId)
         {
@@ -271,7 +299,8 @@ namespace mamba.TorchDiscordSync.Services
                         : $"{killerName} killed {victimName} with {weapon}";
 
                 // Optional: detailed message for Discord (with location if needed)
-                string discordMsg = gameMsg + $" at {location}";
+                // Don't include location here - let DeathLogService handle it
+                string discordMsg = gameMsg; // + $" at {location}";
 
                 // Send to global chat in game (clean version, no coordinates)
                 try
