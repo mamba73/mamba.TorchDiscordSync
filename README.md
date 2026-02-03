@@ -1,160 +1,121 @@
 # mamba.TorchDiscordSync v2.0
 
-**Space Engineers Torch Server Plugin** - Faction sync + death logging + chat bridge + server monitoring
+**NOTE: This project is still in active development.**  
+Many features are partially working or require fixes.  
+Not everything listed below is fully stable yet – ongoing work.
+
+**Space Engineers Torch Server Plugin**  
+Faction sync + death logging + chat bridge + server monitoring
 
 **Author**: mamba  
 **Version**: 2.0.0  
 **Torch**: 1.3.1+  
 **Space Engineers**: 1.208+  
-**C#**: 4.6+ / .NET Framework 4.8
+**C#**: 4.6+ / .NET Framework 4.8  
 
-## Features
+## Features (Current Status)
 
-✨ **Faction Management**
-- Auto-sync player factions (3-char tags) to Discord
-- Create roles & channels per faction
-- Update player nicknames: `[TAG] OriginalNick`
+| Feature                  | Status              | Notes                                                                 |
+|--------------------------|---------------------|-----------------------------------------------------------------------|
+| XML Database             | Completed           | Uses MainConfig.xml, DeathMessages.xml – auto-creates directories     |
+| Chat Synchronization     | Completed           | Bidirectional global chat works; faction/private chat skipped         |
+| Death Logging            | Partially Working   | Basic detection works; multiple deaths sometimes missed; killer/weapon "Unknown" |
+| In-Game Death Announcements ("Death Messages") | In Progress | Basic message sent to global chat; location/zone not working correctly; still being fixed |
+| Discord Death Notifications | In Progress     | One message per death (duplication fixed); location/zone not working correctly; uses templates |
+| Server Monitoring (SimSpeed) | Partially Working | Always shows 1.00 (fallback) – real value not fetched                 |
+| Faction Sync             | Disabled            | Timer off by default; enable in config to test                        |
+| Admin Commands (/tds)    | Not Working         | None of the commands (/tds help, status, verify, sync, reset) are working yet |
+| Security (SteamID whitelist) | Completed       | Admin commands restricted to whitelisted IDs (when they work)        |
 
-💀 **Death & Kill Logging**
-- Suicide detection with random messages
-- First kill tracking
-- Retaliation detection (within 1 hour)
-- Old revenge detection (within 24 hours)
-- Public game chat announcements
-- Discord event channel logging
+## Known Issues
 
-💬 **Chat Synchronization**
-- Game chat → Discord faction channels
-- Discord messages → In-game chat
-- Player name preservation
-
-📊 **Server Monitoring**
-- SimSpeed tracking
-- Server up/down notifications
-- Staff-only alerts on startup
-
-🔒 **Security**
-- SteamID whitelist for admin commands
-- `/tds sync` - Force faction sync
-- `/tds reset` - Clear all Discord objects
-- `/tds status` - Show plugin status
+- In-Game & Discord death messages: location/zone not working correctly (still in progress)  
+- Multiple deaths sometimes not logged or announced (only first one triggers)  
+- SimSpeed always 1.00 (default fallback) – needs real API check  
+- Faction sync timer disabled – enable in config if needed  
+- Killer/weapon detection missing (shows "Unknown") – needs system chat parsing  
+- Join/leave messages sometimes show SteamID instead of name (fixed in latest version)  
+- Discord bot occasional disconnects (WebSocket closed)  
+- **Admin commands completely non-functional** (/tds help, status, verify, sync, reset)  
 
 ## Installation
 
-1. Download latest release from GitHub
-2. Extract `.zip` into `Torch/Plugins/` folder
-3. Start server (auto-creates config)
-4. Edit `Instance/mambaTorchDiscordSync/MambaTorchDiscordSync.cfg`
-5. Restart server
+1. Download latest release or clone repo  
+2. Extract .zip into Torch/Plugins/ folder  
+3. Start server (auto-creates config in Instance/mambaTorchDiscordSync/)  
+4. Edit Instance/mambaTorchDiscordSync/MambaTorchDiscordSync.cfg  
+5. Restart server  
 
 ## Configuration
 
 ### MambaTorchDiscordSync.cfg
 
-```xml
-<DiscordToken>YOUR_BOT_TOKEN</DiscordToken>
-<GuildID>000000000000</GuildID>
-<CategoryID>000000000000</CategoryID>
-<StaffChannelLog>000000000000</StaffChannelLog>
-<AdminSteamIDs>
-  <SteamID>76561198000000001</SteamID>
-  <SteamID>76561198000000002</SteamID>
-</AdminSteamIDs>
-```
+Main settings (XML format):
+
+<Discord>
+  <BotToken>YOUR_BOT_TOKEN</BotToken>
+  <GuildID>000000000000</GuildID>
+  <ChatChannelId>000000000000</ChatChannelId>
+  <StaffLog>000000000000</StaffLog>
+  <StatusChannelId>000000000000</StatusChannelId>
+</Discord>
+
+<Chat>
+  <ServerToDiscord>true</ServerToDiscord>
+  <GameToDiscordFormat>{p}: {msg}</GameToDiscordFormat>
+</Chat>
+
+<Death>
+  <Enabled>true</Enabled>
+  <AnnounceInGame>true</AnnounceInGame>
+  <LogToDiscord>true</LogToDiscord>
+</Death>
 
 ### DeathMessages.xml
 
-Customize death announcements with templates:
+Customize death messages with templates (placeholders {0}=killer, {1}=victim, {2}=weapon, {3}=location):
 
-```xml
 <FirstKill>
-  <Message>{0} obliterated {1} with {2}.</Message>
+  <Message>🩸 FIRST BLOOD! {0} took their first victim - {1}</Message>
 </FirstKill>
-```
 
-Variables:
-- `{0}` = Killer name
-- `{1}` = Victim name
-- `{2}` = Weapon/cause
-- `{3}` = Location
+## Commands (Currently Not Working)
 
-## Data Storage
+**In-game chat** (admin only – planned, but none work yet):
 
-All data stored in `Instance/mambaTorchDiscordSync/`:
-- `MambaTorchDiscordSyncData.xml` - Factions, players, events
-- `DeathMessages.xml` - Message templates
-- `MambaTorchDiscordSync.cfg` - Settings
-
-**No database files** - All XML for easy backup/restore.
-
-## Commands
-
-**In-game chat** (admin with SteamID approved only):
-
-```
-/tds sync              # Force full synchronization
-/tds reset             # Clear all Discord roles/channels
-/tds status            # Show current status
-```
+/tds sync     # Force faction sync  
+/tds reset    # Clear Discord objects  
+/tds status   # Show status  
+/tds help     # Show help  
+/tds verify   # Verification command  
 
 ## Troubleshooting
 
-**Plugin doesn't load?**
-- Check manifest.xml GUID
-- Verify Discord.Net NuGet packages installed
-- Check Torch logs for exceptions
+**Plugin not loading?**
 
-**Discord roles not created?**
-- Verify bot has role creation permissions
-- Check GuildID in config
-- Ensure bot token is valid
+- Check manifest.xml GUID  
+- Verify Discord.Net packages  
+- Check Torch logs  
 
-**Death messages not showing?**
-- Check DeathMessages.xml syntax
-- Verify EventChannelDeathJoinLeave ID
-- Enable Debug mode in config
+**Death messages missing or incomplete?**
+
+- Verify DeathMessages.xml syntax  
+- Enable Debug mode  
+- Check EventChannelDeathJoinLeave ID  
+
+**Discord bot disconnects?**
+
+- Verify bot token  
+- Check bot permissions (Manage Roles, Send Messages, etc.)  
 
 ## License
 
-MIT - See LICENSE file
+MIT - See LICENSE file  
 
 ## Contributing
 
-Pull requests welcome! Please follow C# 4.6 compatibility.
+Pull requests welcome! Please use C# 4.6+ compatibility.
 
 ## Support
 
-will be added later...
----
-
-## Notes on C# 4.6 Compatibility
-
-✅ Safe to use:
-- `List<T>`, `Dictionary<K,V>`
-- `async/await` (C# 5.0+)
-- LINQ
-- `DateTime.UtcNow`
-- XML Serialization
-- `lock` statements
-- String interpolation (C# 6.0 - check if supported, else use `string.Format()`)
-
-❌ Avoid:
-- `using` declarations (C# 8.0)
-- Records (C# 9.0)
-- Pattern matching advanced (C# 7.0+)
-- Nullable reference types (C# 8.0)
-- Default interface implementations
-
-```
-## Summary of Changes
-
-| Feature             | Status | Notes                            |
-|---------------------|--------|----------------------------------|
-| XML Database        | ✅    | Replaces SQLite, auto-creates    |
-| Death Logging       | ✅    | Retaliation detection included   |
-| Chat Sync           | ✅    | Bidirectional game ↔ Discord     |
-| Server Monitor      | ✅    | SimSpeed + up/down alerts        |
-| Security            | ✅    | SteamID whitelist + commands     |
-| Auto Config         | ✅    | Creates directories on startup   |
-| Discord Integration | ✅    | Full Discord.Net library         |
-```
+no support yet!
