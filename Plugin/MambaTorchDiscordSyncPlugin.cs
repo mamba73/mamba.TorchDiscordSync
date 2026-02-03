@@ -255,29 +255,10 @@ namespace mamba.TorchDiscordSync.Plugin
                 LoggerUtil.LogInfo("Player tracking will initialize when session loads");
 
                 // Initialize sync timer (only if faction sync is enabled)
-                int syncInterval = 5000;
-                if (_config != null)
-                {
-                    syncInterval = _config.SyncIntervalSeconds * 1000;
-                }
-
-                // Check if faction sync is enabled before creating timer
-                if (
-                    syncInterval <= 0
-                    || (_config != null && _config.Faction != null && !_config.Faction.Enabled)
-                )
-                {
-                    LoggerUtil.LogInfo(
-                        "Faction sync timer NOT created - disabled or interval is 0"
-                    );
-                }
-                else
-                {
-                    _syncTimer = new Timer(syncInterval);
-                    _syncTimer.Elapsed += OnSyncTimerElapsed;
-                    _syncTimer.AutoReset = true;
-                    LoggerUtil.LogInfo($"Faction sync timer created (interval: {syncInterval}ms)");
-                }
+                _syncTimer = PluginUtils.CreateSyncTimerIfEnabled(
+                    _config,
+                    OnSyncTimerElapsed
+                );                
 
                 _isInitialized = true;
                 PrintBanner("INITIALIZATION COMPLETE");
@@ -519,20 +500,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     }
 
                     // Get actual simulation speed
-                    float currentSimSpeed = 1.0f;
-                    try
-                    {
-                        if (MyAPIGateway.Session != null)
-                        {
-                            currentSimSpeed = MySandboxGame.SimulationRatio;
-                            LoggerUtil.LogDebug("Using actual SimSpeed: " + currentSimSpeed);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerUtil.LogError("Error getting SimSpeed: " + ex.Message);
-                        currentSimSpeed = 1.0f;
-                    }
+                    float currentSimSpeed = PluginUtils.GetCurrentSimSpeed();
 
                     // Send server startup message with real SimSpeed
                     if (_eventLog != null && _config != null && _config.Monitoring != null)
@@ -593,17 +561,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 LoggerUtil.LogInfo("[STARTUP] Initializing server sync...");
 
                 // Get current SimSpeed from session
-                float currentSimSpeed = 1.0f;
-                try
-                {
-                    currentSimSpeed = 1.0f; // Default value
-                    LoggerUtil.LogDebug("Using default SimSpeed (1.0) in startup");
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError("Error getting SimSpeed: " + ex.Message);
-                    currentSimSpeed = 1.0f;
-                }
+                float currentSimSpeed = PluginUtils.GetCurrentSimSpeed();
 
                 // Check server status
                 _orchestrator.CheckServerStatusAsync(currentSimSpeed).Wait();
@@ -622,15 +580,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 }
 
                 // Start periodic sync timer (only if enabled and timer was created)
-                if (_syncTimer != null && !_syncTimer.Enabled)
-                {
-                    _syncTimer.Start();
-                    LoggerUtil.LogSuccess(
-                        "[STARTUP] Sync timer started (interval: "
-                            + _config.SyncIntervalSeconds
-                            + "s)"
-                    );
-                }
+                PluginUtils.StartSyncTimerIfEnabled(_syncTimer, _config);
 
                 LoggerUtil.LogSuccess("[STARTUP] Server startup sync complete!");
             }
@@ -651,7 +601,7 @@ namespace mamba.TorchDiscordSync.Plugin
         private void OnSyncTimerElapsed(object sender, ElapsedEventArgs e)
         {
             // Double-check that faction sync is enabled before running
-            if (_config != null && _config.Faction != null && _config.Faction.Enabled)
+            if (PluginUtils.IsFactionSyncEnabled(_config))
             {
                 if (_orchestrator != null)
                 {
