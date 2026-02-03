@@ -322,6 +322,12 @@ namespace mamba.TorchDiscordSync.Services
                     _ = _eventLog.LogDeathAsync(discordMsg);
                     LoggerUtil.LogDebug("[DEATH_DEBUG] Discord send completed");
                 }
+                else
+                {
+                    LoggerUtil.LogError(
+                        "[DEATH_DEBUG] _eventLog is NULL - death won't go to Discord!"
+                    );
+                }
             }
             catch (Exception ex)
             {

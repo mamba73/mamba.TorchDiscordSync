@@ -128,24 +128,37 @@ namespace mamba.TorchDiscordSync.Handlers
         /// </summary>
         private void HandleHelpCommand(long playerSteamID)
         {
+            LoggerUtil.LogDebug($"[COMMAND] Help command for SteamID {playerSteamID}");
+
+            bool isAdmin = CommandAuthorizationUtil.IsUserAdmin(
+                playerSteamID,
+                _config.AdminSteamIDs
+            );
+            var commands = CommandAuthorizationUtil.GetAllCommands();
+            var availableCommands = CommandAuthorizationUtil.GetAvailableCommands(playerSteamID, _config);
+
+            string helpText = "=== TDS Commands ===\n";
+            foreach (var cmd in availableCommands)
+            {
+                helpText += $"{cmd.Usage} - {cmd.Description}\n";
+            }
+            helpText += "===================";
+
+            LoggerUtil.LogDebug($"[COMMAND_RESPONSE] Sending help to player: {playerSteamID}");
+            // Send to game chat
             try
             {
-                string helpText = CommandAuthorizationUtil.GenerateHelpText(playerSteamID, _config);
-
-                // Split into lines and send each
-                var lines = helpText.Split('\n');
-                foreach (var line in lines)
-                {
-                    ChatUtils.SendServerMessage(line);
-                }
-
-                bool isAdmin = SecurityUtil.IsPlayerAdmin(playerSteamID, _config.AdminSteamIDs);
-                LoggerUtil.LogInfo("[COMMAND] " + (isAdmin ? "ADMIN" : "USER") + " help displayed");
+                Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
+                    helpText,
+                    "TDS",
+                    0,
+                    "Green"
+                );
+                LoggerUtil.LogInfo($"[COMMAND_RESPONSE] Help sent to player");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[HELP] Error: " + ex.Message);
-                ChatUtils.SendError("Error displaying help");
+                LoggerUtil.LogError($"[COMMAND_RESPONSE] Failed to send help: {ex.Message}");
             }
         }
 

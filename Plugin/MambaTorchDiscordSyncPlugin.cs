@@ -13,6 +13,7 @@ using mamba.TorchDiscordSync.Utils;
 using Sandbox;
 using Sandbox.Game.World;
 using Sandbox.ModAPI;
+using Sandbox.Game; // <-- Add this for MyVisualScriptLogicProvider
 using Torch;
 using Torch.API;
 using Torch.API.Managers;
@@ -131,6 +132,16 @@ namespace mamba.TorchDiscordSync.Plugin
                 // NEW: Pass MainConfig to DeathLogService for location zones configuration
                 _deathLog = new DeathLogService(_db, _eventLog, _config);
 
+                _factionReader = new FactionReaderService();
+
+                _factionSync = new FactionSyncService(
+                    _db,
+                    _discordWrapper,
+                    _config,
+                    // _factionReader
+                    _factionReader
+                );
+
                 // Initialize faction reader service for loading real faction data
                 _factionReader = new FactionReaderService();
 
@@ -148,9 +159,6 @@ namespace mamba.TorchDiscordSync.Plugin
                 // Initialize player tracking service - DO NOT call Initialize() yet
                 // It will be called in OnSessionStateChanged when session is loaded
                 _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog);
-
-                // Initialize faction sync service
-                _factionSync = new FactionSyncService(_db, _discordWrapper, _config);
 
                 // Initialize chat sync service
                 _chatSync = new ChatSyncService(_discordWrapper, _config, _db);
@@ -203,6 +211,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     _eventLog,
                     _orchestrator
                 );
+                LoggerUtil.LogDebug("[INIT] CommandProcessor initialized");
                 _eventManager = new EventManager(_config, _discordWrapper, _eventLog);
                 _chatModerator = new ChatModerator(_config, _discordWrapper, _db);
 
@@ -258,7 +267,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 _syncTimer = PluginUtils.CreateSyncTimerIfEnabled(
                     _config,
                     OnSyncTimerElapsed
-                );                
+                );
 
                 _isInitialized = true;
                 PrintBanner("INITIALIZATION COMPLETE");
@@ -566,8 +575,8 @@ namespace mamba.TorchDiscordSync.Plugin
                 // Check server status
                 _orchestrator.CheckServerStatusAsync(currentSimSpeed).Wait();
 
-                // CRITICAL FIX: Load real factions from game using FactionReaderService
-                var factions = LoadFactionsFromGame();
+                // Load real factions from game using FactionReaderService
+                var factions = _factionSync.LoadFactionsFromGame();
                 if (factions.Count > 0)
                 {
                     LoggerUtil.LogInfo("[STARTUP] Found " + factions.Count + " player factions");
@@ -618,16 +627,33 @@ namespace mamba.TorchDiscordSync.Plugin
         /// Handles /tds commands from in-game chat
         /// Delegates to CommandProcessor for actual processing
         /// </summary>
-        public void HandleChatCommand(string command, long playerSteamID, string playerName)
+        private void HandleChatCommand(string message, long steamId, string playerName)
         {
-            if (_commandProcessor != null)
+            try
             {
-                LoggerUtil.LogDebug($"[COMMAND] Forwarding to CommandProcessor: {command}");
-                _commandProcessor.ProcessCommand(command, playerSteamID, playerName);
+                LoggerUtil.LogDebug(
+                    $"[COMMAND_ROUTE] Routing command to CommandProcessor: {message}"
+                );
+
+                if (_commandProcessor != null)
+                {
+                    _commandProcessor.ProcessCommand(message, steamId, playerName);
+                    LoggerUtil.LogInfo($"[COMMAND_ROUTE] CommandProcessor handled: {message}");
+                }
+                else
+                {
+                    LoggerUtil.LogError("[COMMAND_ROUTE] CommandProcessor is NULL!");
+                    MyVisualScriptLogicProvider.SendChatMessage(
+                        "Command processor not available",
+                        "TDS",
+                        0,
+                        "Red"
+                    );
+                }
             }
-            else
+            catch (Exception ex)
             {
-                LoggerUtil.LogError("[COMMAND] CommandProcessor is null - cannot process command");
+                LoggerUtil.LogError($"[COMMAND_ROUTE] Error routing command: {ex.Message}");
             }
         }
 
@@ -720,33 +746,6 @@ namespace mamba.TorchDiscordSync.Plugin
                 LoggerUtil.LogWarning("[CHAT PROCESS] ChatSyncService or config null");
             }
         }
-
-        /// <summary>
-        /// CRITICAL FIX: Loads real factions from Space Engineers save using FactionReaderService
-        /// Replaces test data with actual faction data from game session
-        /// </summary>
-        private List<FactionModel> LoadFactionsFromGame()
-        {
-            var factions = new List<FactionModel>();
-            try
-            {
-                if (_factionReader == null)
-                {
-                    LoggerUtil.LogWarning("FactionReaderService is null - cannot load factions");
-                    return factions;
-                }
-
-                // Load real faction data from game
-                factions = _factionReader.LoadFactionsFromGame();
-                LoggerUtil.LogInfo($"Loaded {factions.Count} factions from game session");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Error loading factions from game: " + ex.Message);
-            }
-            return factions;
-        }
-
         public override void Dispose()
         {
             // Cleanup player tracking service

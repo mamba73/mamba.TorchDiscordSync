@@ -18,12 +18,40 @@ namespace mamba.TorchDiscordSync.Services
         private readonly DiscordService _discord;
         // NEW: Reference to config for checking if faction sync is enabled
         private readonly MainConfig _config;
+        private readonly FactionReaderService _factionReader;
 
-        public FactionSyncService(DatabaseService db, DiscordService discord, MainConfig config)
+        public FactionSyncService(DatabaseService db, DiscordService discord, MainConfig config, FactionReaderService factionReader)
         {
             _db = db;
             _discord = discord;
             _config = config;
+            _factionReader = factionReader;
+        }
+
+        /// <summary>
+        /// CRITICAL FIX: Loads real factions from Space Engineers save using FactionReaderService
+        /// Replaces test data with actual faction data from game session
+        /// </summary>
+        public List<FactionModel> LoadFactionsFromGame()
+        {
+            var factions = new List<FactionModel>();
+            try
+            {
+                if (_factionReader == null)
+                {
+                    LoggerUtil.LogWarning("FactionReaderService is null - cannot load factions");
+                    return factions;
+                }
+
+                // Load real faction data from game
+                factions = _factionReader.LoadFactionsFromGame();
+                LoggerUtil.LogInfo($"Loaded {factions.Count} factions from game session");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("Error loading factions from game: " + ex.Message);
+            }
+            return factions;
         }
 
         /// <summary>

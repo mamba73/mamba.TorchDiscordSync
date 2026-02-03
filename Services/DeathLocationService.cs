@@ -33,6 +33,7 @@ namespace mamba.TorchDiscordSync.Services
         /// </summary>
         public LocationZoneResult DetectDeathZone(IMyCharacter character)
         {
+            LoggerUtil.LogDebug("[LOCATION] Detecting death zone...");
             var result = new LocationZoneResult();
 
             try
@@ -45,6 +46,9 @@ namespace mamba.TorchDiscordSync.Services
                     result.Zone = LocationZoneEnum.UNKNOWN;
                     return result;
                 }
+                LoggerUtil.LogDebug(
+                    $"[LOCATION] character {character.DisplayName} detected for location analysis"
+                    );
 
                 // Get character position from world matrix
                 Vector3D deathPosition = character.GetPosition();
@@ -60,6 +64,22 @@ namespace mamba.TorchDiscordSync.Services
                     );
                     double planetProximityRadius =
                         nearestPlanet.AverageRadius * PLANET_PROXIMITY_MULTIPLIER;
+                        
+                    LoggerUtil.LogDebug(
+                        $"[LOCATION] planetProximityRadius= {planetProximityRadius:F2} km for {character.DisplayName}"
+                    );
+                    LoggerUtil.LogDebug(
+                        $"[LOCATION] distanceToPlanet= {distanceToPlanet:F2}"
+                    );
+                    LoggerUtil.LogDebug(
+                        $"[LOCATION] nearestPlanet.AverageRadius= {nearestPlanet.AverageRadius:F2} km"
+                    );
+                    LoggerUtil.LogDebug(
+                        $"[LOCATION] nearestPlanet.DisplayNameText= {nearestPlanet.DisplayNameText}"
+                    );
+                    LoggerUtil.LogDebug(
+                        $"[LOCATION] PLANET_PROXIMITY_MULTIPLIER= {PLANET_PROXIMITY_MULTIPLIER:F2}"
+                    );
 
                     if (distanceToPlanet < planetProximityRadius)
                     {
