@@ -696,13 +696,26 @@ namespace mamba.TorchDiscordSync.Plugin
                 return;
             }
 
-            // Prevent duplication: skip Server death messages that were already sent from death event
-            if (author == "Server" && (message.Contains("died") || message.Contains("killed")))
+            // Prevent duplication: skip Server event messages that are already sent from event handlers
+            if (author == "Server")
             {
-                LoggerUtil.LogDebug(
-                    "[CHAT PROCESS] Skipped Server death message to prevent duplication on Discord"
-                );
-                return;
+                // Skip death messages - already sent from OnCharacterDied
+                if (message.Contains("died") || message.Contains("killed"))
+                {
+                    LoggerUtil.LogDebug(
+                        "[CHAT PROCESS] Skipped Server death message to prevent duplication on Discord"
+                    );
+                    return;
+                }
+
+                // Skip join/leave messages - already sent from LogPlayerJoinAsync/LogPlayerLeaveAsync
+                if (message.Contains("joined the server") || message.Contains("left the server"))
+                {
+                    LoggerUtil.LogDebug(
+                        "[CHAT PROCESS] Skipped Server join/leave message to prevent duplication on Discord"
+                    );
+                    return;
+                }
             }
 
             // System messages
