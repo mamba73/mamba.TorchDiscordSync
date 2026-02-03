@@ -20,6 +20,7 @@ namespace mamba.TorchDiscordSync.Services
         private readonly EventLoggingService _eventLog;
         private readonly DeathMessagesConfig _deathMessages;
         private readonly DeathLocationService _deathLocation;
+        private readonly MainConfig _config;
 
         /// <summary>
         /// In-memory cache for player death history to determine kill streaks and retaliation.
@@ -27,22 +28,16 @@ namespace mamba.TorchDiscordSync.Services
         /// </summary>
         private readonly Dictionary<string, List<DeathHistoryModel>> _playerDeathHistory =
             new Dictionary<string, List<DeathHistoryModel>>();
-        private MainConfig config;
 
-        public DeathLogService(DatabaseService db, EventLoggingService eventLog)
+        public DeathLogService(DatabaseService db, EventLoggingService eventLog, MainConfig config)
         {
             _db = db;
             _eventLog = eventLog;
+            _config = config;
             _deathMessages = DeathMessagesConfig.Load();
             _deathLocation = new DeathLocationService();
 
             LoggerUtil.LogDebug("DeathLogService initialized and configuration loaded.");
-        }
-
-        public DeathLogService(DatabaseService db, EventLoggingService eventLog, MainConfig config)
-            : this(db, eventLog)
-        {
-            this.config = config;
         }
 
         /// <summary>
@@ -57,13 +52,11 @@ namespace mamba.TorchDiscordSync.Services
             long victimId,
             string location,
             IMyCharacter character = null
-        )
+            )
         {
             try
             {
-                LoggerUtil.LogInfo(
-                    $"[DEATH EVENT] {killerName} killed {victimName} using {weaponType} at {location} in character {character}"
-                );
+                LoggerUtil.LogInfo($"[DEATH EVENT] {killerName} killed {victimName} using {weaponType} at {location}");
 
                 // Ensure history list exists for the victim
                 if (!_playerDeathHistory.ContainsKey(victimName))
@@ -80,13 +73,7 @@ namespace mamba.TorchDiscordSync.Services
                     try
                     {
                         // Passing deathType as string for DB compatibility
-                        _db.LogDeath(
-                            killerId,
-                            victimId,
-                            deathType.ToString(),
-                            weaponType,
-                            location
-                        );
+                        _db.LogDeath(killerId, victimId, deathType.ToString(), weaponType, location);
                         LoggerUtil.LogDebug("Death record successfully saved to database.");
                     }
                     catch (Exception dbEx)
@@ -97,23 +84,14 @@ namespace mamba.TorchDiscordSync.Services
 
                 // 2. Notification: Generate and send Discord message with location processing
                 string finalLocation = location;
-                if (
-                    character != null
-                    && _deathLocation != null
-                    && config != null
-                    && config.Death != null
-                    && config.Death.EnableLocationZones
-                )
+                if (character != null && _deathLocation != null && _config != null && _config.Death != null && _config.Death.EnableLocationZones)
                 {
                     try
                     {
                         var zoneResult = _deathLocation.DetectDeathZone(character);
                         if (zoneResult != null)
                         {
-                            finalLocation = _deathLocation.GenerateLocationText(
-                                zoneResult,
-                                config.Death.GridDetectionEnabled
-                            );
+                            finalLocation = _deathLocation.GenerateLocationText(zoneResult, _config.Death.GridDetectionEnabled);
                         }
                     }
                     catch (Exception ex)
@@ -122,13 +100,7 @@ namespace mamba.TorchDiscordSync.Services
                     }
                 }
 
-                string discordMessage = GenerateDeathMessage(
-                    killerName,
-                    victimName,
-                    weaponType,
-                    deathType,
-                    finalLocation
-                );
+                string discordMessage = GenerateDeathMessage(killerName, victimName, weaponType, deathType, finalLocation);
                 if (_eventLog != null)
                 {
                     await _eventLog.LogDeathAsync(discordMessage);
@@ -192,18 +164,11 @@ namespace mamba.TorchDiscordSync.Services
         /// Formats the death message using templates from configuration.
         /// FIXED: Now supports BOTH {0}/{1}/{2}/{3} AND {victim}/{killer}/{weapon}/{location} placeholders
         /// </summary>
-        private string GenerateDeathMessage(
-            string killer,
-            string victim,
-            string weapon,
-            DeathTypeEnum type,
-            string loc
-        )
+        private string GenerateDeathMessage(string killer, string victim, string weapon, DeathTypeEnum type, string loc)
         {
             try
             {
-                if (_deathMessages == null)
-                    return $"{killer} killed {victim}";
+                if (_deathMessages == null) return $"{killer} killed {victim}";
 
                 // Get random message template for this death type
                 string template = _deathMessages.GetRandomMessage(type);
@@ -241,9 +206,7 @@ namespace mamba.TorchDiscordSync.Services
         /// </summary>
         public (int Deaths, int Kills, float KDRatio) GetPlayerStats(string playerName)
         {
-            int deaths = _playerDeathHistory.TryGetValue(playerName, out var pDeaths)
-                ? pDeaths.Count
-                : 0;
+            int deaths = _playerDeathHistory.TryGetValue(playerName, out var pDeaths) ? pDeaths.Count : 0;
             int kills = 0;
 
             foreach (var history in _playerDeathHistory.Values)
@@ -269,18 +232,13 @@ namespace mamba.TorchDiscordSync.Services
                     string killer = GetProperty(death, "KillerName") as string;
                     if (!string.IsNullOrEmpty(killer))
                     {
-                        if (!stats.ContainsKey(killer))
-                            stats[killer] = 0;
+                        if (!stats.ContainsKey(killer)) stats[killer] = 0;
                         stats[killer]++;
                     }
                 }
             }
 
-            return stats
-                .OrderByDescending(x => x.Value)
-                .Take(limit)
-                .Select(x => (x.Key, x.Value))
-                .ToList();
+            return stats.OrderByDescending(x => x.Value).Take(limit).Select(x => (x.Key, x.Value)).ToList();
         }
 
         #endregion
@@ -293,8 +251,7 @@ namespace mamba.TorchDiscordSync.Services
         private void SetPropertyIfExists(object obj, string propertyName, object value)
         {
             var prop = obj.GetType().GetProperty(propertyName);
-            if (prop != null && prop.CanWrite)
-                prop.SetValue(obj, value);
+            if (prop != null && prop.CanWrite) prop.SetValue(obj, value);
         }
 
         private object GetProperty(object obj, string propName)
@@ -304,37 +261,27 @@ namespace mamba.TorchDiscordSync.Services
 
         private bool IsPropertyEqual(object obj, string propName, string value)
         {
-            return string.Equals(
-                GetProperty(obj, propName) as string,
-                value,
-                StringComparison.OrdinalIgnoreCase
-            );
+            return string.Equals(GetProperty(obj, propName) as string, value, StringComparison.OrdinalIgnoreCase);
         }
 
         #endregion
 
         private bool HasPlayerEverKilledPlayer(string victim, string killer)
         {
-            if (!_playerDeathHistory.ContainsKey(killer))
-                return false;
-            return _playerDeathHistory[killer].Any(d => IsPropertyEqual(d, "KillerName", victim));
+            if (!_playerDeathHistory.ContainsKey(victim)) return false;
+            return _playerDeathHistory[victim].Any(d => IsPropertyEqual(d, "KillerName", killer));
         }
 
         private DateTime GetLastKillTime(string victim, string killer)
         {
-            if (!_playerDeathHistory.ContainsKey(killer))
-                return DateTime.MinValue;
+            if (!_playerDeathHistory.ContainsKey(victim)) return DateTime.MinValue;
 
-            var lastKill = _playerDeathHistory[killer]
-                .Where(d => IsPropertyEqual(d, "KillerName", victim))
-                .OrderByDescending(d =>
-                    GetProperty(d, "Timestamp") as DateTime? ?? DateTime.MinValue
-                )
+            var lastKill = _playerDeathHistory[victim]
+                .Where(d => IsPropertyEqual(d, "KillerName", killer))
+                .OrderByDescending(d => GetProperty(d, "Timestamp") as DateTime? ?? DateTime.MinValue)
                 .FirstOrDefault();
 
-            return lastKill != null
-                ? (GetProperty(lastKill, "Timestamp") as DateTime? ?? DateTime.MinValue)
-                : DateTime.MinValue;
+            return lastKill != null ? (GetProperty(lastKill, "Timestamp") as DateTime? ?? DateTime.MinValue) : DateTime.MinValue;
         }
 
         public void ClearHistory() => _playerDeathHistory.Clear();
