@@ -372,7 +372,11 @@ namespace mamba.TorchDiscordSync.Plugin
                 }
 
                 // PRIORITY 4: Prevent Discord loop messages
-                if (msg.Message.StartsWith("[Discord] ") || msg.Message.StartsWith("Discord") || msg.Message.StartsWith("Server:"))
+                if (
+                    msg.Message.StartsWith("[Discord] ")
+                    || msg.Message.StartsWith("Discord")
+                    || msg.Message.StartsWith("Server:")
+                )
                 {
                     LoggerUtil.LogDebug("[CHAT] Skipped Discord loop: " + msg.Message);
                     return; // Prevent Discord loop messages
@@ -682,8 +686,10 @@ namespace mamba.TorchDiscordSync.Plugin
         /// </summary>
         public void ProcessChatMessage(string message, string author, string channel)
         {
-            LoggerUtil.LogDebug($@"[CHAT PROCESS] Channel: {channel} | Author: {author} | Message: {message}");
-            
+            LoggerUtil.LogDebug(
+                $@"[CHAT PROCESS] Channel: {channel} | Author: {author} | Message: {message}"
+            );
+
             if (string.IsNullOrEmpty(message) || string.IsNullOrEmpty(author))
             {
                 LoggerUtil.LogDebug($"[CHAT PROCESS] - returned due to null/empty");

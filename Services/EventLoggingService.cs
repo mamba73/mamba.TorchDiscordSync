@@ -28,7 +28,7 @@ namespace mamba.TorchDiscordSync.Services
                 {
                     EventType = eventType,
                     Details = details,
-                    Timestamp = DateTime.UtcNow
+                    Timestamp = DateTime.UtcNow,
                 };
 
                 if (_db != null)
@@ -40,8 +40,10 @@ namespace mamba.TorchDiscordSync.Services
                 {
                     if (_discord != null)
                     {
-                        return _discord.SendLogAsync(_config.Discord.StaffLog, 
-                            "[" + eventType + "] " + details);
+                        return _discord.SendLogAsync(
+                            _config.Discord.StaffLog,
+                            "[" + eventType + "] " + details
+                        );
                     }
                 }
 
@@ -63,20 +65,24 @@ namespace mamba.TorchDiscordSync.Services
             try
             {
                 string message = "";
-                
+
                 // Use custom messages from config if available
                 if (_config != null && _config.Monitoring != null)
                 {
                     switch (status.ToUpper())
                     {
                         case "STARTED":
-                            message = _config.Monitoring.ServerStartedMessage ?? ":white_check_mark: Server Started!";
+                            message =
+                                _config.Monitoring.ServerStartedMessage
+                                ?? ":white_check_mark: Server Started!";
                             break;
                         case "STOPPED":
-                            message = _config.Monitoring.ServerStoppedMessage ?? ":x: Server Stopped!";
+                            message =
+                                _config.Monitoring.ServerStoppedMessage ?? ":x: Server Stopped!";
                             break;
                         default:
-                            message = "Server " + status + " | SimSpeed: " + simSpeed.ToString("F2");
+                            message =
+                                "Server " + status + " | SimSpeed: " + simSpeed.ToString("F2");
                             break;
                     }
                 }
@@ -86,7 +92,11 @@ namespace mamba.TorchDiscordSync.Services
                 }
 
                 // Send to ChatChannelId instead of StatusChannelId (as per your preference)
-                if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
+                if (
+                    _config != null
+                    && _config.Discord != null
+                    && _config.Discord.ChatChannelId != 0
+                )
                 {
                     if (_discord != null)
                     {
@@ -94,7 +104,10 @@ namespace mamba.TorchDiscordSync.Services
                     }
                 }
 
-                return LogAsync("ServerStatus", status + " (SimSpeed: " + simSpeed.ToString("F2") + ")");
+                return LogAsync(
+                    "ServerStatus",
+                    status + " (SimSpeed: " + simSpeed.ToString("F2") + ")"
+                );
             }
             catch (Exception ex)
             {
@@ -108,12 +121,22 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                string threshold = _config != null && _config.Monitoring != null ? 
-                    _config.Monitoring.SimThresh.ToString("F2") : "0.60";
-                string message = "SIMSPEED ALERT - Current: " + simSpeed.ToString("F2") + 
-                    " (Threshold: " + threshold + ")";
+                string threshold =
+                    _config != null && _config.Monitoring != null
+                        ? _config.Monitoring.SimThresh.ToString("F2")
+                        : "0.60";
+                string message =
+                    "SIMSPEED ALERT - Current: "
+                    + simSpeed.ToString("F2")
+                    + " (Threshold: "
+                    + threshold
+                    + ")";
 
-                if (_config != null && _config.Discord != null && _config.Discord.StatusChannelId != 0)
+                if (
+                    _config != null
+                    && _config.Discord != null
+                    && _config.Discord.StatusChannelId != 0
+                )
                 {
                     if (_discord != null)
                     {
@@ -121,7 +144,10 @@ namespace mamba.TorchDiscordSync.Services
                     }
                 }
 
-                return LogAsync("SimSpeedWarning", "SimSpeed below threshold: " + simSpeed.ToString("F2"));
+                return LogAsync(
+                    "SimSpeedWarning",
+                    "SimSpeed below threshold: " + simSpeed.ToString("F2")
+                );
             }
             catch (Exception ex)
             {
@@ -168,11 +194,15 @@ namespace mamba.TorchDiscordSync.Services
             {
                 string template = _config.Chat.JoinMessage ?? ":sunny: {p} joined the server";
                 string message = template.Replace("{p}", playerName);
-                
-                // ili sa SteamID
-                // if (steamID != 0 && !_config.Privacy.HideSteamId) message += " (" + steamID + ")";                
 
-                if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
+                // ili sa SteamID
+                // if (steamID != 0 && !_config.Privacy.HideSteamId) message += " (" + steamID + ")";
+
+                if (
+                    _config != null
+                    && _config.Discord != null
+                    && _config.Discord.ChatChannelId != 0
+                )
                 {
                     if (_discord != null)
                     {
@@ -198,7 +228,11 @@ namespace mamba.TorchDiscordSync.Services
                 string message = template.Replace("{p}", playerName);
                 // string message = playerName + " (" + steamID + ") left the server";
 
-                if (_config != null && _config.Discord != null && _config.Discord.ChatChannelId != 0)
+                if (
+                    _config != null
+                    && _config.Discord != null
+                    && _config.Discord.ChatChannelId != 0
+                )
                 {
                     if (_discord != null)
                     {
@@ -220,7 +254,8 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                string message = "Sync Complete - Factions: " + factionsCount + ", Players: " + playersCount;
+                string message =
+                    "Sync Complete - Factions: " + factionsCount + ", Players: " + playersCount;
 
                 if (_config != null && _config.Discord != null && _config.Discord.StaffLog != 0)
                 {
@@ -230,7 +265,10 @@ namespace mamba.TorchDiscordSync.Services
                     }
                 }
 
-                return LogAsync("SyncComplete", factionsCount + " factions, " + playersCount + " players");
+                return LogAsync(
+                    "SyncComplete",
+                    factionsCount + " factions, " + playersCount + " players"
+                );
             }
             catch (Exception ex)
             {
