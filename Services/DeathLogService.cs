@@ -35,7 +35,7 @@ namespace mamba.TorchDiscordSync.Services
             _eventLog = eventLog;
             _config = config;
             _deathMessages = DeathMessagesConfig.Load();
-            _deathLocation = new DeathLocationService();
+            _deathLocation = new DeathLocationService(_config);
 
             LoggerUtil.LogDebug("DeathLogService initialized and configuration loaded.");
         }
