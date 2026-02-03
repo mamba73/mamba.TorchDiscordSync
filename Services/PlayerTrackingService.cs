@@ -213,7 +213,7 @@ namespace mamba.TorchDiscordSync.Services
                         killerId,
                         (long)victimSteamId,
                         location,
-                        deadCharacter //.DisplayName ?? victimName
+                        deadCharacter
                     );
                 }
 
