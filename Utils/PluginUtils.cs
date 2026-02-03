@@ -46,15 +46,15 @@ namespace mamba.TorchDiscordSync.Utils
         {
             try
             {
-                if (MySandboxGame.Static == null)
+                float simSpeed = MySandboxGame.SimulationRatio;
+                if (float.IsNaN(simSpeed) || float.IsInfinity(simSpeed))
                 {
                     LoggerUtil.LogWarning(
-                        "MySandboxGame.Static is null - returning default SimSpeed 1.0"
+                        "Invalid SimSpeed detected (NaN/Infinity) - returning default 1.0"
                     );
                     return 1.0f;
                 }
-                // currentSimSpeed = MySandboxGame.Static.SimulationRatio;
-                return MySandboxGame.SimulationRatio;
+                return simSpeed;
             }
             catch (Exception ex)
             {
