@@ -198,6 +198,25 @@ namespace mamba.TorchDiscordSync.Services
                 // ili sa SteamID
                 // if (steamID != 0 && !_config.Privacy.HideSteamId) message += " (" + steamID + ")";
 
+                // SEND TO GAME CHAT FIRST (from configuration)
+                try
+                {
+                    // Remove Discord formatting for game chat
+                    string gameMessage = message.Replace(":sunny:", "").Trim();
+                    Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
+                        gameMessage,
+                        "Server",
+                        0,
+                        "Yellow"
+                    );
+                    LoggerUtil.LogInfo($"[PLAYER_JOIN] In-game message: {gameMessage}");
+                }
+                catch (Exception exGame)
+                {
+                    LoggerUtil.LogError($"Failed to send join message to game: {exGame.Message}");
+                }
+
+                // THEN SEND TO DISCORD
                 if (
                     _config != null
                     && _config.Discord != null
@@ -228,6 +247,25 @@ namespace mamba.TorchDiscordSync.Services
                 string message = template.Replace("{p}", playerName);
                 // string message = playerName + " (" + steamID + ") left the server";
 
+                // SEND TO GAME CHAT FIRST (from configuration)
+                try
+                {
+                    // Remove Discord formatting for game chat
+                    string gameMessage = message.Replace(":sunny:", "").Trim();
+                    Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
+                        gameMessage,
+                        "Server",
+                        0,
+                        "Yellow"
+                    );
+                    LoggerUtil.LogInfo($"[PLAYER_LEAVE] In-game message: {gameMessage}");
+                }
+                catch (Exception exGame)
+                {
+                    LoggerUtil.LogError($"Failed to send leave message to game: {exGame.Message}");
+                }
+
+                // THEN SEND TO DISCORD
                 if (
                     _config != null
                     && _config.Discord != null

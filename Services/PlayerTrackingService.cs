@@ -152,6 +152,9 @@ namespace mamba.TorchDiscordSync.Services
 
         private void HookNewPlayers()
         {
+            LoggerUtil.LogDebug(
+                $"[HOOK] Starting HookNewPlayers - currently tracking {_trackedCharacters.Count} characters"
+            );
             if (MyAPIGateway.Players == null)
                 return;
 
@@ -163,10 +166,29 @@ namespace mamba.TorchDiscordSync.Services
                 if (player?.Character == null)
                     continue;
 
+                // Check if this is a new player (not in tracked list)
                 if (!_trackedCharacters.ContainsKey(player.SteamUserId))
                 {
+                    // NEW PLAYER
                     HookCharacterDeath(player.Character, player.SteamUserId);
                     _playerNames[player.SteamUserId] = player.DisplayName;
+                    _knownPlayers.Add(player.SteamUserId);
+                    LoggerUtil.LogDebug($"[HOOK] New player hooked: {player.DisplayName}");
+                    _ = _eventLog.LogPlayerJoinAsync(player.DisplayName, player.SteamUserId);
+                }
+                else
+                {
+                    // EXISTING PLAYER - Check if character changed (respawn)
+                    var oldCharacter = _trackedCharacters[player.SteamUserId];
+                    if (oldCharacter != player.Character)
+                    {
+                        // CHARACTER CHANGED (player respawned)
+                        LoggerUtil.LogDebug(
+                            $"[HOOK] Character changed for {player.DisplayName} - re-hooking death event"
+                        );
+                        _trackedCharacters[player.SteamUserId] = player.Character;
+                        HookCharacterDeath(player.Character, player.SteamUserId);
+                    }
                 }
             }
         }
@@ -175,16 +197,34 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                if (deadCharacter == null)
-                    return;
+                LoggerUtil.LogDebug($"[DEATH_DEBUG] OnCharacterDied called for SteamID {steamId}");
 
-                // Skip if already dead (prevents duplicate triggers from SE)
-                if (deadCharacter.IsDead)
+                if (deadCharacter == null)
+                {
+                    LoggerUtil.LogDebug(
+                        "[DEATH_DEBUG] OnCharacterDied - deadCharacter is NULL, returning"
+                    );
                     return;
+                }
+                LoggerUtil.LogDebug(
+                    $"[DEATH_DEBUG] deadCharacter is valid: {deadCharacter.DisplayName}"
+                );
+
+                // Note: Character is expected to be dead when this event fires
+                // This is normal behavior for the CharacterDied event
+                LoggerUtil.LogDebug(
+                    $"[DEATH_DEBUG] Character is dead (IsDead={deadCharacter.IsDead}) - proceeding with death logging"
+                );
 
                 var controller = MyAPIGateway.Players.GetPlayerControllingEntity(deadCharacter);
                 if (controller == null)
+                {
+                    LoggerUtil.LogDebug(
+                        "[DEATH_DEBUG] controller is NULL (no player controlling entity), returning"
+                    );
                     return;
+                }
+                LoggerUtil.LogDebug($"[DEATH_DEBUG] controller is valid: {controller.DisplayName}");
 
                 ulong victimSteamId = controller.SteamUserId;
                 string victimName = controller.DisplayName ?? "Unknown";
@@ -194,7 +234,12 @@ namespace mamba.TorchDiscordSync.Services
                 // Improved death key with milliseconds to handle multiple deaths in the same second
                 string deathKey = $"{victimSteamId}:{DateTime.UtcNow:yyyyMMddHHmmssfff}";
                 if (_processedDeaths.Contains(deathKey))
+                {
+                    LoggerUtil.LogDebug(
+                        $"[DEATH_DEBUG] Death already processed (duplicate), returning"
+                    );
                     return;
+                }
 
                 _processedDeaths.Add(deathKey);
 
@@ -206,6 +251,7 @@ namespace mamba.TorchDiscordSync.Services
                 // Log to database
                 if (_deathLog != null)
                 {
+                    LoggerUtil.LogDebug("[DEATH_DEBUG] Calling LogPlayerDeathAsync");
                     _ = _deathLog.LogPlayerDeathAsync(
                         killerName,
                         victimName,
@@ -215,6 +261,7 @@ namespace mamba.TorchDiscordSync.Services
                         location,
                         deadCharacter
                     );
+                    LoggerUtil.LogDebug("[DEATH_DEBUG] LogPlayerDeathAsync call completed");
                 }
 
                 // Generate clean message WITHOUT coordinates for in-game chat
@@ -229,23 +276,29 @@ namespace mamba.TorchDiscordSync.Services
                 // Send to global chat in game (clean version, no coordinates)
                 try
                 {
+                    LoggerUtil.LogDebug($"[DEATH_DEBUG] Sending to game chat: {gameMsg}");
                     MyVisualScriptLogicProvider.SendChatMessage(gameMsg, "Server", 0, "Red");
                     LoggerUtil.LogInfo($"[DEATH CHAT] Broadcasted to game: {gameMsg}");
+                    LoggerUtil.LogDebug("[DEATH_DEBUG] Game chat send completed");
                 }
                 catch (Exception ex)
                 {
                     LoggerUtil.LogError($"Failed to broadcast death to game chat: {ex.Message}");
                 }
 
-                // Send to Discord ONLY if needed (commented out to prevent duplication - use ProcessSystemChatMessage or DeathLogService instead)
-                // if (_eventLog != null)
-                // {
-                //     _ = _eventLog.LogDeathAsync(discordMsg);
-                // }
+                // Send to Discord
+                if (_eventLog != null)
+                {
+                    LoggerUtil.LogDebug($"[DEATH_DEBUG] Sending to Discord: {discordMsg}");
+                    _ = _eventLog.LogDeathAsync(discordMsg);
+                    LoggerUtil.LogDebug("[DEATH_DEBUG] Discord send completed");
+                }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in OnCharacterDied: {ex.Message}");
+                LoggerUtil.LogError(
+                    $"[DEATH_ERROR] Error in OnCharacterDied: {ex.Message}\n{ex.StackTrace}"
+                );
             }
         }
 
