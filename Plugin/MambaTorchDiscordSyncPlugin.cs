@@ -41,6 +41,7 @@ namespace mamba.TorchDiscordSync.Plugin
         private VerificationService _verification;
         private VerificationCommandHandler _verificationCommandHandler;
         private SyncOrchestrator _orchestrator;
+        private DeathMessageHandler _deathMessageHandler;
         private PlayerTrackingService _playerTracking;
         private FactionReaderService _factionReader;
 
@@ -146,7 +147,21 @@ namespace mamba.TorchDiscordSync.Plugin
 
                 // Initialize player tracking service - DO NOT call Initialize() yet
                 // It will be called in OnSessionStateChanged when session is loaded
-                _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog);
+                // _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog);
+
+                // 1. Create DeathMessageHandler FIRST
+                _deathMessageHandler = new DeathMessageHandler(_eventLog, _config);
+                LoggerUtil.LogDebug("[INIT] DeathMessageHandler created");
+
+                // 2. THEN create PlayerTrackingService with it
+                _playerTracking = new PlayerTrackingService(
+                    _eventLog,
+                    _torch,
+                    _deathLog,
+                    _config,
+                    _deathMessageHandler  // ← NOW it's NOT NULL!
+                );
+                LoggerUtil.LogDebug("[INIT] PlayerTrackingService initialized");
 
                 // Initialize faction sync service
                 _factionSync = new FactionSyncService(
