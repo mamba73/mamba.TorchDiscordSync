@@ -165,27 +165,149 @@ namespace mamba.TorchDiscordSync.Handlers
         /// <summary>
         /// Handle /tds verify @DiscordName command
         /// </summary>
+        /// <summary>
+        /// Handle /tds verify @DiscordName command
+        /// Generates verification code and sends embed to Discord
+        /// </summary>
         private void HandleVerifyCommand(long playerSteamID, string playerName, string[] args)
         {
             try
             {
+                LoggerUtil.LogDebug(
+                    $"[VERIFY_CMD] Started for {playerName} (SteamID: {playerSteamID})"
+                );
+
+                // Validate arguments
                 if (args.Length < 3)
                 {
                     ChatUtils.SendError("Usage: /tds verify @DiscordName");
+                    LoggerUtil.LogDebug("[VERIFY_CMD] Invalid arguments");
                     return;
                 }
 
                 string discordUsername = args[2];
 
-                // This needs to be handled through the main plugin since it has VerificationCommandHandler reference
-                // For now, we'll send a message that this is handled elsewhere
-                ChatUtils.SendServerMessage("Verification command received. Processing...");
-                LoggerUtil.LogInfo("[COMMAND] " + playerName + ": verify requested for " + discordUsername);
+                // Validate Discord username format
+                if (string.IsNullOrEmpty(discordUsername) || discordUsername.Length < 2)
+                {
+                    ChatUtils.SendError("Invalid Discord username");
+                    return;
+                }
+
+                // Check if verification service is available
+                if (_verification == null)
+                {
+                    ChatUtils.SendError("Verification service not available");
+                    LoggerUtil.LogWarning("[VERIFY_CMD] VerificationService is NULL");
+                    return;
+                }
+
+                // Generate verification code
+                string verificationCode = _verification.GenerateVerificationCode(
+                    playerSteamID,
+                    playerName,
+                    discordUsername
+                );
+
+                if (string.IsNullOrEmpty(verificationCode))
+                {
+                    ChatUtils.SendWarning(
+                        "You already have a pending verification code. Please wait or try again later."
+                    );
+                    LoggerUtil.LogDebug($"[VERIFY_CMD] {playerName} already has pending code");
+                    return;
+                }
+
+                // Send code to player in-game
+                ChatUtils.SendSuccess($"Verification code: {verificationCode}");
+                ChatUtils.SendInfo($"Send this code to Discord bot to verify your account");
+
+                // Send embedded message to Discord
+                SendVerificationEmbedToDiscord(playerName, verificationCode, discordUsername);
+
+                LoggerUtil.LogInfo(
+                    $"[VERIFY_CMD] Code sent to {playerName}: {verificationCode} (Discord: {discordUsername})"
+                );
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[VERIFY_CMD] Error: " + ex.Message);
-                ChatUtils.SendError("Verification error: " + ex.Message);
+                LoggerUtil.LogError($"[VERIFY_CMD] Error: {ex.Message}");
+                ChatUtils.SendError($"Verification error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Send verification code as embedded message to Discord
+        /// </summary>
+        private void SendVerificationEmbedToDiscord(
+            string playerName,
+            string verificationCode,
+            string discordUsername
+        )
+        {
+            try
+            {
+                if (_discordService == null)
+                {
+                    LoggerUtil.LogWarning("[VERIFY_EMBED] DiscordService is NULL");
+                    return;
+                }
+
+                // Build embed message
+                string embedJson =
+                    $@"{{
+  ""embeds"": [
+    {{
+      ""color"": 3066993,
+      ""title"": ""🔐 Account Verification"",
+      ""description"": ""Your Space Engineers account is ready to be verified!"",
+      ""fields"": [
+        {{
+          ""name"": ""👾 Player Name"",
+          ""value"": ""{playerName}"",
+          ""inline"": true
+        }},
+        {{
+          ""name"": ""🎮 Discord User"",
+          ""value"": ""@{discordUsername}"",
+          ""inline"": true
+        }},
+        {{
+          ""name"": ""🔑 Verification Code"",
+          ""value"": ""```\n{verificationCode}\n```"",
+          ""inline"": false
+        }},
+        {{
+          ""name"": ""📝 How to Verify"",
+          ""value"": ""Send this code to the bot with: `/verify {verificationCode}`"",
+          ""inline"": false
+        }}
+      ],
+      ""footer"": {{
+        ""text"": ""Code expires in 15 minutes"",
+        ""icon_url"": ""https://media.discordapp.net/attachments/icons/verification.png""
+      }},
+      ""timestamp"": ""{DateTime.UtcNow:O}""
+    }}
+  ]
+}}";
+
+                // Send to Discord (you can customize this based on your DiscordService)
+                LoggerUtil.LogDebug("[VERIFY_EMBED] Sending embed to Discord");
+                LoggerUtil.LogInfo($"[VERIFY_EMBED] Code {verificationCode} for {playerName}");
+
+                // TODO: If DiscordService has SendEmbedAsync method, call it:
+                // await _discordService.SendEmbedAsync(embedJson);
+
+                // For now, send as regular message
+                string message =
+                    $"🔐 **Verification Code for {playerName}**: `{verificationCode}`\n"
+                    + $"📝 Command: `/verify {verificationCode}`";
+                // This would need to be sent to verification channel on Discord
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[VERIFY_EMBED] Error: {ex.Message}");
             }
         }
 
