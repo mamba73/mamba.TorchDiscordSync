@@ -254,11 +254,11 @@ namespace mamba.TorchDiscordSync.Services
                 else
                 {
                     // Fallback: log directly
-                    LoggerUtil.LogWarning("[DEATH] DeathMessageHandler is null - using fallback");
-                    if (_eventLog != null)
-                    {
-                        await _eventLog.LogDeathAsync($"{playerName} died");
-                    }
+                    LoggerUtil.LogWarning("[DEATH] DeathMessageHandler is null");
+                    // if (_eventLog != null)
+                    // {
+                    //     await _eventLog.LogDeathAsync($"{playerName} died");
+                    // }
                 }
 
                 LoggerUtil.LogSuccess("[DEATH] Complete");
