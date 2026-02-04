@@ -69,7 +69,8 @@ namespace mamba.TorchDiscordSync.Utils
         /// </summary>
         public static Timer CreateSyncTimerIfEnabled(
             MainConfig config,
-            ElapsedEventHandler elapsedHandler
+            ElapsedEventHandler elapsedHandler,
+            Action onPeriodicCleanup
         )
         {
             if (!IsFactionSyncEnabled(config))
@@ -122,6 +123,20 @@ namespace mamba.TorchDiscordSync.Utils
                 timer.Stop();
                 LoggerUtil.LogInfo("Faction sync timer stopped");
             }
+        }
+
+        /// <summary>
+        /// Print plugin banner to console
+        /// </summary>
+        public static void PrintBanner(string title)
+        {
+            Console.WriteLine("");
+            Console.WriteLine("-====================================================¬");
+            Console.WriteLine(
+                $"¦ {VersionUtil.GetPluginName()} {VersionUtil.GetVersionString()} - {title.PadRight(20)}¦"
+            );
+            Console.WriteLine("L====================================================-");
+            Console.WriteLine("");
         }
     }
 }

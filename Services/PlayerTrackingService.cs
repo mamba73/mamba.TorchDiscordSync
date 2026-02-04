@@ -2,9 +2,12 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using mamba.TorchDiscordSync.Config;
+using mamba.TorchDiscordSync.Handlers;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
-using Sandbox.Game; // For MyVisualScriptLogicProvider
+using Sandbox.Game;
+using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using Torch.API;
 using VRage.Game.ModAPI;
@@ -19,6 +22,9 @@ namespace mamba.TorchDiscordSync.Services
         private readonly EventLoggingService _eventLog;
         private readonly ITorchBase _torch;
         private readonly DeathLogService _deathLog;
+        private readonly MainConfig _config;
+        private readonly DeathMessageHandler _deathHandler;
+        private DeathMessagesConfig _deathMessagesConfig;
 
         // Cache player names for join/leave messages (prevents SteamID display on leave)
         private Dictionary<ulong, string> _playerNames = new Dictionary<ulong, string>();
@@ -33,12 +39,19 @@ namespace mamba.TorchDiscordSync.Services
         public PlayerTrackingService(
             EventLoggingService eventLog,
             ITorchBase torch,
-            DeathLogService deathLog
+            DeathLogService deathLog,
+            MainConfig config = null,
+            DeathMessageHandler deathHandler = null
         )
         {
             _eventLog = eventLog;
             _torch = torch;
             _deathLog = deathLog;
+            _config = config;
+            _deathHandler = deathHandler;
+            _deathMessagesConfig = DeathMessagesConfig.Load();
+
+            LoggerUtil.LogDebug("[TRACKING] PlayerTrackingService initialized");
         }
 
         public void Initialize()
@@ -181,9 +194,6 @@ namespace mamba.TorchDiscordSync.Services
 
         private void HookNewPlayers()
         {
-            // LoggerUtil.LogDebug(
-            //     $"[HOOK] Starting HookNewPlayers - currently tracking {_trackedCharacters.Count} characters"
-            // );
             if (MyAPIGateway.Players == null)
                 return;
 
@@ -201,8 +211,6 @@ namespace mamba.TorchDiscordSync.Services
                     _playerNames[player.SteamUserId] = player.DisplayName;
                     _knownPlayers.Add(player.SteamUserId);
                     LoggerUtil.LogDebug($"[HOOK] New player hooked: {player.DisplayName}");
-                    // REMOVED: _ = _eventLog.LogPlayerJoinAsync(...);
-                    // Join event is already called in CheckPlayerChanges()
                 }
                 else
                 {
@@ -219,124 +227,51 @@ namespace mamba.TorchDiscordSync.Services
                 }
             }
         }
-        
 
-        private void OnCharacterDied(IMyCharacter deadCharacter, ulong steamId)
+        /// <summary>
+        /// Event handler for character death
+        /// </summary>
+        private async void OnCharacterDied(IMyCharacter deadCharacter, ulong steamId)
         {
             try
             {
-                LoggerUtil.LogDebug($"[DEATH_DEBUG] OnCharacterDied called for SteamID {steamId}");
+                LoggerUtil.LogDebug($"[DEATH] OnCharacterDied for SteamID {steamId}");
 
                 if (deadCharacter == null)
                 {
-                    LoggerUtil.LogDebug(
-                        "[DEATH_DEBUG] OnCharacterDied - deadCharacter is NULL, returning"
-                    );
-                    return;
-                }
-                LoggerUtil.LogDebug(
-                    $"[DEATH_DEBUG] deadCharacter is valid: {deadCharacter.DisplayName}"
-                );
-
-                // Note: Character is expected to be dead when this event fires
-                // This is normal behavior for the CharacterDied event
-                LoggerUtil.LogDebug(
-                    $"[DEATH_DEBUG] Character is dead (IsDead={deadCharacter.IsDead}) - proceeding with death logging"
-                );
-
-                var controller = MyAPIGateway.Players.GetPlayerControllingEntity(deadCharacter);
-                if (controller == null)
-                {
-                    LoggerUtil.LogDebug(
-                        "[DEATH_DEBUG] controller is NULL (no player controlling entity), returning"
-                    );
-                    return;
-                }
-                LoggerUtil.LogDebug($"[DEATH_DEBUG] controller is valid: {controller.DisplayName}");
-
-                ulong victimSteamId = controller.SteamUserId;
-                string victimName = controller.DisplayName ?? "Unknown";
-
-                LoggerUtil.LogInfo($"[DEATH EVENT] {victimName} ({victimSteamId}) died");
-
-                // Improved death key with milliseconds to handle multiple deaths in the same second
-                string deathKey = $"{victimSteamId}:{DateTime.UtcNow:yyyyMMddHHmmssfff}";
-                if (_processedDeaths.Contains(deathKey))
-                {
-                    LoggerUtil.LogDebug(
-                        $"[DEATH_DEBUG] Death already processed (duplicate), returning"
-                    );
+                    LoggerUtil.LogDebug("[DEATH] Character is NULL");
                     return;
                 }
 
-                _processedDeaths.Add(deathKey);
+                string playerName = deadCharacter.DisplayName;
+                LoggerUtil.LogInfo($"[DEATH EVENT] {playerName} died");
 
-                string killerName = "Unknown";
-                long killerId = 0;
-                string weapon = "Unknown";
-                string location = deadCharacter.GetPosition().ToString();
-
-                // Log to database
-                if (_deathLog != null)
+                // Delegate to DeathMessageHandler if available
+                if (_deathHandler != null)
                 {
-                    LoggerUtil.LogDebug("[DEATH_DEBUG] Calling LogPlayerDeathAsync");
-                    _ = _deathLog.LogPlayerDeathAsync(
-                        killerName,
-                        victimName,
-                        weapon,
-                        killerId,
-                        (long)victimSteamId,
-                        location,
-                        deadCharacter
-                    );
-                    LoggerUtil.LogDebug("[DEATH_DEBUG] LogPlayerDeathAsync call completed");
-                }
-
-                // Generate clean message WITHOUT coordinates for in-game chat
-                string gameMsg =
-                    killerName == "Unknown"
-                        ? $"{victimName} died"
-                        : $"{killerName} killed {victimName} with {weapon}";
-
-                // Optional: detailed message for Discord (with location if needed)
-                // Don't include location here - let DeathLogService handle it
-                string discordMsg = gameMsg; // + $" at {location}";
-
-                // Send to global chat in game (clean version, no coordinates)
-                try
-                {
-                    LoggerUtil.LogDebug($"[DEATH_DEBUG] Sending to game chat: {gameMsg}");
-                    MyVisualScriptLogicProvider.SendChatMessage(gameMsg, "Server", 0, "Red");
-                    LoggerUtil.LogInfo($"[DEATH CHAT] Broadcasted to game: {gameMsg}");
-                    LoggerUtil.LogDebug("[DEATH_DEBUG] Game chat send completed");
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError($"Failed to broadcast death to game chat: {ex.Message}");
-                }
-
-                // Send to Discord
-                if (_eventLog != null)
-                {
-                    LoggerUtil.LogDebug($"[DEATH_DEBUG] Sending to Discord: {discordMsg}");
-                    _ = _eventLog.LogDeathAsync(discordMsg);
-                    LoggerUtil.LogDebug("[DEATH_DEBUG] Discord send completed");
+                    await _deathHandler.HandlePlayerDeathAsync(playerName);
                 }
                 else
                 {
-                    LoggerUtil.LogError(
-                        "[DEATH_DEBUG] _eventLog is NULL - death won't go to Discord!"
-                    );
+                    // Fallback: log directly
+                    LoggerUtil.LogWarning("[DEATH] DeathMessageHandler is null - using fallback");
+                    if (_eventLog != null)
+                    {
+                        await _eventLog.LogDeathAsync($"{playerName} died");
+                    }
                 }
+
+                LoggerUtil.LogSuccess("[DEATH] Complete");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError(
-                    $"[DEATH_ERROR] Error in OnCharacterDied: {ex.Message}\n{ex.StackTrace}"
-                );
+                LoggerUtil.LogError($"Error in OnCharacterDied: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
+        /// <summary>
+        /// Processes system chat messages to detect deaths
+        /// </summary>
         public void ProcessSystemChatMessage(string message)
         {
             if (string.IsNullOrEmpty(message))
