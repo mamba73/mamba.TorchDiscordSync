@@ -334,6 +334,12 @@ namespace mamba.TorchDiscordSync.Config
         [XmlElement]
         public bool ShowGridName { get; set; }
 
+        [XmlElement]
+        public string DeathMessageEmotes { get; set; }
+
+        [XmlElement]
+        public int MessageDeduplicationWindowSeconds { get; set; }
+
         // NEW: Location detection thresholds (in kilometers)
         [XmlElement]
         public double InnerSystemMaxKm { get; set; }
@@ -357,6 +363,9 @@ namespace mamba.TorchDiscordSync.Config
             EnableLocationZones = true;
             GridDetectionEnabled = true;
             ShowGridName = true;
+            
+            DeathMessageEmotes = "📢,⚔️,💀,🔥,⚡";
+            MessageDeduplicationWindowSeconds = 3;
 
             // Location detection thresholds (in kilometers)
             InnerSystemMaxKm = 5000.0;

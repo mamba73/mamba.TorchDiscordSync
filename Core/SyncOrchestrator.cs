@@ -23,7 +23,7 @@ namespace mamba.TorchDiscordSync.Core
         private readonly EventLoggingService _eventLog;
 
         public SyncOrchestrator(DatabaseService db, DiscordService discord,
-            FactionSyncService factionSync, EventLoggingService evtLog, MainConfig config)
+            FactionSyncService factionSync, EventLoggingService evtLog, MainConfig config, FactionReaderService factionReader)
         {
             _db = db;
             _discord = discord;

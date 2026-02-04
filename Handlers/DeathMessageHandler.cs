@@ -1,10 +1,13 @@
 // Handlers/DeathMessageHandler.cs
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Models;
+using mamba.TorchDiscordSync.Services;
 using mamba.TorchDiscordSync.Utils;
 using Sandbox.Game;
+using VRage.Game.ModAPI;
 
 namespace mamba.TorchDiscordSync.Handlers
 {
@@ -23,7 +26,6 @@ namespace mamba.TorchDiscordSync.Handlers
             _eventLog = eventLog;
             _config = config;
             _deathMessagesConfig = DeathMessagesConfig.Load();
-            LoggerUtil.LogDebug("[DEATH_HANDLER] Initialized");
         }
 
         /// <summary>
