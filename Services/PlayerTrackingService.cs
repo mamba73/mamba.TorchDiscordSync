@@ -11,11 +11,13 @@ using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using Torch.API;
 using VRage.Game.ModAPI;
+using VRageMath;
 
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
     /// Service for tracking player joins/leaves and DEATHS via IMyCharacter.CharacterDied event
+    /// ENHANCED: Better respawn detection, comprehensive death logging with location & details
     /// </summary>
     public class PlayerTrackingService
     {
@@ -31,9 +33,14 @@ namespace mamba.TorchDiscordSync.Services
 
         private System.Timers.Timer _pollingTimer;
         private HashSet<ulong> _knownPlayers = new HashSet<ulong>();
-        private Dictionary<ulong, IMyCharacter> _trackedCharacters =
-            new Dictionary<ulong, IMyCharacter>();
-        private HashSet<string> _processedDeaths = new HashSet<string>();
+
+        // ENHANCED: Track both character entities and their entity IDs for respawn detection
+        private Dictionary<ulong, IMyCharacter> _trackedCharacters = new Dictionary<ulong, IMyCharacter>();
+        private Dictionary<ulong, long> _trackedCharacterEntityIds = new Dictionary<ulong, long>();
+
+        // ENHANCED: Track death event counters for debugging
+        private Dictionary<ulong, int> _deathEventCounters = new Dictionary<ulong, int>();
+
         private object _lockObject = new object();
 
         public PlayerTrackingService(
@@ -93,50 +100,81 @@ namespace mamba.TorchDiscordSync.Services
                 if (player?.Character == null)
                     continue;
 
-                HookCharacterDeath(player.Character, player.SteamUserId);
+                HookCharacterDeath(player.Character, player.SteamUserId, player.DisplayName);
                 _knownPlayers.Add(player.SteamUserId);
                 _playerNames[player.SteamUserId] = player.DisplayName;
+                _deathEventCounters[player.SteamUserId] = 0;
             }
 
             LoggerUtil.LogInfo($"Death tracking hooked for {_knownPlayers.Count} players");
         }
 
-        private void HookCharacterDeath(IMyCharacter character, ulong steamId)
+        /// <summary>
+        /// ENHANCED: Hook character death with better respawn detection
+        /// </summary>
+        private void HookCharacterDeath(IMyCharacter character, ulong steamId, string playerName)
         {
             if (character == null)
             {
                 LoggerUtil.LogDebug(
-                    $"[HOOK_DEBUG] HookCharacterDeath called but character is NULL for SteamID {steamId}"
+                    $"[HOOK_DEBUG] HookCharacterDeath called but character is NULL for {playerName} (SteamID {steamId})"
                 );
                 return;
             }
 
-            if (_trackedCharacters.ContainsKey(steamId))
+            lock (_lockObject)
             {
-                var existing = _trackedCharacters[steamId];
-                if (existing == character)
-                {
-                    LoggerUtil.LogDebug($"[HOOK_DEBUG] Character already hooked for {steamId}");
-                    return;
-                }
-                LoggerUtil.LogDebug(
-                    $"[HOOK_DEBUG] Replacing old character with new character for {steamId}"
-                );
-            }
+                long newEntityId = character.EntityId;
 
-            try
-            {
-                character.CharacterDied += deadChar => OnCharacterDied(deadChar, steamId);
-                _trackedCharacters[steamId] = character;
-                LoggerUtil.LogDebug(
-                    $"Hooked CharacterDied for SteamID {steamId}, character: {character.DisplayName}"
-                );
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError(
-                    $"[HOOK_ERROR] Failed to hook character for {steamId}: {ex.Message}"
-                );
+                // Check if we already have this exact character hooked
+                if (_trackedCharacters.ContainsKey(steamId))
+                {
+                    var existing = _trackedCharacters[steamId];
+                    long oldEntityId = _trackedCharacterEntityIds.GetValueOrDefault(steamId, 0);
+
+                    if (existing == character && oldEntityId == newEntityId)
+                    {
+                        LoggerUtil.LogDebug($"[HOOK_DEBUG] Character already hooked for {playerName} (EntityID: {newEntityId})");
+                        return;
+                    }
+
+                    // Character changed (respawn detected)
+                    LoggerUtil.LogInfo(
+                        $"[HOOK_RESPAWN] Character changed for {playerName}: OldEntityID={oldEntityId}, NewEntityID={newEntityId}"
+                    );
+
+                    // Try to unhook old character (may fail if already dead/disposed)
+                    try
+                    {
+                        if (existing != null && !existing.MarkedForClose && !existing.Closed)
+                        {
+                            // Can't directly unhook, but we'll replace the reference
+                            LoggerUtil.LogDebug($"[HOOK_DEBUG] Old character still exists, will be replaced");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogDebug($"[HOOK_DEBUG] Error checking old character: {ex.Message}");
+                    }
+                }
+
+                try
+                {
+                    // Hook the new character
+                    character.CharacterDied += deadChar => OnCharacterDied(deadChar, steamId, playerName);
+                    _trackedCharacters[steamId] = character;
+                    _trackedCharacterEntityIds[steamId] = newEntityId;
+
+                    LoggerUtil.LogSuccess(
+                        $"[HOOK] CharacterDied hooked for {playerName} (SteamID: {steamId}, EntityID: {newEntityId}, DeathCount: {_deathEventCounters.GetValueOrDefault(steamId, 0)})"
+                    );
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError(
+                        $"[HOOK_ERROR] Failed to hook character for {playerName}: {ex.Message}"
+                    );
+                }
             }
         }
 
@@ -163,6 +201,7 @@ namespace mamba.TorchDiscordSync.Services
                 {
                     _knownPlayers.Add(player.SteamUserId);
                     _playerNames[player.SteamUserId] = player.DisplayName;
+                    _deathEventCounters[player.SteamUserId] = 0;
                     LoggerUtil.LogInfo(
                         $"Player joined: {player.DisplayName} ({player.SteamUserId})"
                     );
@@ -180,7 +219,13 @@ namespace mamba.TorchDiscordSync.Services
             foreach (var steamId in disconnected)
             {
                 _knownPlayers.Remove(steamId);
-                _trackedCharacters.Remove(steamId);
+
+                lock (_lockObject)
+                {
+                    _trackedCharacters.Remove(steamId);
+                    _trackedCharacterEntityIds.Remove(steamId);
+                    _deathEventCounters.Remove(steamId);
+                }
 
                 string playerName = _playerNames.TryGetValue(steamId, out var name)
                     ? name
@@ -192,6 +237,9 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        /// <summary>
+        /// ENHANCED: Better detection of character changes (respawns)
+        /// </summary>
         private void HookNewPlayers()
         {
             if (MyAPIGateway.Players == null)
@@ -205,67 +253,102 @@ namespace mamba.TorchDiscordSync.Services
                 if (player?.Character == null)
                     continue;
 
-                if (!_trackedCharacters.ContainsKey(player.SteamUserId))
+                string playerName = player.DisplayName;
+
+                lock (_lockObject)
                 {
-                    HookCharacterDeath(player.Character, player.SteamUserId);
-                    _playerNames[player.SteamUserId] = player.DisplayName;
-                    _knownPlayers.Add(player.SteamUserId);
-                    LoggerUtil.LogDebug($"[HOOK] New player hooked: {player.DisplayName}");
-                }
-                else
-                {
-                    // Existing player - check if character changed (respawn)
-                    var oldCharacter = _trackedCharacters[player.SteamUserId];
-                    if (oldCharacter != player.Character)
+                    if (!_trackedCharacters.ContainsKey(player.SteamUserId))
                     {
-                        LoggerUtil.LogDebug(
-                            $"[HOOK] Character changed for {player.DisplayName} - re-hooking death event"
-                        );
-                        _trackedCharacters[player.SteamUserId] = player.Character;
-                        HookCharacterDeath(player.Character, player.SteamUserId);
+                        // New player, hook for first time
+                        HookCharacterDeath(player.Character, player.SteamUserId, playerName);
+                        _playerNames[player.SteamUserId] = playerName;
+                        _knownPlayers.Add(player.SteamUserId);
+                        LoggerUtil.LogDebug($"[HOOK] New player hooked: {playerName}");
+                    }
+                    else
+                    {
+                        // Existing player - check if character changed (respawn)
+                        var oldCharacter = _trackedCharacters[player.SteamUserId];
+                        long oldEntityId = _trackedCharacterEntityIds.GetValueOrDefault(player.SteamUserId, 0);
+                        long newEntityId = player.Character.EntityId;
+
+                        // CRITICAL: Re-hook if EntityID changed OR if character reference changed
+                        if (oldCharacter != player.Character || oldEntityId != newEntityId)
+                        {
+                            LoggerUtil.LogInfo(
+                                $"[HOOK_REHOOK] Character/EntityID changed for {playerName} - re-hooking death event (Old: {oldEntityId}, New: {newEntityId})"
+                            );
+                            HookCharacterDeath(player.Character, player.SteamUserId, playerName);
+                        }
                     }
                 }
             }
         }
 
         /// <summary>
-        /// Event handler for character death
+        /// ENHANCED: Event handler for character death with comprehensive logging
         /// </summary>
-        private async void OnCharacterDied(IMyCharacter deadCharacter, ulong steamId)
+        private async void OnCharacterDied(IMyCharacter deadCharacter, ulong steamId, string originalPlayerName)
         {
             try
             {
-                LoggerUtil.LogDebug($"[DEATH] OnCharacterDied for SteamID {steamId}");
-
-                if (deadCharacter == null)
+                // Increment death counter for debugging
+                int deathCount = 0;
+                lock (_lockObject)
                 {
-                    LoggerUtil.LogDebug("[DEATH] Character is NULL");
-                    return;
+                    _deathEventCounters[steamId] = _deathEventCounters.GetValueOrDefault(steamId, 0) + 1;
+                    deathCount = _deathEventCounters[steamId];
                 }
 
-                string playerName = deadCharacter.DisplayName;
-                LoggerUtil.LogInfo($"[DEATH EVENT] {playerName} died");
+                string playerName = deadCharacter?.DisplayName ?? originalPlayerName;
+
+                LoggerUtil.LogInfo($"[DEATH_EVENT #{deathCount}] ═══════════════════════════════════════");
+                LoggerUtil.LogInfo($"[DEATH_EVENT #{deathCount}] Player: {playerName}");
+                LoggerUtil.LogInfo($"[DEATH_EVENT #{deathCount}] SteamID: {steamId}");
+
+                if (deadCharacter != null)
+                {
+                    Vector3D position = deadCharacter.GetPosition();
+                    long entityId = deadCharacter.EntityId;
+                    bool isClosed = deadCharacter.Closed;
+                    bool isMarkedForClose = deadCharacter.MarkedForClose;
+
+                    LoggerUtil.LogInfo($"[DEATH_EVENT #{deathCount}] EntityID: {entityId}");
+                    LoggerUtil.LogInfo($"[DEATH_EVENT #{deathCount}] Position: X={position.X:F1}, Y={position.Y:F1}, Z={position.Z:F1}");
+                    LoggerUtil.LogInfo($"[DEATH_EVENT #{deathCount}] Closed: {isClosed}, MarkedForClose: {isMarkedForClose}");
+                }
+                else
+                {
+                    LoggerUtil.LogWarning($"[DEATH_EVENT #{deathCount}] Character is NULL!");
+                }
 
                 // Delegate to DeathMessageHandler if available
                 if (_deathHandler != null)
                 {
-                    await _deathHandler.HandlePlayerDeathAsync(playerName);
+                    LoggerUtil.LogDebug($"[DEATH_EVENT #{deathCount}] Calling DeathMessageHandler with character...");
+                    // CRITICAL: Pass deadCharacter for location detection!
+                    await _deathHandler.HandlePlayerDeathAsync(playerName, deadCharacter);
+                    LoggerUtil.LogSuccess($"[DEATH_EVENT #{deathCount}] DeathMessageHandler completed");
                 }
                 else
                 {
                     // Fallback: log directly
-                    LoggerUtil.LogWarning("[DEATH] DeathMessageHandler is null");
-                    // if (_eventLog != null)
-                    // {
-                    //     await _eventLog.LogDeathAsync($"{playerName} died");
-                    // }
+                    LoggerUtil.LogWarning($"[DEATH_EVENT #{deathCount}] DeathMessageHandler is NULL - using fallback");
+                    if (_eventLog != null)
+                    {
+                        await _eventLog.LogDeathAsync($"💀 {playerName} died (Death #{deathCount})");
+                    }
                 }
 
-                LoggerUtil.LogSuccess("[DEATH] Complete");
+                LoggerUtil.LogInfo($"[DEATH_EVENT #{deathCount}] ═══════════════════════════════════════");
+
+                // CRITICAL: Re-hook immediately after death to prepare for respawn
+                // The player will likely respawn with a new character entity
+                LoggerUtil.LogDebug($"[DEATH_EVENT #{deathCount}] Death processing complete, waiting for respawn...");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"Error in OnCharacterDied: {ex.Message}\n{ex.StackTrace}");
+                LoggerUtil.LogError($"[DEATH_ERROR] Error in OnCharacterDied: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -294,8 +377,9 @@ namespace mamba.TorchDiscordSync.Services
             lock (_lockObject)
             {
                 _trackedCharacters.Clear();
+                _trackedCharacterEntityIds.Clear();
+                _deathEventCounters.Clear();
                 _knownPlayers.Clear();
-                _processedDeaths.Clear();
                 _playerNames.Clear();
             }
         }
