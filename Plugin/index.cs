@@ -346,11 +346,15 @@ namespace mamba.TorchDiscordSync.Plugin
         }
 
         /// <summary>
-        /// CRITICAL: Primary chat message handler - processes ALL chat messages
+        /// Process incoming Torch chat messages
+        /// Filter and route based on channel and content
+        ///
         /// Priority order:
         /// 1. Detect and handle /tds commands (with proper SteamID)
         /// 2. Filter out faction chat (security - don't leak to Discord)
-        /// 3. Forward global chat to Discord sync
+        /// 3. Filter out Server-authored messages (already sent to Discord separately)
+        /// 4. Filter out private command responses (marked with [PRIVATE_CMD])
+        /// 5. Forward global chat to Discord sync
         /// </summary>
         private void OnChatMessageProcessing(TorchChatMessage msg, ref bool consumed)
         {
@@ -386,6 +390,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogDebug("[CHAT] Skipping private chat (not forwarded to Discord)");
                     return; // Stop processing - private chat stays private
                 }
+
                 // PRIORITY 3: Filter out faction chat (security - don't leak to Discord)
                 if (channelName.StartsWith("Faction") || channelName == "Faction")
                 {
@@ -393,18 +398,35 @@ namespace mamba.TorchDiscordSync.Plugin
                     return; // Stop processing - faction chat stays private
                 }
 
-                // PRIORITY 4: Prevent Discord loop messages
-                if (
-                    msg.Message.StartsWith("[Discord] ")
-                    || msg.Message.StartsWith("Discord")
-                    || msg.Message.StartsWith("Server:")
-                )
+                // PRIORITY 4: Filter out Server-authored messages
+                // These are join/leave/death messages that were already sent to Discord directly
+                // by EventLoggingService.LogPlayerJoinAsync(), LogPlayerLeaveAsync(), or DeathMessageHandler
+                // Skipping them here prevents duplicate messages on Discord
+                if (msg.Author == "Server")
                 {
-                    LoggerUtil.LogDebug("[CHAT] Skipped Discord loop: " + msg.Message);
+                    LoggerUtil.LogDebug(
+                        $"[CHAT] Skipped Server message (already sent to Discord): {msg.Message}"
+                    );
+                    return; // Stop processing - don't duplicate on Discord
+                }
+
+                // PRIORITY 5: Filter out private command responses
+                // Command responses (help text, verification codes, etc.) are prefixed with [PRIVATE_CMD]
+                // to indicate they should NOT be forwarded to Discord
+                if (ChatUtils.IsPrivateMessage(msg.Message))
+                {
+                    LoggerUtil.LogDebug($"[CHAT] Skipped private command response: {msg.Message}");
+                    return; // Stop processing - don't forward private responses to Discord
+                }
+
+                // PRIORITY 6: Prevent Discord loop messages (for safety)
+                if (msg.Message.StartsWith("[Discord] ") || msg.Message.StartsWith("Discord"))
+                {
+                    LoggerUtil.LogDebug("[CHAT] Skipped Discord loop message: " + msg.Message);
                     return; // Prevent Discord loop messages
                 }
 
-                // PRIORITY 5: Forward ONLY global chat to Discord sync
+                // PRIORITY 7: Forward ONLY global chat to Discord sync
                 if (channelName == "Global" || channelName.StartsWith("Global"))
                 {
                     LoggerUtil.LogDebug($"[CHAT] Forwarding global chat to Discord: {msg.Message}");

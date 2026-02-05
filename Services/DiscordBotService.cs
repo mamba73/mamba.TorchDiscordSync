@@ -362,12 +362,42 @@ namespace mamba.TorchDiscordSync.Services
             return Task.CompletedTask;
         }
 
-        private Task OnBotDisconnected(Exception ex)
+        /// Handle disconnection and attempt reconnection
+        private async Task OnBotDisconnected(Exception ex)
         {
             _isReady = false;
             string exMsg = ex?.Message ?? "Unknown error";
             LoggerUtil.LogWarning("[DISCORD_BOT] Bot disconnected: " + exMsg);
-            return Task.CompletedTask;
+
+            // Auto-reconnect logic
+            int maxAttempts = 5;
+            int delayMs = 5000;
+
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    LoggerUtil.LogInfo(
+                        $"[DISCORD_BOT] Reconnection attempt {attempt}/{maxAttempts}..."
+                    );
+                    await Task.Delay(delayMs);
+
+                    if (_client != null && !_isConnected)
+                    {
+                        await _client.StartAsync();
+                        LoggerUtil.LogSuccess("[DISCORD_BOT] Reconnection successful!");
+                        return;
+                    }
+                }
+                catch (Exception reconnectEx)
+                {
+                    LoggerUtil.LogWarning(
+                        $"[DISCORD_BOT] Reconnection attempt {attempt} failed: {reconnectEx.Message}"
+                    );
+                }
+            }
+
+            LoggerUtil.LogError("[DISCORD_BOT] Failed to reconnect after all attempts");
         }
 
         /// <summary>
