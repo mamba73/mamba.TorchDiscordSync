@@ -130,4 +130,8 @@ Pull requests are welcome! Please use C# 4.6+ compatibility.
 ## Support
 No support yet!
 
+---
+*Developed by [mamba73](https://github.com/mamba73). Feel free to submit issues or pull requests!*
+
 [Buy Me a Coffee ☕](https://buymeacoffee.com/mamba73)
+
