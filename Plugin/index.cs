@@ -527,9 +527,13 @@ namespace mamba.TorchDiscordSync.Plugin
                         bool monitoringEnabled = _config?.Monitoring?.Enabled == true;
                         if (monitoringEnabled)
                         {
+                            // Additionally, send a stable SimSpeed after a short delay
                             Task.Run(async () =>
                             {
-                                await _eventLog.LogServerStatusAsync("STARTED", currentSimSpeed);
+                                // Wait 3 seconds for physics to stabilize and avoid NaN
+                                await Task.Delay(3000);
+                                float stableSimSpeed = PluginUtils.GetCurrentSimSpeed();
+                                await _eventLog.LogServerStatusAsync("STARTED", stableSimSpeed);
                             });
                         }
                     }
@@ -579,11 +583,28 @@ namespace mamba.TorchDiscordSync.Plugin
                 _serverStartupLogged = true;
                 LoggerUtil.LogInfo("[STARTUP] Initializing server sync...");
 
-                // OPTIMIZED: Get simulation speed using helper method
-                float currentSimSpeed = PluginUtils.GetCurrentSimSpeed();
+                // NEW: Delay status reporting to ensure physics are running and SimSpeed is stable
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Wait 5 seconds for the server to settle
+                        await Task.Delay(5000);
 
-                // Check server status
-                _orchestrator.CheckServerStatusAsync(currentSimSpeed).Wait();
+                        float stableSimSpeed = PluginUtils.GetCurrentSimSpeed();
+
+                        // Now call the status check with a real number
+                        if (_orchestrator != null)
+                        {
+                            await _orchestrator.CheckServerStatusAsync(stableSimSpeed);
+                            LoggerUtil.LogSuccess($"[STARTUP] Post-load status reported. SimSpeed: {stableSimSpeed:F2}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError("Error in delayed status check: " + ex.Message);
+                    }
+                });
 
                 // Load real factions from game using FactionReaderService
                 var factions = _factionSync.LoadFactionsFromGame();
