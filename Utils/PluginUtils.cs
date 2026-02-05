@@ -39,27 +39,31 @@ namespace mamba.TorchDiscordSync.Utils
         }
 
         /// <summary>
-        /// Gets the current simulation speed (SimSpeed) in a safe way.
-        /// Returns 1.0f if unable to retrieve.
+        /// Retrieves the actual server simulation speed.
+        /// Uses Sync.ServerSimulationRatio as confirmed by DLL inspection for best accuracy.
         /// </summary>
+        /// <returns>Float representing SimSpeed (0.0 to 1.0)</returns>
         public static float GetCurrentSimSpeed()
         {
             try
             {
-                float simSpeed = MySandboxGame.SimulationRatio;
+                // Based on DLL report: [NS: Sandbox.Game.Multiplayer] -> Class: Sync -> [P] [ST] float ServerSimulationRatio
+                float simSpeed = Sandbox.Game.Multiplayer.Sync.ServerSimulationRatio;
+
+                // Check for invalid values during server startup or physics freezes
                 if (float.IsNaN(simSpeed) || float.IsInfinity(simSpeed))
                 {
-                    LoggerUtil.LogWarning(
-                        "Invalid SimSpeed detected (NaN/Infinity) - returning default 1.0"
-                    );
-                    return 1.0f;
+                    // Returning 0.0 is more honest than 1.0 during startup/crashes
+                    return 0.0f;
                 }
+
                 return simSpeed;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("Error getting SimSpeed: " + ex.Message);
-                return 1.0f;
+                // Fail-safe for cases where the Sync class is not yet initialized in memory
+                // LoggerUtil.LogError("Error getting SimSpeed: " + ex.Message);
+                return 0.0f;
             }
         }
 
