@@ -1,4 +1,4 @@
-// Plugin/MambaTorchDiscordSyncPlugin.cs
+// Plugin/index.cs
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -209,19 +209,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     _config
                 );
 
-                // Initialize handlers
-                _commandProcessor = new CommandProcessor(
-                    _config,
-                    _discordWrapper,
-                    _db,
-                    _factionSync,
-                    _eventLog,
-                    _orchestrator
-                );
-                _eventManager = new EventManager(_config, _discordWrapper, _eventLog);
-                _chatModerator = new ChatModerator(_config, _discordWrapper, _db);
-
-                // Initialize verification command handler
+                // CRITICAL FIX: Initialize verification command handler BEFORE CommandProcessor
                 _verificationCommandHandler = new VerificationCommandHandler(
                     _verification,
                     _eventLog,
@@ -229,13 +217,30 @@ namespace mamba.TorchDiscordSync.Plugin
                     _discordBot,
                     _discordBotConfig
                 );
+                LoggerUtil.LogInfo("[INIT] VerificationCommandHandler created and ready");
 
+                // Initialize handlers - NOW pass _verificationCommandHandler to CommandProcessor!
+                _commandProcessor = new CommandProcessor(
+                    _config,
+                    _discordWrapper,
+                    _db,
+                    _factionSync,
+                    _eventLog,
+                    _orchestrator,
+                    _verification,
+                    _verificationCommandHandler  // CRITICAL FIX: Pass the handler!
+                );
+                LoggerUtil.LogInfo("[INIT] CommandProcessor created with VerificationCommandHandler");
+
+                _eventManager = new EventManager(_config, _discordWrapper, _eventLog);
+                _chatModerator = new ChatModerator(_config, _discordWrapper, _db);
+                
                 LoggerUtil.LogSuccess("All services initialized");
 
                 // Hook Discord bot verification event
                 if (_discordBot != null)
                 {
-                    _discordBot.OnVerificationAttempt += delegate(
+                    _discordBot.OnVerificationAttempt += delegate (
                         string code,
                         ulong discordID,
                         string discordUsername
