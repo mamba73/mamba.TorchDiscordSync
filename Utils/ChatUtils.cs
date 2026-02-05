@@ -1,6 +1,8 @@
 // Utils/ChatUtils.cs - UPDATED WITH PRIVATE MESSAGE SUPPORT
 
 using System;
+using mamba.TorchDiscordSync.Config;
+using mamba.TorchDiscordSync.Services;
 using mamba.TorchDiscordSync.Utils;
 using Sandbox.Game;
 
@@ -196,5 +198,98 @@ namespace mamba.TorchDiscordSync.Utils
         {
             return PRIVATE_PREFIX;
         }
+
+        // ============================================================
+        // PROCESS CHAT MESSAGE - MOVED FROM Plugin/index.cs
+        // ============================================================
+
+        /// <summary>
+        /// Process incoming chat message and route it appropriately
+        /// - System messages to player tracking
+        /// - Regular chat to Discord sync
+        /// - Commands are filtered out (handled separately)
+        ///
+        /// EXTRACTED from Plugin.ProcessChatMessage() - moved to utility for reusability
+        /// </summary>
+        public static void ProcessChatMessage(
+            string message,
+            string author,
+            string channel,
+            ChatSyncService chatSync,
+            PlayerTrackingService playerTracking,
+            MainConfig config
+        )
+        {
+            LoggerUtil.LogDebug(
+                $@"[CHAT PROCESS] Channel: {channel} | Author: {author} | Message: {message}"
+            );
+
+            if (string.IsNullOrEmpty(message) || string.IsNullOrEmpty(author))
+            {
+                LoggerUtil.LogDebug($"[CHAT PROCESS] - returned due to null/empty");
+                return;
+            }
+
+            // Prevent duplication: skip Server death messages that were already sent from death event
+            if (author == "Server" && (message.Contains("died") || message.Contains("killed")))
+            {
+                LoggerUtil.LogDebug(
+                    "[CHAT PROCESS] Skipped Server death message to prevent duplication on Discord"
+                );
+                return;
+            }
+
+            // System messages
+            if (channel == "System" && playerTracking != null)
+            {
+                LoggerUtil.LogDebug("[CHAT PROCESS] Forwarding system message to tracking");
+                playerTracking.ProcessSystemChatMessage(message);
+                return;
+            }
+
+            // Normal chat → Discord
+            if (chatSync != null && config?.Chat != null)
+            {
+                bool enabled = config.Chat.ServerToDiscord;
+                LoggerUtil.LogDebug($"[CHAT PROCESS] ServerToDiscord enabled: {enabled}");
+
+                if (enabled)
+                {
+                    if (message.StartsWith("/"))
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Skipped command");
+                        return;
+                    }
+
+                    if (channel == "Global")
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Global chat - sending to Discord");
+                        _ = chatSync.SendGameMessageToDiscordAsync(author, message);
+                    }
+                    else if (channel.StartsWith("Faction:"))
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Faction chat - skipped for now");
+                    }
+                    else if (channel == "Private")
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Private chat - skipped for security");
+                    }
+                    else
+                    {
+                        LoggerUtil.LogDebug("[CHAT PROCESS] Unknown channel - fallback to global");
+                        _ = chatSync.SendGameMessageToDiscordAsync(author, message);
+                    }
+                }
+                else
+                {
+                    LoggerUtil.LogDebug("[CHAT PROCESS] ServerToDiscord disabled in config");
+                }
+            }
+            else
+            {
+                LoggerUtil.LogWarning("[CHAT PROCESS] ChatSyncService or config null");
+            }
+        }
+
     }
 }

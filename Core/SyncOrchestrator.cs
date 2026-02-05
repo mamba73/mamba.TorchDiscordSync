@@ -1,11 +1,13 @@
-// Core/SyncOrchestrator.cs
+// Core/SyncOrchestrator.cs - UPDATED
+// Removed FactionReaderService dependency (merged into FactionSyncService)
+
 using System;
-using System.Linq;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Config;
-using mamba.TorchDiscordSync.Services;
 using mamba.TorchDiscordSync.Models;
+using mamba.TorchDiscordSync.Services;
 using mamba.TorchDiscordSync.Utils;
 
 namespace mamba.TorchDiscordSync.Core
@@ -22,8 +24,18 @@ namespace mamba.TorchDiscordSync.Core
         private readonly FactionSyncService _factionSync;
         private readonly EventLoggingService _eventLog;
 
-        public SyncOrchestrator(DatabaseService db, DiscordService discord,
-            FactionSyncService factionSync, EventLoggingService evtLog, MainConfig config, FactionReaderService factionReader)
+        /// <summary>
+        /// Constructor - UPDATED
+        /// NOTE: FactionReaderService is no longer required as a parameter
+        /// It has been merged into FactionSyncService
+        /// </summary>
+        public SyncOrchestrator(
+            DatabaseService db,
+            DiscordService discord,
+            FactionSyncService factionSync,
+            EventLoggingService evtLog,
+            MainConfig config
+        )
         {
             _db = db;
             _discord = discord;
@@ -59,7 +71,7 @@ namespace mamba.TorchDiscordSync.Core
                     if (factions[i].Tag.Length == 3)
                         playerFactions.Add(factions[i]);
                 }
-                
+
                 await _factionSync.SyncFactionsAsync(playerFactions);
 
                 // 3. Log completion
@@ -114,12 +126,11 @@ namespace mamba.TorchDiscordSync.Core
 
         public Task SyncFactionsAsync()
         {
-            
             if (_config != null && _config.Debug)
             {
                 LoggerUtil.LogInfo("Starting faction sync...");
             }
-            
+
             if (_factionSync != null)
             {
                 return _factionSync.SyncFactionsAsync(new List<FactionModel>());
@@ -144,11 +155,13 @@ namespace mamba.TorchDiscordSync.Core
                     return Task.FromResult(0);
 
                 float threshold = _config.Monitoring.SimThresh;
-                
+
                 if (currentSimSpeed < threshold)
                 {
-                    LoggerUtil.LogWarning("SimSpeed below threshold: " + currentSimSpeed.ToString("F2"));
-                    
+                    LoggerUtil.LogWarning(
+                        "SimSpeed below threshold: " + currentSimSpeed.ToString("F2")
+                    );
+
                     if (_eventLog != null)
                     {
                         return _eventLog.LogSimSpeedWarningAsync(currentSimSpeed);
