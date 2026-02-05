@@ -1,4 +1,7 @@
-// Services/FactionSyncService.cs
+// Services/FactionSyncService.cs - UPDATED VERSION
+// Merged with FactionReaderService functionality
+// File: FactionReaderService.cs can be DELETED after this update
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,63 +9,148 @@ using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
+using Sandbox.Game.Multiplayer;
+using Sandbox.Game.World;
+using Sandbox.ModAPI;
+using VRage.Game.ModAPI;
 
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
     /// Synchronizes Space Engineers factions with Discord roles and channels
+    /// Includes faction reading functionality (merged from FactionReaderService)
     /// </summary>
     public class FactionSyncService
     {
         private readonly DatabaseService _db;
         private readonly DiscordService _discord;
         private readonly MainConfig _config;
-        private readonly FactionReaderService _factionReader;
 
         /// <summary>
         /// Initialize FactionSyncService with required dependencies
+        /// NOTE: FactionReaderService is no longer required - merged into this service
         /// </summary>
-        public FactionSyncService(
-            DatabaseService db,
-            DiscordService discord,
-            MainConfig config,
-            FactionReaderService factionReader
-        )
+        public FactionSyncService(DatabaseService db, DiscordService discord, MainConfig config)
         {
             _db = db;
             _discord = discord;
             _config = config;
-            _factionReader = factionReader;
 
             LoggerUtil.LogDebug("[FACTION_SYNC] FactionSyncService initialized");
         }
 
         /// <summary>
-        /// Loads real factions from Space Engineers game session
-        /// Replaces test data with actual faction data
+        /// Loads all player-created factions from the current game session.
+        /// Filters out NPC factions and factions with non-standard tags.
+        /// MERGED from FactionReaderService.LoadFactionsFromGame()
         /// </summary>
+        /// <returns>List of FactionModel objects representing player factions</returns>
         public List<FactionModel> LoadFactionsFromGame()
         {
-            var factions = new List<FactionModel>();
+            var factionModels = new List<FactionModel>();
+
             try
             {
-                if (_factionReader == null)
+                // Access the faction collection from session
+                var factionCollection = MySession.Static.Factions as MyFactionCollection;
+                if (factionCollection == null)
                 {
-                    LoggerUtil.LogWarning("FactionReaderService is null - cannot load factions");
-                    return factions;
+                    LoggerUtil.LogWarning(
+                        "MySession.Static.Factions is null - cannot load factions"
+                    );
+                    return factionModels;
                 }
 
-                // Load real faction data from game
-                factions = _factionReader.LoadFactionsFromGame();
-                LoggerUtil.LogInfo($"Loaded {factions.Count} factions from game session");
+                // Get all factions from the game
+                var allFactions = factionCollection.GetAllFactions();
 
-                return factions;
+                if (allFactions == null || allFactions.Length == 0)
+                {
+                    LoggerUtil.LogInfo("No factions found in session");
+                    return factionModels;
+                }
+
+                // Iterate through all factions
+                foreach (var faction in allFactions)
+                {
+                    if (faction == null)
+                        continue;
+
+                    // Filter: Only 3-character tags (player factions)
+                    if (faction.Tag == null || faction.Tag.Length != 3)
+                    {
+                        continue;
+                    }
+
+                    // Filter: Skip NPC factions
+                    if (faction.IsEveryoneNpc())
+                    {
+                        LoggerUtil.LogDebug($"Skipping NPC faction: {faction.Tag}");
+                        continue;
+                    }
+
+                    // Create faction model
+                    var factionModel = new FactionModel
+                    {
+                        FactionID = (int)faction.FactionId, // long to int conversion
+                        Tag = faction.Tag,
+                        Name = faction.Name ?? "Unknown",
+                    };
+
+                    // Load faction members
+                    // DictionaryReader doesn't support null check - check Count instead
+                    if (faction.Members.Count > 0)
+                    {
+                        foreach (var memberKvp in faction.Members)
+                        {
+                            long playerId = memberKvp.Key;
+                            var memberData = memberKvp.Value;
+
+                            // Map playerId to SteamID
+                            ulong steamId = MyAPIGateway.Players.TryGetSteamId(playerId);
+
+                            if (steamId == 0)
+                            {
+                                LoggerUtil.LogWarning(
+                                    $"Cannot get SteamID for playerId {playerId} in faction {faction.Tag}"
+                                );
+                                continue;
+                            }
+
+                            // Get player name
+                            string playerName = GetPlayerName(playerId);
+
+                            // Create faction member model
+                            var factionPlayer = new FactionPlayerModel
+                            {
+                                PlayerID = (int)playerId, // long to int conversion
+                                SteamID = (long)steamId, // ulong to long for XML serialization
+                                OriginalNick = playerName,
+                                SyncedNick = playerName,
+                            };
+
+                            factionModel.Players.Add(factionPlayer);
+                        }
+                    }
+
+                    factionModels.Add(factionModel);
+                    LoggerUtil.LogDebug(
+                        $"Loaded faction: {faction.Tag} ({faction.Name}) with {factionModel.Players.Count} members"
+                    );
+                }
+
+                LoggerUtil.LogInfo(
+                    $"Loaded {factionModels.Count} player factions from game session"
+                );
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("Error loading factions from game: " + ex.Message);
-                return factions;
+                LoggerUtil.LogError(
+                    $"Error loading factions from game: {ex.Message}\n{ex.StackTrace}"
+                );
             }
+
+            return factionModels;
         }
 
         /// <summary>
@@ -205,6 +293,26 @@ namespace mamba.TorchDiscordSync.Services
             catch (Exception ex)
             {
                 LoggerUtil.LogError($"[FACTION_SYNC] Reset error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the display name for a player by their identity ID.
+        /// MERGED from FactionReaderService.GetPlayerName()
+        /// </summary>
+        /// <param name="playerId">The player's identity ID</param>
+        /// <returns>Player display name or "Unknown" if not found</returns>
+        private string GetPlayerName(long playerId)
+        {
+            try
+            {
+                var identity = MySession.Static.Players.TryGetIdentity(playerId);
+                return identity?.DisplayName ?? "Unknown";
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogWarning($"Error getting player name for ID {playerId}: {ex.Message}");
+                return "Unknown";
             }
         }
     }

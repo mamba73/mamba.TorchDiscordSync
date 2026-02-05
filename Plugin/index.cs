@@ -43,7 +43,6 @@ namespace mamba.TorchDiscordSync.Plugin
         private SyncOrchestrator _orchestrator;
         private DeathMessageHandler _deathMessageHandler;
         private PlayerTrackingService _playerTracking;
-        private FactionReaderService _factionReader;
 
         // Handlers
         private CommandProcessor _commandProcessor;
@@ -75,7 +74,7 @@ namespace mamba.TorchDiscordSync.Plugin
             base.Init(torch);
             try
             {
-                PrintBanner("INITIALIZING");
+                PluginUtils.PrintBanner("INITIALIZING");
 
                 base.Init(torch);
                 _torch = torch;
@@ -131,9 +130,6 @@ namespace mamba.TorchDiscordSync.Plugin
                 // NEW: Pass MainConfig to DeathLogService for location zones configuration
                 _deathLog = new DeathLogService(_db, _eventLog, _config);
 
-                // Initialize faction reader service for loading real faction data
-                _factionReader = new FactionReaderService();
-
                 // CRITICAL FIX: Safe cast to TorchBase for PlayerTrackingService
                 var torchBase = torch as Torch.TorchBase;
                 if (torchBase == null)
@@ -167,8 +163,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 _factionSync = new FactionSyncService(
                     _db,
                     _discordWrapper,
-                    _config,
-                    _factionReader
+                    _config
                 );
 
                 // Initialize chat sync service
@@ -211,8 +206,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     _discordWrapper,
                     _factionSync,
                     _eventLog,
-                    _config,
-                    _factionReader // NEW: Dodaj FactionReaderService
+                    _config
                 );
 
                 // Initialize handlers
@@ -301,7 +295,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 }
 
                 _isInitialized = true;
-                PrintBanner("INITIALIZATION COMPLETE");
+                PluginUtils.PrintBanner("INITIALIZATION COMPLETE");
 
                 // Save config after load (ensures any merged/default values are persisted)
                 if (_config != null)
@@ -315,33 +309,6 @@ namespace mamba.TorchDiscordSync.Plugin
                 LoggerUtil.LogError("Plugin initialization failed: " + ex.Message);
                 LoggerUtil.LogError("Stack trace: " + ex.StackTrace);
                 _isInitialized = false;
-            }
-        }
-
-        /// <summary>
-        /// Hooks Torch chat system for command processing (/tds commands)
-        /// </summary>
-        private void HookChatCommands(ITorchBase torch)
-        {
-            try
-            {
-                LoggerUtil.LogInfo("Hooking Torch chat message handler for command processing");
-                var torchInstance = _torch as ITorchServer;
-                var chatManager =
-                    torchInstance?.CurrentSession?.Managers?.GetManager<ChatManagerServer>();
-                if (chatManager != null)
-                {
-                    chatManager.MessageRecieved += OnChatMessageProcessing;
-                    LoggerUtil.LogInfo("Registered Torch chat message handler");
-                }
-                else
-                {
-                    LoggerUtil.LogWarning("ChatManagerServer is null - chat integration disabled");
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error hooking chat commands: {ex.Message}");
             }
         }
 
@@ -430,7 +397,14 @@ namespace mamba.TorchDiscordSync.Plugin
                 if (channelName == "Global" || channelName.StartsWith("Global"))
                 {
                     LoggerUtil.LogDebug($"[CHAT] Forwarding global chat to Discord: {msg.Message}");
-                    ProcessChatMessage(msg.Message, msg.Author, "Global");
+                    ChatUtils.ProcessChatMessage(
+                        msg.Message,
+                        msg.Author,
+                        "Global",
+                        _chatSync,
+                        _playerTracking,
+                        _config
+                    );
                 }
             }
             catch (Exception ex)
@@ -468,23 +442,6 @@ namespace mamba.TorchDiscordSync.Plugin
                     });
             }
             return Task.FromResult(0);
-        }
-
-        private void PrintBanner(string title)
-        {
-            Console.WriteLine("");
-            Console.WriteLine("-====================================================¬");
-            Console.WriteLine(
-                "¦ "
-                    + VersionUtil.GetPluginName()
-                    + " "
-                    + VersionUtil.GetVersionString()
-                    + " - "
-                    + title.PadRight(20)
-                    + "¦"
-            );
-            Console.WriteLine("L====================================================-");
-            Console.WriteLine("");
         }
 
         private void OnSessionStateChanged(ITorchSession session, TorchSessionState state)
@@ -562,7 +519,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     }
 
                     // OPTIMIZED: Get simulation speed using helper method
-                    float currentSimSpeed = GetCurrentSimSpeed();
+                    float currentSimSpeed = PluginUtils.GetCurrentSimSpeed();
 
                     // Send server startup message with real SimSpeed
                     if (_eventLog != null && _config != null && _config.Monitoring != null)
@@ -623,13 +580,13 @@ namespace mamba.TorchDiscordSync.Plugin
                 LoggerUtil.LogInfo("[STARTUP] Initializing server sync...");
 
                 // OPTIMIZED: Get simulation speed using helper method
-                float currentSimSpeed = GetCurrentSimSpeed();
+                float currentSimSpeed = PluginUtils.GetCurrentSimSpeed();
 
                 // Check server status
                 _orchestrator.CheckServerStatusAsync(currentSimSpeed).Wait();
 
-                // CRITICAL FIX: Load real factions from game using FactionReaderService
-                var factions = LoadFactionsFromGame();
+                // Load real factions from game using FactionReaderService
+                var factions = _factionSync.LoadFactionsFromGame();
                 if (factions.Count > 0)
                 {
                     LoggerUtil.LogInfo("[STARTUP] Found " + factions.Count + " player factions");
@@ -698,133 +655,6 @@ namespace mamba.TorchDiscordSync.Plugin
             else
             {
                 LoggerUtil.LogError("[COMMAND] CommandProcessor is null - cannot process command");
-            }
-        }
-
-        /// <summary>
-        /// Process chat messages to detect player joins/leaves/deaths
-        /// This is called from Torch when chat messages arrive
-        /// </summary>
-        public void ProcessChatMessage(string message, string author, string channel)
-        {
-            LoggerUtil.LogDebug(
-                $@"[CHAT PROCESS] Channel: {channel} | Author: {author} | Message: {message}"
-            );
-
-            if (string.IsNullOrEmpty(message) || string.IsNullOrEmpty(author))
-            {
-                LoggerUtil.LogDebug($"[CHAT PROCESS] - returned due to null/empty");
-                return;
-            }
-
-            // Prevent duplication: skip Server death messages that were already sent from death event
-            if (author == "Server" && (message.Contains("died") || message.Contains("killed")))
-            {
-                LoggerUtil.LogDebug(
-                    "[CHAT PROCESS] Skipped Server death message to prevent duplication on Discord"
-                );
-                return;
-            }
-
-            // System messages
-            if (channel == "System" && _playerTracking != null)
-            {
-                LoggerUtil.LogDebug("[CHAT PROCESS] Forwarding system message to tracking");
-                _playerTracking.ProcessSystemChatMessage(message);
-                return;
-            }
-
-            // Normal chat → Discord
-            if (_chatSync != null && _config?.Chat != null)
-            {
-                bool enabled = _config.Chat.ServerToDiscord;
-                LoggerUtil.LogDebug($"[CHAT PROCESS] ServerToDiscord enabled: {enabled}");
-
-                if (enabled)
-                {
-                    if (message.StartsWith("/"))
-                    {
-                        LoggerUtil.LogDebug("[CHAT PROCESS] Skipped command");
-                        return;
-                    }
-
-                    if (channel == "Global")
-                    {
-                        LoggerUtil.LogDebug("[CHAT PROCESS] Global chat - sending to Discord");
-                        _ = _chatSync.SendGameMessageToDiscordAsync(author, message);
-                    }
-                    else if (channel.StartsWith("Faction:"))
-                    {
-                        LoggerUtil.LogDebug("[CHAT PROCESS] Faction chat - skipped for now");
-                    }
-                    else if (channel == "Private")
-                    {
-                        LoggerUtil.LogDebug("[CHAT PROCESS] Private chat - skipped for security");
-                    }
-                    else
-                    {
-                        LoggerUtil.LogDebug("[CHAT PROCESS] Unknown channel - fallback to global");
-                        _ = _chatSync.SendGameMessageToDiscordAsync(author, message);
-                    }
-                }
-                else
-                {
-                    LoggerUtil.LogDebug("[CHAT PROCESS] ServerToDiscord disabled in config");
-                }
-            }
-            else
-            {
-                LoggerUtil.LogWarning("[CHAT PROCESS] ChatSyncService or config null");
-            }
-        }
-
-        /// <summary>
-        /// CRITICAL FIX: Loads real factions from Space Engineers save using FactionReaderService
-        /// Replaces test data with actual faction data from game session
-        /// </summary>
-        private List<FactionModel> LoadFactionsFromGame()
-        {
-            var factions = new List<FactionModel>();
-            try
-            {
-                if (_factionReader == null)
-                {
-                    LoggerUtil.LogWarning("FactionReaderService is null - cannot load factions");
-                    return factions;
-                }
-
-                // Load real faction data from game
-                factions = _factionReader.LoadFactionsFromGame();
-                LoggerUtil.LogInfo($"Loaded {factions.Count} factions from game session");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("Error loading factions from game: " + ex.Message);
-            }
-            return factions;
-        }
-
-        /// <summary>
-        /// OPTIMIZED: Helper method to get current simulation speed
-        /// Returns 1.0f as default since direct access to SimulationSpeed is not available in Space Engineers API
-        /// </summary>
-        private float GetCurrentSimSpeed()
-        {
-            try
-            {
-                // Simulation speed is typically 1.0 unless server has special modifications
-                // Direct SimulationSpeed property is not available in standard SE API
-                float simSpeed = 1.0f;
-
-                // Log for debugging
-                LoggerUtil.LogDebug($"Current SimSpeed: {simSpeed:F2}");
-
-                return simSpeed;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"Error getting SimSpeed: {ex.Message}");
-                return 1.0f; // Fallback to 1.0
             }
         }
 
