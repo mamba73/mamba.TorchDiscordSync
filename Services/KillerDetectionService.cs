@@ -12,8 +12,8 @@ using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRageMath;
-using VRage.Utils;
-using Sandbox.Game.Entities.Character.Components;
+using VRage.Utils; // Required for MyStringHash
+using Sandbox.Game.Entities.Character.Components; // Required for MyEntityStat and StatComp access
 
 namespace mamba.TorchDiscordSync.Services
 {
@@ -146,13 +146,20 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                // Note: In actual Torch environment, you'd likely use Reflection here to get m_lastDamage
+                // Try to access last damage through reflection if needed
+                // Space Engineers tracks damage in the character's StatComp
+
+                // Check if character has a stat component
                 if (character.StatComp != null)
                 {
+                    // Character died, so we know damage was lethal
+                    // Try to determine type from recent history
+
+                    // For now, we'll use entity-based detection
                     LoggerUtil.LogDebug("[KILLER_DETECT] StatComp available but no direct damage history access");
                 }
 
-                return null; 
+                return null; // Will use alternative detection methods
             }
             catch (Exception ex)
             {
@@ -258,7 +265,7 @@ namespace mamba.TorchDiscordSync.Services
                     {
                         info.TurretOwnerName = playerIdentity.DisplayName;
                         info.KillerName = playerIdentity.DisplayName;
-                        info.IsPlayerKill = true; 
+                        info.IsPlayerKill = true; // Player-owned turret counts as player kill
                         LoggerUtil.LogDebug($"[KILLER_DETECT] Turret owner (player): {info.TurretOwnerName}");
                         return;
                     }
@@ -267,7 +274,7 @@ namespace mamba.TorchDiscordSync.Services
                     var faction = MySession.Static.Factions.TryGetPlayerFaction(ownerId);
                     if (faction != null)
                     {
-                        info.IsNpcFaction = !faction.AcceptHumans; 
+                        info.IsNpcFaction = !faction.AcceptHumans; // NPC factions don't accept humans
                         if (info.IsNpcFaction)
                         {
                             info.NpcFactionTag = faction.Tag;
@@ -278,6 +285,7 @@ namespace mamba.TorchDiscordSync.Services
                         }
                         else
                         {
+                            // Player faction - use faction name
                             info.TurretOwnerName = faction.Name;
                             info.KillerName = faction.Name;
                             LoggerUtil.LogDebug($"[KILLER_DETECT] Player faction turret: {info.TurretOwnerName}");
@@ -301,6 +309,7 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
+                // Get all players and check if any is holding this weapon
                 var players = new List<IMyPlayer>();
                 MyAPIGateway.Players.GetPlayers(players);
 
@@ -309,6 +318,7 @@ namespace mamba.TorchDiscordSync.Services
                     if (player?.Character == null)
                         continue;
 
+                    // Check if character is using this gun
                     var character = player.Character as Sandbox.Game.Entities.Character.MyCharacter;
                     if (character != null && character.CurrentWeapon != null)
                     {
@@ -385,12 +395,13 @@ namespace mamba.TorchDiscordSync.Services
                     }
                 }
 
-                // Check health
+                // Check health for fall damage patterns
                 MyEntityStat healthStat;
                 if (character.StatComp.TryGetStat(MyStringHash.GetOrCompute("health"), out healthStat))
                 {
                     if (healthStat != null && healthStat.Value <= 0)
                     {
+                        // Character's health is 0, likely environmental
                         info.Cause = DeathCause.Environment;
                         LoggerUtil.LogDebug("[KILLER_DETECT] Environmental death");
                     }
