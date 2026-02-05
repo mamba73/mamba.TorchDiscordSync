@@ -62,7 +62,7 @@ namespace mamba.TorchDiscordSync.Utils
             catch (Exception ex)
             {
                 // Fail-safe for cases where the Sync class is not yet initialized in memory
-                // LoggerUtil.LogError("Error getting SimSpeed: " + ex.Message);
+                LoggerUtil.LogError("Error getting SimSpeed: " + ex.Message);
                 return 0.0f;
             }
         }
