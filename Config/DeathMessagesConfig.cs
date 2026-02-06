@@ -9,8 +9,9 @@ using mamba.TorchDiscordSync.Utils;
 namespace mamba.TorchDiscordSync.Config
 {
     /// <summary>
-    /// Configuration for death message templates.
-    /// Contains randomized messages for different death types.
+    /// ENHANCED: Death message templates with contextual variations
+    /// Templates support: {victim}, {killer}, {weapon}, {location}
+    /// Location is added automatically by DeathMessageHandler
     /// </summary>
     [XmlRoot("DeathMessages")]
     public class DeathMessagesConfig
@@ -19,107 +20,111 @@ namespace mamba.TorchDiscordSync.Config
 
         [XmlArray("Suicide")]
         [XmlArrayItem("Message")]
-        public List<string> SuicideMessages { get; set; } = new List<string>
-        {
-            "{victim} committed suicide",
-            "{victim} chose the easy way out",
-            "{victim} decided to leave this world",
-            "{victim} embraced the void",
-            "{victim} pressed the big red button... on themselves",
-            "{victim} became a permanent part of the scenery"
-        };
+        public List<string> SuicideMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} committed suicide",
+                "{victim} chose the easy way out",
+                "{victim} decided to leave this world",
+                "{victim} embraced the void",
+                "{victim} pressed the big red button... on themselves",
+                "{victim} became a permanent part of the scenery",
+            };
 
         [XmlArray("PvP")]
         [XmlArrayItem("Message")]
-        public List<string> PvPMessages { get; set; } = new List<string>
-        {
-            "{killer} killed {victim} with {weapon}",
-            "{victim} was eliminated by {killer} using {weapon}",
-            "{killer} blasted {victim} into space dust with {weapon}",
-            "{killer} sent {victim} to the respawn screen with {weapon}",
-            "{victim} tried to parry {killer}'s {weapon} with their face",
-            "{killer} introduced {victim} to their little friend: {weapon}"
-        };
+        public List<string> PvPMessages { get; set; } =
+            new List<string>
+            {
+                "{killer} killed {victim} with {weapon}",
+                "{killer} eliminated {victim} with {weapon}",
+                "{killer} sent {victim} to respawn with {weapon}",
+                "{killer} blasted {victim} with {weapon}",
+                "{victim} met their end at the hands of {killer} wielding {weapon}",
+                "{killer} showed {victim} no mercy with {weapon}",
+                "{victim} was destroyed by {killer} using {weapon}",
+                "{killer} ended {victim}'s day with {weapon}",
+            };
+
+        [XmlArray("Turret")]
+        [XmlArrayItem("Message")]
+        public List<string> TurretMessages { get; set; } =
+            new List<string>
+            {
+                "{killer} killed {victim} with {weapon}",
+                "{victim} walked into {killer}'s {weapon}",
+                "{killer} sent {victim} to the void with {weapon}",
+                "{victim} was peacefully exploring until {killer}'s {weapon} appeared",
+                "{killer} ruined {victim}'s day with {weapon}",
+                "{killer}'s {weapon} caught {victim} off guard",
+                "{victim} met {killer}'s {weapon}",
+                "{killer} used {weapon} to send {victim} to eternal hunting grounds",
+            };
 
         [XmlArray("Environment_Oxygen")]
         [XmlArrayItem("Message")]
-        public List<string> EnvironmentOxygenMessages { get; set; } = new List<string>
-        {
-            "{victim} died from lack of oxygen",
-            "{victim} held their breath for too long in the vacuum",
-            "{victim} forgot to refill their oxygen tanks",
-            "{victim} realized too late that space is empty",
-            "{victim} tried to breathe the aesthetics, but needed oxygen",
-            "{victim} is now a very cold, very breathless popsicle"
-        };
+        public List<string> EnvironmentOxygenMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} stopped breathing due to lack of oxygen",
+                "{victim} forgot to check their oxygen levels",
+                "{victim} ran out of air",
+                "{victim} held their breath for too long",
+                "{victim} discovered that space has no oxygen",
+                "{victim} suffocated",
+            };
 
         [XmlArray("Environment_Pressure")]
         [XmlArrayItem("Message")]
-        public List<string> EnvironmentPressureMessages { get; set; } = new List<string>
-        {
-            "{victim} died from environmental pressure",
-            "{victim} couldn't handle the pressure",
-            "{victim} was victimized by sudden depressurization",
-            "{victim} popped like a balloon",
-            "{victim}'s suit had a 'minor' leak",
-            "{victim} discovered that ears aren't supposed to do that"
-        };
+        public List<string> EnvironmentPressureMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} died from environmental pressure",
+                "{victim} couldn't handle the pressure",
+                "{victim} was crushed by pressure",
+                "{victim} experienced rapid decompression",
+                "{victim}'s suit failed under pressure",
+                "{victim} popped like a balloon",
+            };
 
         [XmlArray("Environment_Collision")]
         [XmlArrayItem("Message")]
-        public List<string> EnvironmentCollisionMessages { get; set; } = new List<string>
-        {
-            "{victim} hit something very fast",
-            "{victim} fell from a great height",
-            "{victim} died in a collision",
-            "{victim} slammed into an asteroid",
-            "{victim} forgot how brakes work",
-            "{victim} successfully turned into a pancake"
-        };
+        public List<string> EnvironmentCollisionMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} hit something very fast",
+                "{victim} fell from a great height",
+                "{victim} died in a collision",
+                "{victim} forgot gravity exists",
+                "{victim} learned that the ground is hard",
+                "{victim} experienced rapid unplanned landing",
+            };
 
         [XmlArray("Grid")]
         [XmlArrayItem("Message")]
-        public List<string> GridMessages { get; set; } = new List<string>
-        {
-            "{victim} was run over by a grid",
-            "{victim} died in a collision with a ship",
-            "{victim} was crushed between grids",
-            "{victim} met the business end of a landing gear",
-            "Lord Clang claimed {victim} as a sacrifice",
-            "{victim} was personalized by a moving ship"
-        };
-
-        [XmlArray("FirstKill")]
-        [XmlArrayItem("Message")]
-        public List<string> FirstKillMessages { get; set; } = new List<string>
-        {
-            "🩸 FIRST BLOOD! {killer} took their first victim - {victim}",
-            "⚔️ {killer} started a massacre with {victim}!",
-            "📢 Attention! {killer} has opened the hunting season on {victim}!",
-            "💀 The first sacrifice has been made: {victim} fell to {killer}!"
-        };
-
-        [XmlArray("Retaliation")]
-        [XmlArrayItem("Message")]
-        public List<string> RetaliationMessages { get; set; } = new List<string>
-        {
-            "💀 RETALIATION! {killer} got revenge on {victim}",
-            "⚡ {killer} strikes back against {victim}!",
-            "🔄 The tables have turned! {killer} just schooled {victim}",
-            "⚖️ Karma is a ship: {killer} just rammed justice into {victim}"
-        };
+        public List<string> GridMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} was run over by a ship",
+                "{victim} got too close to a moving grid",
+                "{victim} was crushed",
+                "{victim} met the business end of a landing gear",
+                "Lord Clang claimed {victim}",
+                "{victim} was flattened by a ship",
+            };
 
         [XmlArray("Accident")]
         [XmlArrayItem("Message")]
-        public List<string> AccidentMessages { get; set; } = new List<string>
-        {
-            "{victim} died in an accident",
-            "{victim} is no more",
-            "{victim} met an unfortunate end",
-            "{victim} experienced a rapid unplanned disassembly",
-            "{victim} disconnected from life unexpectedly",
-            "Error 404: {victim}'s pulse not found"
-        };
+        public List<string> AccidentMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} died in an accident",
+                "{victim} is no more",
+                "{victim} met an unfortunate end",
+                "{victim} experienced a rapid unplanned disassembly",
+                "{victim} disconnected from life unexpectedly",
+                "Error 404: {victim}'s pulse not found",
+            };
 
         public string GetRandomMessage(DeathTypeEnum deathType)
         {
@@ -140,11 +145,8 @@ namespace mamba.TorchDiscordSync.Config
                     return SuicideMessages;
                 case DeathTypeEnum.PvP:
                     return PvPMessages;
-                case DeathTypeEnum.FirstKill:
-                    return FirstKillMessages;
-                case DeathTypeEnum.Retaliation:
-                case DeathTypeEnum.RetaliationOld:
-                    return RetaliationMessages;
+                case DeathTypeEnum.Turret:
+                    return TurretMessages;
                 case DeathTypeEnum.Grid:
                     return GridMessages;
                 case DeathTypeEnum.Environment_Oxygen:

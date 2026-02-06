@@ -42,6 +42,8 @@ build_staging/
 # Documentation files
 .inspect/
 .inspect/*
+tmp/
+tmp/*
 # doc/
 # *.py
 # *.md

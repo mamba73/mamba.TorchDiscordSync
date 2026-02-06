@@ -2,6 +2,8 @@ Analiziraj ovaj projekt:
 
 https://github.com/mamba73/mamba.TorchDiscordSync
 
+https://github.com/mamba73/mamba.TorchDiscordSync/tree/dev3
+
 Ne diramo ništa što radi, bez "popravljanja" i razdvajanja projekta u nesuvisle cjeline. Samo implementiramo i popravljamo postojeće po mojem odobrenju sukladno pravilima, koja ponavljam:
 
 rules:

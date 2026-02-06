@@ -4,37 +4,45 @@ using System;
 namespace mamba.TorchDiscordSync.Models
 {
     /// <summary>
-    /// NEW: Enumeration for death location zones based on distance from origin.
-    /// Determines which message templates to use for death announcements.
+    /// ENHANCED: Location zones with surface vs orbit distinction
     /// </summary>
     public enum LocationZoneEnum
     {
-        /// <summary>Within 3x planet radius - death near a planet surface/atmosphere</summary>
-        AROUND_PLANET,
+        /// <summary>ON the planet surface - within 15% of radius</summary>
+        ON_SURFACE,
 
-        /// <summary>0-5000 km from origin - inner system with planets and stations</summary>
+        /// <summary>Low orbit - 1.15x to 1.5x planet radius</summary>
+        LOW_ORBIT,
+
+        /// <summary>High orbit - 1.5x to 3x planet radius</summary>
+        HIGH_ORBIT,
+
+        /// <summary>Inner system - 0-5000 km from origin, no nearby planet</summary>
         INNER_SYSTEM,
 
-        /// <summary>5000-10000 km from origin - outer system area</summary>
+        /// <summary>Outer space - 5000-10000 km from origin</summary>
         OUTER_SPACE,
 
-        /// <summary>Beyond 10000 km - deep space/wilderness</summary>
+        /// <summary>Deep space - beyond 10000 km</summary>
         DEEP_SPACE,
 
         /// <summary>Unknown or unable to determine</summary>
         UNKNOWN,
+
+        /// <summary>DEPRECATED: Use ON_SURFACE, LOW_ORBIT, or HIGH_ORBIT instead</summary>
+        [Obsolete("Use ON_SURFACE, LOW_ORBIT, or HIGH_ORBIT")]
+        AROUND_PLANET,
     }
 
     /// <summary>
-    /// NEW: Container for location detection results.
-    /// Used internally by DeathLocationService to communicate zone info.
+    /// Container for location detection results
     /// </summary>
     public class LocationZoneResult
     {
         /// <summary>Detected zone based on distance calculations</summary>
         public LocationZoneEnum Zone { get; set; }
 
-        /// <summary>Planet name if AROUND_PLANET, otherwise empty string</summary>
+        /// <summary>Planet name if near a planet, otherwise empty</summary>
         public string PlanetName { get; set; }
 
         /// <summary>Distance from origin in kilometers</summary>
@@ -42,6 +50,9 @@ namespace mamba.TorchDiscordSync.Models
 
         /// <summary>Distance to nearest planet in kilometers, if applicable</summary>
         public double DistanceToPlanet { get; set; }
+
+        /// <summary>NEW: Is the character on the planet surface?</summary>
+        public bool IsOnSurface { get; set; }
 
         /// <summary>Grid/ship name if character is inside one, otherwise null</summary>
         public string GridName { get; set; }
@@ -55,6 +66,7 @@ namespace mamba.TorchDiscordSync.Models
             PlanetName = string.Empty;
             DistanceFromOrigin = 0;
             DistanceToPlanet = 0;
+            IsOnSurface = false;
             GridName = null;
             IsInsideGrid = false;
         }
