@@ -150,24 +150,27 @@ namespace mamba.TorchDiscordSync.Services
                 if (!string.IsNullOrEmpty(planet.DisplayNameText))
                 {
                     LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from DisplayNameText: {planet.DisplayNameText}");
+                    // DisplayNameText: ''
                     return planet.DisplayNameText;
-                }
-
-                if (!string.IsNullOrEmpty(planet.StorageName))
-                {
-                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from StorageName: {planet.StorageName}");
-                    return planet.StorageName;
                 }
 
                 if (!string.IsNullOrEmpty(planet.Name))
                 {
                     LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from Name: {planet.Name}");
+                    // Name: 'Moon'
                     return planet.Name;
+                }
+                if (!string.IsNullOrEmpty(planet.StorageName))
+                {
+                    LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from StorageName: {planet.StorageName}");
+                    // StorageName: 'Moon-1353915701d19000'
+                    return planet.StorageName;
                 }
 
                 if (!string.IsNullOrEmpty(planet.DisplayName))
                 {
                     LoggerUtil.LogDebug($"[LOCATION_DEBUG] Selected name from DisplayName: {planet.DisplayName}");
+                    // DisplayName: ''
                     return planet.DisplayName;
                 }
 
