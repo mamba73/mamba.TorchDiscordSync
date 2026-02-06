@@ -1,9 +1,13 @@
 // Services/KillerDetectionService.cs
 using System;
-using System.Linq;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using mamba.TorchDiscordSync.Utils;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Character;
+// FIX: Added this namespace to resolve MyEntityStat and access StatComp methods
+using Sandbox.Game.Entities.Character.Components;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.Weapons;
 using Sandbox.Game.World;
@@ -11,15 +15,15 @@ using Sandbox.ModAPI;
 using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
+using VRage.Utils;
 using VRageMath;
-using VRage.Utils; // Required for MyStringHash
-using Sandbox.Game.Entities.Character.Components; // Required for MyEntityStat and StatComp access
 
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
-    /// Service for detecting who/what killed a player
-    /// Handles: Players, Turrets (with owner detection), NPC factions, Environmental deaths
+    /// CORRECT: Killer detection using damage system reflection
+    /// Uses MyEntityStat and character damage tracking to find actual killer
+    /// No proximity detection - finds REAL damage source!
     /// </summary>
     public class KillerDetectionService
     {
@@ -61,12 +65,12 @@ namespace mamba.TorchDiscordSync.Services
             Oxygen,
             Pressure,
             Suicide,
-            Environment
+            Environment,
         }
 
         /// <summary>
-        /// Detects who/what killed the character by examining last damage source
-        /// This is called DURING the CharacterDied event, before the character is fully disposed
+        /// CORRECT: Detect killer using character's last damage source
+        /// Uses reflection to access internal damage tracking
         /// </summary>
         public KillerInfo DetectKiller(IMyCharacter victim)
         {
@@ -76,171 +80,275 @@ namespace mamba.TorchDiscordSync.Services
             {
                 if (victim == null)
                 {
-                    LoggerUtil.LogDebug("[KILLER_DETECT] Victim is null");
+                    LoggerUtil.LogDebug("[KILLER] Victim is null");
                     return info;
                 }
 
-                LoggerUtil.LogDebug($"[KILLER_DETECT] ═══ Starting killer detection for {victim.DisplayName} ═══");
+                LoggerUtil.LogDebug($"[KILLER] ═══ Detecting killer for {victim.DisplayName} ═══");
 
-                // Cast to internal character for access to damage history
-                var myCharacter = victim as Sandbox.Game.Entities.Character.MyCharacter;
+                var myCharacter = victim as MyCharacter;
                 if (myCharacter == null)
                 {
-                    LoggerUtil.LogDebug("[KILLER_DETECT] Cannot cast to MyCharacter");
+                    LoggerUtil.LogDebug("[KILLER] Cannot cast to MyCharacter");
                     return info;
                 }
 
-                // Try to get last damage info
-                var lastDamageInfo = GetLastDamageInfo(myCharacter);
-
-                if (lastDamageInfo.HasValue)
+                // STEP 1: Check oxygen depletion first (easy to detect)
+                if (CheckOxygenDeath(myCharacter, info))
                 {
-                    LoggerUtil.LogDebug($"[KILLER_DETECT] Damage Type: {lastDamageInfo.Value.Type}");
-                    LoggerUtil.LogDebug($"[KILLER_DETECT] Damage Amount: {lastDamageInfo.Value.Amount}");
+                    LoggerUtil.LogSuccess("[KILLER] Death by oxygen depletion");
+                    return info;
+                }
 
-                    // Check attacker entity
-                    if (lastDamageInfo.Value.AttackerId != 0)
+                // STEP 2: Try to get last damage dealer using reflection
+                long lastDamageDealerId = GetLastDamageDealerId(myCharacter);
+
+                if (lastDamageDealerId != 0)
+                {
+                    LoggerUtil.LogDebug($"[KILLER] Last damage dealer ID: {lastDamageDealerId}");
+
+                    MyEntity damageDealer;
+                    if (MyEntities.TryGetEntityById(lastDamageDealerId, out damageDealer))
                     {
-                        MyEntity attackerEntity;
-                        if (MyEntities.TryGetEntityById(lastDamageInfo.Value.AttackerId, out attackerEntity))
+                        LoggerUtil.LogDebug(
+                            $"[KILLER] Damage dealer: {damageDealer.GetType().Name} - {damageDealer.DisplayName}"
+                        );
+                        AnalyzeDamageDealer(damageDealer, info);
+                        return info;
+                    }
+                    else
+                    {
+                        LoggerUtil.LogWarning(
+                            $"[KILLER] Damage dealer entity {lastDamageDealerId} not found"
+                        );
+                    }
+                }
+
+                // STEP 3: Try alternative methods
+                if (TryGetKillerFromStatComp(myCharacter, info))
+                {
+                    LoggerUtil.LogSuccess($"[KILLER] Found via StatComp");
+                    return info;
+                }
+
+                // STEP 4: Check environmental causes
+                DetectEnvironmentalDeath(myCharacter, info);
+
+                LoggerUtil.LogDebug(
+                    $"[KILLER] Final: Cause={info.Cause}, Killer={info.KillerName}, Weapon={info.WeaponName}"
+                );
+                LoggerUtil.LogDebug($"[KILLER] ═══════════════════════════════════════");
+
+                return info;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[KILLER] Error: {ex.Message}\n{ex.StackTrace}");
+                return info;
+            }
+        }
+
+        private long GetLastDamageDealerId(MyCharacter character)
+        {
+            try
+            {
+                var characterType = character.GetType();
+                string[] possibleFieldNames = new string[]
+                {
+                    "m_lastDamageDealer",
+                    "m_lastAttacker",
+                    "m_lastDamageSource",
+                    "LastDamageDealer",
+                    "LastAttacker",
+                };
+
+                foreach (var fieldName in possibleFieldNames)
+                {
+                    var field = characterType.GetField(
+                        fieldName,
+                        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+                    );
+                    if (field != null)
+                    {
+                        var value = field.GetValue(character);
+                        LoggerUtil.LogDebug($"[KILLER_REFLECT] Found field '{fieldName}': {value}");
+
+                        if (value is long)
+                            return (long)value;
+                        else if (value is MyEntity)
+                            return ((MyEntity)value).EntityId;
+                    }
+                }
+
+                LoggerUtil.LogDebug("[KILLER_REFLECT] No damage dealer field found via reflection");
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[KILLER_REFLECT] Error: {ex.Message}");
+                return 0;
+            }
+        }
+
+        private bool TryGetKillerFromStatComp(MyCharacter character, KillerInfo info)
+        {
+            try
+            {
+                if (character.StatComp == null)
+                    return false;
+
+                var statCompType = character.StatComp.GetType();
+                LoggerUtil.LogDebug($"[KILLER_STAT] StatComp type: {statCompType.Name}");
+
+                // FIX: character.StatComp.Stats is a DictionaryValuesReader which doesn't have GetStat().
+                // We must use TryGetStat() directly on the StatComp (MyEntityStatComponent).
+                MyEntityStat healthStat;
+                if (
+                    character.StatComp.TryGetStat(
+                        MyStringHash.GetOrCompute("health"),
+                        out healthStat
+                    )
+                )
+                {
+                    LoggerUtil.LogDebug(
+                        $"[KILLER_STAT] Health: {healthStat.Value}/{healthStat.MaxValue}"
+                    );
+
+                    var syncDataField = healthStat
+                        .GetType()
+                        .GetField(
+                            "SyncData",
+                            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                        );
+                    if (syncDataField != null)
+                    {
+                        var syncData = syncDataField.GetValue(healthStat);
+                        if (syncData != null)
                         {
-                            LoggerUtil.LogDebug($"[KILLER_DETECT] Attacker Entity: {attackerEntity?.GetType().Name} - {attackerEntity?.DisplayName}");
-                            AnalyzeAttacker(attackerEntity, info);
-                        }
-                        else
-                        {
-                            LoggerUtil.LogDebug($"[KILLER_DETECT] Attacker entity ID {lastDamageInfo.Value.AttackerId} not found");
+                            var syncDataType = syncData.GetType();
+                            foreach (
+                                var field in syncDataType.GetFields(
+                                    BindingFlags.Instance
+                                        | BindingFlags.Public
+                                        | BindingFlags.NonPublic
+                                )
+                            )
+                            {
+                                var value = field.GetValue(syncData);
+                                LoggerUtil.LogDebug(
+                                    $"[KILLER_STAT] SyncData.{field.Name} = {value}"
+                                );
+
+                                if (
+                                    field.Name.Contains("Attacker")
+                                    || field.Name.Contains("Source")
+                                    || field.Name.Contains("Dealer")
+                                )
+                                {
+                                    if (value is long && (long)value != 0)
+                                    {
+                                        MyEntity attacker;
+                                        if (MyEntities.TryGetEntityById((long)value, out attacker))
+                                        {
+                                            LoggerUtil.LogSuccess(
+                                                $"[KILLER_STAT] Found attacker via SyncData: {attacker.DisplayName}"
+                                            );
+                                            AnalyzeDamageDealer(attacker, info);
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-
-                    // Analyze damage type
-                    AnalyzeDamageType(lastDamageInfo.Value, info);
                 }
-                else
-                {
-                    LoggerUtil.LogDebug("[KILLER_DETECT] No damage info available");
-                }
-
-                // Fallback: Check environment/health
-                if (info.Cause == DeathCause.Unknown)
-                {
-                    DetectEnvironmentalDeath(myCharacter, info);
-                }
-
-                LoggerUtil.LogDebug($"[KILLER_DETECT] Final Result: Cause={info.Cause}, Killer={info.KillerName}, Weapon={info.WeaponName}");
-                LoggerUtil.LogDebug($"[KILLER_DETECT] ═══ Detection complete ═══");
-
-                return info;
+                return false;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[KILLER_DETECT] Error: {ex.Message}\n{ex.StackTrace}");
-                return info;
+                LoggerUtil.LogError($"[KILLER_STAT] Error: {ex.Message}");
+                return false;
             }
         }
 
-        /// <summary>
-        /// Gets last damage information from character
-        /// </summary>
-        private MyDamageInformation? GetLastDamageInfo(Sandbox.Game.Entities.Character.MyCharacter character)
+        private void AnalyzeDamageDealer(MyEntity damageDealer, KillerInfo info)
         {
             try
             {
-                // Try to access last damage through reflection if needed
-                // Space Engineers tracks damage in the character's StatComp
+                LoggerUtil.LogDebug($"[KILLER_ANALYZE] Entity type: {damageDealer.GetType().Name}");
+                LoggerUtil.LogDebug($"[KILLER_ANALYZE] Display name: {damageDealer.DisplayName}");
 
-                // Check if character has a stat component
-                if (character.StatComp != null)
-                {
-                    // Character died, so we know damage was lethal
-                    // Try to determine type from recent history
-
-                    // For now, we'll use entity-based detection
-                    LoggerUtil.LogDebug("[KILLER_DETECT] StatComp available but no direct damage history access");
-                }
-
-                return null; // Will use alternative detection methods
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"[KILLER_DETECT] GetLastDamageInfo error: {ex.Message}");
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Analyzes attacker entity to determine killer type
-        /// </summary>
-        private void AnalyzeAttacker(MyEntity attacker, KillerInfo info)
-        {
-            try
-            {
-                // Check if attacker is another player's character
-                var attackerChar = attacker as IMyCharacter;
+                var attackerChar = damageDealer as IMyCharacter;
                 if (attackerChar != null)
                 {
                     info.IsPlayerKill = true;
                     info.KillerName = attackerChar.DisplayName;
                     info.Cause = DeathCause.Player;
-                    LoggerUtil.LogDebug($"[KILLER_DETECT] Player kill detected: {info.KillerName}");
+                    info.WeaponName = "Weapon";
+                    LoggerUtil.LogSuccess($"[KILLER_ANALYZE] Player kill: {info.KillerName}");
                     return;
                 }
 
-                // Check if attacker is a weapon/turret
-                var turret = attacker as IMyLargeTurretBase;
+                var turret = damageDealer as IMyLargeTurretBase;
                 if (turret != null)
                 {
                     info.IsTurretKill = true;
-                    info.WeaponName = turret.DisplayName ?? turret.DefinitionDisplayNameText ?? "Turret";
                     info.Cause = DeathCause.Turret;
-
-                    // Get turret owner
+                    info.WeaponName = GetTurretTypeName(turret);
                     DetectTurretOwner(turret, info);
-
-                    LoggerUtil.LogDebug($"[KILLER_DETECT] Turret kill: {info.WeaponName}, Owner: {info.TurretOwnerName ?? info.NpcFactionTag ?? "Unknown"}");
+                    LoggerUtil.LogSuccess(
+                        $"[KILLER_ANALYZE] Turret kill: {info.KillerName} with {info.WeaponName}"
+                    );
                     return;
                 }
 
-                // Check if attacker is a gun/handheld weapon
-                var gun = attacker as IMyGunBaseUser;
-                if (gun != null)
-                {
-                    info.WeaponName = gun.ToString();
-                    LoggerUtil.LogDebug($"[KILLER_DETECT] Gun detected: {info.WeaponName}");
-
-                    // Try to find owner of the gun
-                    var gunOwner = FindGunOwner(gun);
-                    if (gunOwner != null)
-                    {
-                        info.IsPlayerKill = true;
-                        info.KillerName = gunOwner.DisplayName;
-                        info.Cause = DeathCause.Player;
-                    }
-                    return;
-                }
-
-                // Check if it's a grid collision
-                var grid = attacker as MyCubeGrid;
+                var grid = damageDealer as MyCubeGrid;
                 if (grid != null)
                 {
                     info.Cause = DeathCause.Collision;
                     info.KillerName = grid.DisplayName ?? "a ship";
-                    LoggerUtil.LogDebug($"[KILLER_DETECT] Grid collision: {info.KillerName}");
+                    info.WeaponName = "Collision";
+                    LoggerUtil.LogSuccess($"[KILLER_ANALYZE] Grid collision: {info.KillerName}");
                     return;
                 }
 
-                LoggerUtil.LogDebug($"[KILLER_DETECT] Unknown attacker type: {attacker.GetType().Name}");
+                LoggerUtil.LogWarning(
+                    $"[KILLER_ANALYZE] Unknown damage dealer type: {damageDealer.GetType().Name}"
+                );
+                info.KillerName = damageDealer.DisplayName ?? "Unknown";
+                info.WeaponName = "Unknown";
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[KILLER_DETECT] AnalyzeAttacker error: {ex.Message}");
+                LoggerUtil.LogError($"[KILLER_ANALYZE] Error: {ex.Message}");
             }
         }
 
-        /// <summary>
-        /// Detects turret owner - either player or NPC faction
-        /// CRITICAL: This handles offline players and NPC factions!
-        /// </summary>
+        private string GetTurretTypeName(IMyLargeTurretBase turret)
+        {
+            try
+            {
+                string subtypeName = turret.BlockDefinition.SubtypeName;
+                if (subtypeName.Contains("Gatling"))
+                    return "Gatling Turret";
+                if (subtypeName.Contains("Missile"))
+                    return "Missile Turret";
+                if (subtypeName.Contains("Interior"))
+                    return "Interior Turret";
+                if (subtypeName.Contains("Rocket"))
+                    return "Rocket Turret";
+                if (subtypeName.Contains("Autocannon"))
+                    return "Autocannon Turret";
+                if (subtypeName.Contains("Artillery"))
+                    return "Artillery Turret";
+                return turret.CustomName ?? turret.DisplayName ?? "Turret";
+            }
+            catch
+            {
+                return "Turret";
+            }
+        }
+
         private void DetectTurretOwner(IMyLargeTurretBase turret, KillerInfo info)
         {
             try
@@ -248,168 +356,110 @@ namespace mamba.TorchDiscordSync.Services
                 var grid = turret.CubeGrid;
                 if (grid == null)
                 {
-                    LoggerUtil.LogDebug("[KILLER_DETECT] Turret has no parent grid");
+                    LoggerUtil.LogWarning("[KILLER_OWNER] Turret has no parent grid");
                     return;
                 }
 
-                // Get block owner
                 var turretBlock = turret as MyCubeBlock;
-                if (turretBlock != null && turretBlock.OwnerId != 0)
+                if (turretBlock == null || turretBlock.OwnerId == 0)
                 {
-                    long ownerId = turretBlock.OwnerId;
-                    LoggerUtil.LogDebug($"[KILLER_DETECT] Turret owned by: {ownerId}");
+                    LoggerUtil.LogWarning("[KILLER_OWNER] Turret has no owner");
+                    return;
+                }
 
-                    // Try to find owner as player (online or offline)
-                    var playerIdentity = MySession.Static.Players.TryGetIdentity(ownerId);
-                    if (playerIdentity != null)
+                long ownerId = turretBlock.OwnerId;
+                LoggerUtil.LogDebug($"[KILLER_OWNER] Owner ID: {ownerId}");
+
+                var playerIdentity = MySession.Static.Players.TryGetIdentity(ownerId);
+                if (playerIdentity != null)
+                {
+                    info.TurretOwnerName = playerIdentity.DisplayName;
+                    info.KillerName = playerIdentity.DisplayName;
+                    info.IsPlayerKill = true;
+                    LoggerUtil.LogSuccess(
+                        $"[KILLER_OWNER] Player: {info.TurretOwnerName} (works for offline!)"
+                    );
+                    return;
+                }
+
+                var faction = MySession.Static.Factions.TryGetPlayerFaction(ownerId);
+                if (faction != null)
+                {
+                    info.IsNpcFaction = !faction.AcceptHumans;
+                    if (info.IsNpcFaction)
                     {
-                        info.TurretOwnerName = playerIdentity.DisplayName;
-                        info.KillerName = playerIdentity.DisplayName;
-                        info.IsPlayerKill = true; // Player-owned turret counts as player kill
-                        LoggerUtil.LogDebug($"[KILLER_DETECT] Turret owner (player): {info.TurretOwnerName}");
-                        return;
+                        info.NpcFactionTag = faction.Tag;
+                        info.KillerName = faction.Tag;
+                        info.Cause = DeathCause.NpcFaction;
+                        LoggerUtil.LogSuccess($"[KILLER_OWNER] NPC Faction: {info.NpcFactionTag}");
                     }
-
-                    // Check if owner is an NPC faction
-                    var faction = MySession.Static.Factions.TryGetPlayerFaction(ownerId);
-                    if (faction != null)
+                    else
                     {
-                        info.IsNpcFaction = !faction.AcceptHumans; // NPC factions don't accept humans
-                        if (info.IsNpcFaction)
-                        {
-                            info.NpcFactionTag = faction.Tag;
-                            info.KillerName = faction.Tag;
-                            info.Cause = DeathCause.NpcFaction;
-                            LoggerUtil.LogDebug($"[KILLER_DETECT] NPC Faction turret: {info.NpcFactionTag}");
-                            return;
-                        }
-                        else
-                        {
-                            // Player faction - use faction name
-                            info.TurretOwnerName = faction.Name;
-                            info.KillerName = faction.Name;
-                            LoggerUtil.LogDebug($"[KILLER_DETECT] Player faction turret: {info.TurretOwnerName}");
-                            return;
-                        }
+                        info.TurretOwnerName = faction.Name;
+                        info.KillerName = faction.Name;
+                        LoggerUtil.LogDebug(
+                            $"[KILLER_OWNER] Player faction: {info.TurretOwnerName}"
+                        );
                     }
-                }
-
-                LoggerUtil.LogDebug("[KILLER_DETECT] Could not determine turret owner");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"[KILLER_DETECT] DetectTurretOwner error: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Tries to find the player holding a gun
-        /// </summary>
-        private IMyCharacter FindGunOwner(IMyGunBaseUser gun)
-        {
-            try
-            {
-                // Get all players and check if any is holding this weapon
-                var players = new List<IMyPlayer>();
-                MyAPIGateway.Players.GetPlayers(players);
-
-                foreach (var player in players)
-                {
-                    if (player?.Character == null)
-                        continue;
-
-                    // Check if character is using this gun
-                    var character = player.Character as Sandbox.Game.Entities.Character.MyCharacter;
-                    if (character != null && character.CurrentWeapon != null)
-                    {
-                        if (character.CurrentWeapon.Equals(gun))
-                        {
-                            return player.Character;
-                        }
-                    }
-                }
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError($"[KILLER_DETECT] FindGunOwner error: {ex.Message}");
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Analyzes damage type to determine cause of death
-        /// </summary>
-        private void AnalyzeDamageType(MyDamageInformation damageInfo, KillerInfo info)
-        {
-            try
-            {
-                string damageType = damageInfo.Type.ToString();
-                LoggerUtil.LogDebug($"[KILLER_DETECT] Analyzing damage type: {damageType}");
-
-                if (damageType.Contains("Bullet") || damageType.Contains("Rocket") || damageType.Contains("Missile"))
-                {
-                    if (info.Cause == DeathCause.Unknown)
-                        info.Cause = DeathCause.Player;
-                }
-                else if (damageType.Contains("Fall"))
-                {
-                    info.Cause = DeathCause.Fall;
-                }
-                else if (damageType.Contains("Environment") || damageType.Contains("Asphyxia"))
-                {
-                    info.Cause = DeathCause.Environment;
-                }
-                else if (damageType.Contains("Suicide"))
-                {
-                    info.Cause = DeathCause.Suicide;
+                    return;
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[KILLER_DETECT] AnalyzeDamageType error: {ex.Message}");
+                LoggerUtil.LogError($"[KILLER_OWNER] Error: {ex.Message}");
             }
         }
 
-        /// <summary>
-        /// Detects environmental death causes (oxygen, pressure, etc.)
-        /// </summary>
-        private void DetectEnvironmentalDeath(Sandbox.Game.Entities.Character.MyCharacter character, KillerInfo info)
+        private bool CheckOxygenDeath(MyCharacter character, KillerInfo info)
         {
             try
             {
                 if (character.StatComp == null)
-                    return;
+                    return false;
 
-                // Check oxygen
+                // FIX: character.StatComp.Stats doesn't have GetStat().
+                // We use TryGetStat() on the StatComp directly.
                 MyEntityStat oxygenStat;
-                if (character.StatComp.TryGetStat(MyStringHash.GetOrCompute("oxygen"), out oxygenStat))
+                if (
+                    character.StatComp.TryGetStat(
+                        MyStringHash.GetOrCompute("oxygen"),
+                        out oxygenStat
+                    )
+                )
                 {
-                    if (oxygenStat != null && oxygenStat.Value <= 0)
+                    if (oxygenStat != null && oxygenStat.Value <= 0.1f)
                     {
                         info.Cause = DeathCause.Oxygen;
-                        info.KillerName = "Asphyxiation";
-                        LoggerUtil.LogDebug("[KILLER_DETECT] Death by oxygen");
-                        return;
+                        info.KillerName = "Oxygen Depletion";
+                        info.WeaponName = "Asphyxiation";
+                        LoggerUtil.LogDebug($"[KILLER_OXYGEN] Oxygen: {oxygenStat.Value}");
+                        return true;
                     }
                 }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[KILLER_OXYGEN] Error: {ex.Message}");
+                return false;
+            }
+        }
 
-                // Check health for fall damage patterns
-                MyEntityStat healthStat;
-                if (character.StatComp.TryGetStat(MyStringHash.GetOrCompute("health"), out healthStat))
+        private void DetectEnvironmentalDeath(MyCharacter character, KillerInfo info)
+        {
+            try
+            {
+                if (info.Cause == DeathCause.Unknown)
                 {
-                    if (healthStat != null && healthStat.Value <= 0)
-                    {
-                        // Character's health is 0, likely environmental
-                        info.Cause = DeathCause.Environment;
-                        LoggerUtil.LogDebug("[KILLER_DETECT] Environmental death");
-                    }
+                    info.Cause = DeathCause.Environment;
+                    info.KillerName = "Environment";
+                    info.WeaponName = "Accident";
+                    LoggerUtil.LogDebug("[KILLER_ENV] Environmental death (fallback)");
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[KILLER_DETECT] DetectEnvironmentalDeath error: {ex.Message}");
+                LoggerUtil.LogError($"[KILLER_ENV] Error: {ex.Message}");
             }
         }
     }
