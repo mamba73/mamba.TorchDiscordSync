@@ -478,7 +478,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     _serverStartupLogged = false;
 
 
-                    // ✅ Initialize DamageTrackingService (if not already initialized)
+                    // 1. Initialize DamageTrackingService (if not already initialized)
                     if (_damageTracking != null && !_damageTrackingInitialized)
                     {
                         try
@@ -492,8 +492,8 @@ namespace mamba.TorchDiscordSync.Plugin
                             LoggerUtil.LogError($"[DAMAGE_TRACK] Failed to initialize: {ex.Message}");
                         }
                     }
-                    
-                    // Initialize PlayerTrackingService NOW when session is loaded
+
+                    // 2. Initialize PlayerTrackingService NOW when session is loaded
                     // This ensures ChatManagerServer and DamageSystem are available
                     if (_playerTracking != null && !_playerTrackingInitialized)
                     {
@@ -513,7 +513,8 @@ namespace mamba.TorchDiscordSync.Plugin
                         }
                     }
 
-                    // NEW: Hook chat commands NOW when session is loaded
+                    //  3 ostalo...
+                    //  Hook chat commands NOW when session is loaded
                     try
                     {
                         var torchInstance = _torch as ITorchServer;
