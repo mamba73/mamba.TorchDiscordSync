@@ -89,12 +89,6 @@
 - **Status:** ✅ **GOTOVO**
 - **Trebalo bi:** Testiranje sa pravim korisnicima
 
-#### 11. `Services/FactionReaderService.cs`
-- **Što radi:** Čitanje fakcija iz Space Engineers game sessiona
-- **Funkcionalnost:** LoadFactionsFromGame()
-- **Status:** ✅ **GOTOVO** (vraća listu FactionModel)
-- **Trebalo bi:** Testiranje sa stvarnim servera
-
 ---
 
 ### 🎯 **HANDLERS** (Logika obrade)

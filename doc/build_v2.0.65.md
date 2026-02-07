@@ -103,7 +103,7 @@ Advanced Space Engineers Torch plugin for Discord synchronization with death log
 - Faction member synchronization
 - Leave/join notifications
 
-#### **6. Chat Moderation System**
+#### **6. Discord Chat Moderation System**
 **Class:** `Handlers/ChatModerator.cs` (fix warnings)
 **Features:**
 - Blacklisted word filtering
