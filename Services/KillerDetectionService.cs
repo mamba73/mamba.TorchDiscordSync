@@ -27,6 +27,13 @@ namespace mamba.TorchDiscordSync.Services
     /// </summary>
     public class KillerDetectionService
     {
+        private DamageTrackingService damageTracking;
+
+        public KillerDetectionService(DamageTrackingService damageTracking = null)
+        {
+            this.damageTracking = damageTracking;
+        }
+
         /// <summary>
         /// Result of killer detection
         /// </summary>

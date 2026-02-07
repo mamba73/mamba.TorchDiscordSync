@@ -1,4 +1,9 @@
-// Handlers/DeathMessageHandler.cs
+// ============================================================================
+// File: Handlers/DeathMessageHandler.cs
+// Purpose: Generate and send death messages to game and Discord
+// Status: COMPLETE with DamageTracking integration
+// ============================================================================
+
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -12,26 +17,54 @@ using VRage.Game.ModAPI;
 namespace mamba.TorchDiscordSync.Handlers
 {
     /// <summary>
-    /// FINAL ENHANCED: Complete death message handler with:
-    /// - Proximity-based killer detection
-    /// - Surface vs orbit detection
-    /// - Player name sanitization
-    /// - Full contextual messages
+    /// COMPLETE: Death message handler with DamageTracking integration
+    /// Generates contextual death messages based on killer, location, and death cause
+    /// Sends messages to game chat and Discord
     /// </summary>
     public class DeathMessageHandler
     {
+        // ════════════════════════════════════════════════════════════════════════
+        // FIELDS
+        // ════════════════════════════════════════════════════════════════════════
+
+        /// <summary>Event logging service for Discord integration</summary>
         private readonly EventLoggingService _eventLog;
+
+        /// <summary>Configuration for death messages and zones</summary>
         private readonly MainConfig _config;
+
+        /// <summary>Death message templates and configuration</summary>
         private readonly DeathMessagesConfig _deathMessagesConfig;
+
+        /// <summary>Service to detect who killed the character</summary>
         private readonly KillerDetectionService _killerDetector;
+
+        /// <summary>Service to detect death location (planet, orbit, etc.)</summary>
         private readonly DeathLocationService _locationService;
 
-        public DeathMessageHandler(EventLoggingService eventLog, MainConfig config)
+        /// <summary>NEW: DamageTracking service for accurate killer detection</summary>
+        private readonly DamageTrackingService _damageTracking;
+
+        // ════════════════════════════════════════════════════════════════════════
+        // CONSTRUCTOR
+        // ════════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Initialize DeathMessageHandler
+        /// NEW: Accept DamageTrackingService as optional parameter
+        /// </summary>
+        /// <param name="eventLog">Event logging service</param>
+        /// <param name="config">Main configuration</param>
+        /// <param name="damageTracking">Optional DamageTrackingService for accurate killer detection</param>
+        public DeathMessageHandler(EventLoggingService eventLog, MainConfig config, DamageTrackingService damageTracking = null)
         {
             _eventLog = eventLog;
             _config = config;
             _deathMessagesConfig = DeathMessagesConfig.Load();
-            _killerDetector = new KillerDetectionService();
+
+            // Store DamageTracking reference and pass to KillerDetectionService
+            _damageTracking = damageTracking;
+            _killerDetector = new KillerDetectionService(_damageTracking);
             _locationService = new DeathLocationService(config);
 
             LoggerUtil.LogInfo(
@@ -39,19 +72,28 @@ namespace mamba.TorchDiscordSync.Handlers
             );
         }
 
+        // ════════════════════════════════════════════════════════════════════════
+        // MAIN METHOD - Handle Player Death
+        // ════════════════════════════════════════════════════════════════════════
+
         /// <summary>
         /// ENHANCED: Process death with full context detection
+        /// Analyzes killer, location, cause, and generates contextual message
         /// </summary>
         public async Task HandlePlayerDeathAsync(string playerName, IMyCharacter character = null)
         {
             try
             {
-                // CRITICAL: Sanitize player name (remove monitor icons, etc.)
+                // ────────────────────────────────────────────────────────────────
+                // STEP 1: Sanitize player name
+                // Remove special characters and emoticons
+                // ────────────────────────────────────────────────────────────────
                 string sanitizedName = TextSanitizationUtil.SanitizePlayerName(playerName);
-
                 LoggerUtil.LogInfo($"[DEATH] ═══ Processing death for: {sanitizedName} ═══");
 
-                // STEP 1: Detect killer
+                // ────────────────────────────────────────────────────────────────
+                // STEP 2: Detect killer
+                // ────────────────────────────────────────────────────────────────
                 KillerDetectionService.KillerInfo killerInfo = null;
                 if (character != null)
                 {
@@ -66,7 +108,10 @@ namespace mamba.TorchDiscordSync.Handlers
                     killerInfo = new KillerDetectionService.KillerInfo();
                 }
 
-                // STEP 2: Detect location
+                // ────────────────────────────────────────────────────────────────
+                // STEP 3: Detect location
+                // Determine if death was on surface, orbit, specific planet, etc.
+                // ────────────────────────────────────────────────────────────────
                 LocationZoneResult locationInfo = null;
                 if (character != null && _config?.Death?.EnableLocationZones == true)
                 {
@@ -80,14 +125,21 @@ namespace mamba.TorchDiscordSync.Handlers
                     locationInfo = new LocationZoneResult();
                 }
 
-                // STEP 3: Generate message
+                // ────────────────────────────────────────────────────────────────
+                // STEP 4: Generate death message
+                // Creates contextual message based on killer, location, and cause
+                // ────────────────────────────────────────────────────────────────
                 string deathMessage = GenerateDeathMessage(sanitizedName, killerInfo, locationInfo);
                 LoggerUtil.LogInfo($"[DEATH] Generated: {deathMessage}");
 
-                // STEP 4: Send to game
+                // ────────────────────────────────────────────────────────────────
+                // STEP 5: Send to game chat
+                // ────────────────────────────────────────────────────────────────
                 SendToGameChat(deathMessage);
 
-                // STEP 5: Send to Discord
+                // ────────────────────────────────────────────────────────────────
+                // STEP 6: Send to Discord
+                // ────────────────────────────────────────────────────────────────
                 string discordMessage = AddEmotePrefix(deathMessage);
                 await SendToDiscordAsync(discordMessage);
 
@@ -99,8 +151,13 @@ namespace mamba.TorchDiscordSync.Handlers
             }
         }
 
+        // ════════════════════════════════════════════════════════════════════════
+        // STEP 4: Generate Death Message
+        // ════════════════════════════════════════════════════════════════════════
+
         /// <summary>
         /// Generate death message with all context
+        /// Combines killer, location, and cause into contextual message
         /// </summary>
         private string GenerateDeathMessage(
             string victimName,
@@ -110,30 +167,30 @@ namespace mamba.TorchDiscordSync.Handlers
         {
             try
             {
-                // Determine death type
+                // Determine death type based on killer info
                 DeathTypeEnum deathType = DetermineDeathType(killerInfo);
 
-                // Get template
+                // Get random message template for this death type
                 string template = _deathMessagesConfig.GetRandomMessage(deathType);
 
-                // Build message
+                // Build message from template
                 string message = template;
 
                 // Replace victim (sanitized name)
                 message = message.Replace("{victim}", victimName);
                 message = message.Replace("{1}", victimName);
 
-                // Replace killer
+                // Replace killer name
                 string killerName = GetKillerDisplayName(killerInfo);
                 message = message.Replace("{killer}", killerName);
                 message = message.Replace("{0}", killerName);
 
-                // Replace weapon
+                // Replace weapon name
                 string weaponName = GetWeaponDisplayName(killerInfo);
                 message = message.Replace("{weapon}", weaponName);
                 message = message.Replace("{2}", weaponName);
 
-                // Add location
+                // Add location information
                 string locationText = GenerateLocationText(locationInfo);
                 if (!string.IsNullOrEmpty(locationText))
                 {
@@ -150,7 +207,8 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// ENHANCED: Determine death type with Turret distinction
+        /// Determine death type based on killer information
+        /// Maps DeathCause to DeathTypeEnum for message selection
         /// </summary>
         private DeathTypeEnum DetermineDeathType(KillerDetectionService.KillerInfo killerInfo)
         {
@@ -164,7 +222,7 @@ namespace mamba.TorchDiscordSync.Handlers
 
                 case KillerDetectionService.DeathCause.Turret:
                 case KillerDetectionService.DeathCause.NpcFaction:
-                    return DeathTypeEnum.Turret; // Use TURRET templates!
+                    return DeathTypeEnum.Turret;
 
                 case KillerDetectionService.DeathCause.Collision:
                     return DeathTypeEnum.Grid;
@@ -190,17 +248,18 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// Get killer display name (sanitized)
+        /// Get killer display name
+        /// Sanitizes player names to remove special characters
         /// </summary>
         private string GetKillerDisplayName(KillerDetectionService.KillerInfo killerInfo)
         {
             if (killerInfo == null)
                 return "Unknown";
 
-            // NPC faction - use tag directly (no sanitization needed for faction tags)
+            // NPC faction - use tag directly
             if (killerInfo.IsNpcFaction && !string.IsNullOrEmpty(killerInfo.NpcFactionTag))
             {
-                return killerInfo.NpcFactionTag; // e.g. "SPID", "RUST"
+                return killerInfo.NpcFactionTag;
             }
 
             // Player-owned turret or direct player kill - sanitize name
@@ -225,6 +284,7 @@ namespace mamba.TorchDiscordSync.Handlers
 
         /// <summary>
         /// Generate location text with surface/orbit support
+        /// Adds location context to death message
         /// </summary>
         private string GenerateLocationText(LocationZoneResult locationInfo)
         {
@@ -243,8 +303,13 @@ namespace mamba.TorchDiscordSync.Handlers
             }
         }
 
+        // ════════════════════════════════════════════════════════════════════════
+        // STEP 5: Send to Game Chat
+        // ════════════════════════════════════════════════════════════════════════
+
         /// <summary>
-        /// Send to game chat
+        /// Send death message to game chat
+        /// Uses MyVisualScriptLogicProvider for in-game messaging
         /// </summary>
         private void SendToGameChat(string deathMessage)
         {
@@ -259,34 +324,13 @@ namespace mamba.TorchDiscordSync.Handlers
             }
         }
 
-        /// <summary>
-        /// Add emoticon
-        /// </summary>
-        private string AddEmotePrefix(string message)
-        {
-            try
-            {
-                if (
-                    _config?.Death == null
-                    || string.IsNullOrEmpty(_config.Death.DeathMessageEmotes)
-                )
-                    return $"💀 {message}";
-
-                var emotes = _config.Death.DeathMessageEmotes.Split(',');
-                if (emotes.Length == 0)
-                    return $"💀 {message}";
-
-                string randomEmote = emotes[new Random().Next(emotes.Length)].Trim();
-                return $"{randomEmote} {message}";
-            }
-            catch
-            {
-                return $"💀 {message}";
-            }
-        }
+        // ════════════════════════════════════════════════════════════════════════
+        // STEP 6: Send to Discord
+        // ════════════════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// Send to Discord
+        /// Send death message to Discord
+        /// Uses EventLoggingService for Discord integration
         /// </summary>
         private async Task SendToDiscordAsync(string discordMessage)
         {
@@ -304,6 +348,39 @@ namespace mamba.TorchDiscordSync.Handlers
             catch (Exception ex)
             {
                 LoggerUtil.LogError($"[DEATH_DISCORD] Error: {ex.Message}");
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        // HELPER: Add Emoticon Prefix
+        // ════════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Add random emoticon prefix to Discord message
+        /// Makes messages more visually appealing
+        /// </summary>
+        private string AddEmotePrefix(string message)
+        {
+            try
+            {
+                if (
+                    _config?.Death == null
+                    || string.IsNullOrEmpty(_config.Death.DeathMessageEmotes)
+                )
+                    return $"💀 {message}";
+
+                // Parse comma-separated emotes
+                var emotes = _config.Death.DeathMessageEmotes.Split(',');
+                if (emotes.Length == 0)
+                    return $"💀 {message}";
+
+                // Select random emote
+                string randomEmote = emotes[new Random().Next(emotes.Length)].Trim();
+                return $"{randomEmote} {message}";
+            }
+            catch
+            {
+                return $"💀 {message}";
             }
         }
     }

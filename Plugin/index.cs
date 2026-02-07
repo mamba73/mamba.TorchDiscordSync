@@ -43,6 +43,8 @@ namespace mamba.TorchDiscordSync.Plugin
         private SyncOrchestrator _orchestrator;
         private DeathMessageHandler _deathMessageHandler;
         private PlayerTrackingService _playerTracking;
+        private DamageTrackingService _damageTracking;
+        private bool _damageTrackingInitialized = false;
 
         // Handlers
         private CommandProcessor _commandProcessor;
@@ -130,6 +132,17 @@ namespace mamba.TorchDiscordSync.Plugin
                 // NEW: Pass MainConfig to DeathLogService for location zones configuration
                 _deathLog = new DeathLogService(_db, _eventLog, _config);
 
+                try
+                {
+                    _damageTracking = new DamageTrackingService();
+                    LoggerUtil.LogInfo("[INIT] DamageTrackingService instance created (Init deferred to session load)");
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"[INIT] Failed to create DamageTrackingService: {ex.Message}");
+                    _damageTracking = null;
+                }
+
                 // CRITICAL FIX: Safe cast to TorchBase for PlayerTrackingService
                 var torchBase = torch as Torch.TorchBase;
                 if (torchBase == null)
@@ -146,7 +159,8 @@ namespace mamba.TorchDiscordSync.Plugin
                 // _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog);
 
                 // 1. Create DeathMessageHandler FIRST
-                _deathMessageHandler = new DeathMessageHandler(_eventLog, _config);
+                // _deathMessageHandler = new DeathMessageHandler(_eventLog, _config);
+                _deathMessageHandler = new DeathMessageHandler(_eventLog, _config, _damageTracking);
                 LoggerUtil.LogDebug("[INIT] DeathMessageHandler created");
 
                 // 2. THEN create PlayerTrackingService with it
