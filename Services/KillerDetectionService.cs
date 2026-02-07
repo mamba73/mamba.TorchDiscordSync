@@ -1,4 +1,9 @@
-// Services/KillerDetectionService.cs
+// ============================================================================
+// File: Services/KillerDetectionService.cs
+// FINAL VERSION: Integrated oxygen/fall/collision detection with DamageTracking
+// Date: 2026-02-07
+// ============================================================================
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,7 +11,6 @@ using System.Reflection;
 using mamba.TorchDiscordSync.Utils;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
-// FIX: Added this namespace to resolve MyEntityStat and access StatComp methods
 using Sandbox.Game.Entities.Character.Components;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.Weapons;
@@ -21,13 +25,35 @@ using VRageMath;
 namespace mamba.TorchDiscordSync.Services
 {
     /// <summary>
-    /// CORRECT: Killer detection using damage system reflection
-    /// Uses MyEntityStat and character damage tracking to find actual killer
-    /// No proximity detection - finds REAL damage source!
+    /// FINAL: Complete killer detection system
+    /// - DamageType detection (Oxygen, Fall, Collision)
+    /// - DamageTracking integration
+    /// - Reflection fallback
+    /// - Environmental detection
     /// </summary>
     public class KillerDetectionService
     {
         private DamageTrackingService damageTracking;
+        private readonly Dictionary<long, DamageRecord> _localDamageBuffer = new Dictionary<long, DamageRecord>();
+        private bool _isHooked = false;
+        private DateTime _lastCleanup = DateTime.Now;
+        private const int CLEANUP_INTERVAL_SECONDS = 30;
+        private const int BUFFER_RETENTION_SECONDS = 10;
+
+        /// <summary>
+        /// Local damage record for tracking DamageType
+        /// </summary>
+        private class DamageRecord
+        {
+            public string DamageType;
+            public long AttackerId;
+            public DateTime Timestamp;
+
+            public override string ToString()
+            {
+                return $"[{Timestamp:HH:mm:ss}] Type={DamageType}, AttackerId={AttackerId}";
+            }
+        }
 
         public KillerDetectionService(DamageTrackingService damageTracking = null)
         {
@@ -35,8 +61,100 @@ namespace mamba.TorchDiscordSync.Services
         }
 
         /// <summary>
-        /// Result of killer detection
+        /// MUST be called from plugin Init() or OnSessionStateChanged(Loaded)
+        /// Registers the BeforeDamageHandler to capture DamageType
         /// </summary>
+        public void Init()
+        {
+            if (!_isHooked && MyAPIGateway.Session != null)
+            {
+                try
+                {
+                    MyAPIGateway.Session.DamageSystem.RegisterBeforeDamageHandler(1, OnDamageReceived);
+                    _isHooked = true;
+                    LoggerUtil.LogSuccess("[KILLER_DETECTION] BeforeDamageHandler registered (Priority: 1)");
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"[KILLER_DETECTION] Failed to register handler: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Cleanup old records periodically
+        /// Call this from a timer or during Dispose()
+        /// </summary>
+        public void Cleanup()
+        {
+            try
+            {
+                lock (_localDamageBuffer)
+                {
+                    // Periodic cleanup every 30 seconds
+                    if ((DateTime.Now - _lastCleanup).TotalSeconds < CLEANUP_INTERVAL_SECONDS)
+                        return;
+
+                    var cutoffTime = DateTime.Now.AddSeconds(-BUFFER_RETENTION_SECONDS);
+                    var keysToRemove = _localDamageBuffer
+                        .Where(x => x.Value.Timestamp < cutoffTime)
+                        .Select(x => x.Key)
+                        .ToList();
+
+                    foreach (var key in keysToRemove)
+                        _localDamageBuffer.Remove(key);
+
+                    if (keysToRemove.Count > 0)
+                        LoggerUtil.LogDebug($"[KILLER_CLEANUP] Removed {keysToRemove.Count} old damage records");
+
+                    _lastCleanup = DateTime.Now;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[KILLER_CLEANUP] Error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Hook called when damage is received
+        /// Captures DamageType BEFORE character dies
+        /// </summary>
+        private void OnDamageReceived(object target, ref MyDamageInformation info)
+        {
+            try
+            {
+                var character = target as IMyCharacter;
+                if (character == null)
+                    return;
+
+                lock (_localDamageBuffer)
+                {
+                    // Store the damage record with DamageType
+                    var record = new DamageRecord
+                    {
+                        DamageType = info.Type.String,
+                        AttackerId = info.AttackerId,
+                        Timestamp = DateTime.Now
+                    };
+
+                    _localDamageBuffer[character.EntityId] = record;
+                    LoggerUtil.LogDebug($"[KILLER_DAMAGE] Recorded: {character.DisplayName} ← {record}");
+                }
+
+                // Periodic cleanup
+                Cleanup();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[KILLER_DAMAGE] Error: {ex.Message}");
+            }
+        }
+
+        // ====================================================================
+        // PUBLIC DETECTION METHOD
+        // ====================================================================
+
         public class KillerInfo
         {
             public bool IsPlayerKill { get; set; }
@@ -59,6 +177,11 @@ namespace mamba.TorchDiscordSync.Services
                 NpcFactionTag = null;
                 Cause = DeathCause.Unknown;
             }
+
+            public override string ToString()
+            {
+                return $"Killer={KillerName}, Weapon={WeaponName}, Cause={Cause}";
+            }
         }
 
         public enum DeathCause
@@ -73,11 +196,12 @@ namespace mamba.TorchDiscordSync.Services
             Pressure,
             Suicide,
             Environment,
+            Grinding
         }
 
         /// <summary>
-        /// CORRECT: Detect killer using character's last damage source
-        /// Uses reflection to access internal damage tracking
+        /// Main detection method - called from DeathMessageHandler
+        /// Uses multi-step approach: DamageType → DamageTracking → Reflection → Fallback
         /// </summary>
         public KillerInfo DetectKiller(IMyCharacter victim)
         {
@@ -100,69 +224,46 @@ namespace mamba.TorchDiscordSync.Services
                     return info;
                 }
 
-                // STEP 1: Check oxygen depletion first (easy to detect)
+                // ================================================================
+                // STEP 1: CHECK LOCAL BUFFER (DamageType - MOST ACCURATE)
+                // ================================================================
+                if (TryDetectFromLocalBuffer(victim, info))
+                {
+                    LoggerUtil.LogSuccess("[KILLER] Detected from DamageType buffer");
+                    return info;
+                }
+
+                // ================================================================
+                // STEP 2: CHECK DAMAGETRACKING BUFFER
+                // ================================================================
+                if (damageTracking != null && TryDetectFromDamageTracking(victim, info))
+                {
+                    LoggerUtil.LogSuccess("[KILLER] Detected from DamageTracking buffer");
+                    return info;
+                }
+
+                // ================================================================
+                // STEP 3: CHECK REFLECTION
+                // ================================================================
+                long lastDamageDealerId = GetLastDamageDealerId(myCharacter);
+                if (lastDamageDealerId != 0 && TryAnalyzeAttacker(lastDamageDealerId, info))
+                {
+                    LoggerUtil.LogSuccess("[KILLER] Detected via reflection");
+                    return info;
+                }
+
+                // ================================================================
+                // STEP 4: CHECK OXYGEN STAT (FALLBACK)
+                // ================================================================
                 if (CheckOxygenDeath(myCharacter, info))
                 {
-                    LoggerUtil.LogSuccess("[KILLER] Death by oxygen depletion");
+                    LoggerUtil.LogSuccess("[KILLER] Detected oxygen depletion");
                     return info;
                 }
 
-                // STEP 1.5: NEW - Check DamageTracking buffer PRIJE refleksije!
-                if (damageTracking != null)
-                {
-                    try
-                    {
-                        var lastDamage = damageTracking.GetLastDamage(victim.EntityId, secondsBack: 5);
-                        if (lastDamage != null && (DateTime.Now - lastDamage.Timestamp).TotalSeconds < 5)
-                        {
-                            MyEntity attacker;
-                            if (MyEntities.TryGetEntityById(lastDamage.AttackerId, out attacker))
-                            {
-                                LoggerUtil.LogSuccess("[KILLER_BUFFER] Found via DamageTracking buffer!");
-                                AnalyzeDamageDealer(attacker, info);
-                                LoggerUtil.LogSuccess("[KILLER_BUFFER] Killer: " + info.KillerName + ", Cause: " + info.Cause + ", Weapon: " + info.WeaponName + $" (attacker: {attacker}, Info: {info} = {info.KillerName}, {info.WeaponName}, {info.Cause})");
-                                return info;
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerUtil.LogError($"[KILLER_BUFFER] Error: {ex.Message}");
-                    }
-                }
-
-                // STEP 2: Try to get last damage dealer using reflection
-                long lastDamageDealerId = GetLastDamageDealerId(myCharacter);
-
-                if (lastDamageDealerId != 0)
-                {
-                    LoggerUtil.LogDebug($"[KILLER] Last damage dealer ID: {lastDamageDealerId}");
-
-                    MyEntity damageDealer;
-                    if (MyEntities.TryGetEntityById(lastDamageDealerId, out damageDealer))
-                    {
-                        LoggerUtil.LogDebug(
-                            $"[KILLER] Damage dealer: {damageDealer.GetType().Name} - {damageDealer.DisplayName}"
-                        );
-                        AnalyzeDamageDealer(damageDealer, info);
-                        return info;
-                    }
-                    else
-                    {
-                        LoggerUtil.LogWarning(
-                            $"[KILLER] Damage dealer entity {lastDamageDealerId} not found"
-                        );
-                    }
-                }
-
-                // STEP 3: Try alternative methods
-                if (TryGetKillerFromStatComp(myCharacter, info))
-                {
-                    LoggerUtil.LogSuccess($"[KILLER] Found via StatComp");
-                    return info;
-                }
-
-                // STEP 4: Check environmental causes
+                // ================================================================
+                // STEP 5: ENVIRONMENTAL FALLBACK
+                // ================================================================
                 DetectEnvironmentalDeath(myCharacter, info);
 
                 LoggerUtil.LogDebug(
@@ -179,6 +280,130 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        // ====================================================================
+        // STEP 1: LOCAL BUFFER DETECTION (DamageType)
+        // ====================================================================
+
+        private bool TryDetectFromLocalBuffer(IMyCharacter victim, KillerInfo info)
+        {
+            try
+            {
+                lock (_localDamageBuffer)
+                {
+                    if (!_localDamageBuffer.TryGetValue(victim.EntityId, out var record))
+                    {
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] No local damage record found");
+                        return false;
+                    }
+
+                    // Only use if recent (within 2 seconds)
+                    if ((DateTime.Now - record.Timestamp).TotalSeconds >= 2.0)
+                    {
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Record too old");
+                        return false;
+                    }
+
+                    LoggerUtil.LogDebug($"[KILLER_LOCAL] Found damage type: {record.DamageType}");
+
+                    // Detect Oxygen/Vacuum
+                    if (record.DamageType == "LowPressure" || record.DamageType == "Asphyxia")
+                    {
+                        info.Cause = DeathCause.Oxygen;
+                        info.KillerName = "Vacuum";
+                        info.WeaponName = "Suffocation";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: LowPressure/Asphyxia");
+                        return true;
+                    }
+
+                    // Detect Fall/Gravity
+                    if (record.DamageType == "Fall")
+                    {
+                        info.Cause = DeathCause.Fall;
+                        info.KillerName = "Gravity";
+                        info.WeaponName = "Ground Impact";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Fall");
+                        return true;
+                    }
+
+                    // Detect Collision/Deformation
+                    if (record.DamageType == "Deformation")
+                    {
+                        info.Cause = DeathCause.Collision;
+                        info.KillerName = "Collision";
+                        info.WeaponName = "High Velocity Impact";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Deformation");
+                        return true;
+                    }
+
+                    // Detect Heat/Pressure
+                    if (record.DamageType == "Heat")
+                    {
+                        info.Cause = DeathCause.Pressure;
+                        info.KillerName = "Heat";
+                        info.WeaponName = "Environmental Hazard";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Heat");
+                        return true;
+                    }
+
+                    LoggerUtil.LogDebug($"[KILLER_LOCAL] Unknown damage type: {record.DamageType}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[KILLER_LOCAL] Error: {ex.Message}");
+                return false;
+            }
+        }
+
+        // ====================================================================
+        // STEP 2: DAMAGETRACKING BUFFER DETECTION
+        // ====================================================================
+
+        private bool TryDetectFromDamageTracking(IMyCharacter victim, KillerInfo info)
+        {
+            try
+            {
+                if (damageTracking == null)
+                {
+                    LoggerUtil.LogDebug("[KILLER_BUFFER] DamageTracking not available");
+                    return false;
+                }
+
+                var lastDamage = damageTracking.GetLastDamage(victim.EntityId, secondsBack: 5);
+                if (lastDamage == null || (DateTime.Now - lastDamage.Timestamp).TotalSeconds >= 5)
+                {
+                    LoggerUtil.LogDebug("[KILLER_BUFFER] No recent damage records");
+                    return false;
+                }
+
+                MyEntity attackerEntity;
+                if (!MyEntities.TryGetEntityById(lastDamage.AttackerId, out attackerEntity))
+                {
+                    LoggerUtil.LogDebug("[KILLER_BUFFER] Attacker entity no longer exists");
+                    return false;
+                }
+
+                // Analyze the attacker
+                if (AnalyzeDamageDealer(attackerEntity, info))
+                {
+                    LoggerUtil.LogDebug("[KILLER_BUFFER] Analyzed attacker entity");
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[KILLER_BUFFER] Error: {ex.Message}");
+                return false;
+            }
+        }
+
+        // ====================================================================
+        // STEP 3: REFLECTION DETECTION
+        // ====================================================================
+
         private long GetLastDamageDealerId(MyCharacter character)
         {
             try
@@ -190,7 +415,7 @@ namespace mamba.TorchDiscordSync.Services
                     "m_lastAttacker",
                     "m_lastDamageSource",
                     "LastDamageDealer",
-                    "LastAttacker",
+                    "LastAttacker"
                 };
 
                 foreach (var fieldName in possibleFieldNames)
@@ -202,8 +427,6 @@ namespace mamba.TorchDiscordSync.Services
                     if (field != null)
                     {
                         var value = field.GetValue(character);
-                        LoggerUtil.LogDebug($"[KILLER_REFLECT] Found field '{fieldName}': {value}");
-
                         if (value is long)
                             return (long)value;
                         else if (value is MyEntity)
@@ -211,7 +434,7 @@ namespace mamba.TorchDiscordSync.Services
                     }
                 }
 
-                LoggerUtil.LogDebug("[KILLER_REFLECT] No damage dealer field found via reflection");
+                LoggerUtil.LogDebug("[KILLER_REFLECT] No damage dealer field found");
                 return 0;
             }
             catch (Exception ex)
@@ -221,94 +444,36 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        private bool TryGetKillerFromStatComp(MyCharacter character, KillerInfo info)
+        private bool TryAnalyzeAttacker(long attackerId, KillerInfo info)
         {
             try
             {
-                if (character.StatComp == null)
+                MyEntity attacker;
+                if (!MyEntities.TryGetEntityById(attackerId, out attacker))
                     return false;
 
-                var statCompType = character.StatComp.GetType();
-                LoggerUtil.LogDebug($"[KILLER_STAT] StatComp type: {statCompType.Name}");
-
-                // FIX: character.StatComp.Stats is a DictionaryValuesReader which doesn't have GetStat().
-                // We must use TryGetStat() directly on the StatComp (MyEntityStatComponent).
-                MyEntityStat healthStat;
-                if (
-                    character.StatComp.TryGetStat(
-                        MyStringHash.GetOrCompute("health"),
-                        out healthStat
-                    )
-                )
-                {
-                    LoggerUtil.LogDebug(
-                        $"[KILLER_STAT] Health: {healthStat.Value}/{healthStat.MaxValue}"
-                    );
-
-                    var syncDataField = healthStat
-                        .GetType()
-                        .GetField(
-                            "SyncData",
-                            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                        );
-                    if (syncDataField != null)
-                    {
-                        var syncData = syncDataField.GetValue(healthStat);
-                        if (syncData != null)
-                        {
-                            var syncDataType = syncData.GetType();
-                            foreach (
-                                var field in syncDataType.GetFields(
-                                    BindingFlags.Instance
-                                        | BindingFlags.Public
-                                        | BindingFlags.NonPublic
-                                )
-                            )
-                            {
-                                var value = field.GetValue(syncData);
-                                LoggerUtil.LogDebug(
-                                    $"[KILLER_STAT] SyncData.{field.Name} = {value}"
-                                );
-
-                                if (
-                                    field.Name.Contains("Attacker")
-                                    || field.Name.Contains("Source")
-                                    || field.Name.Contains("Dealer")
-                                )
-                                {
-                                    if (value is long && (long)value != 0)
-                                    {
-                                        MyEntity attacker;
-                                        if (MyEntities.TryGetEntityById((long)value, out attacker))
-                                        {
-                                            LoggerUtil.LogSuccess(
-                                                $"[KILLER_STAT] Found attacker via SyncData: {attacker.DisplayName}"
-                                            );
-                                            AnalyzeDamageDealer(attacker, info);
-                                            return true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                return false;
+                return AnalyzeDamageDealer(attacker, info);
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[KILLER_STAT] Error: {ex.Message}");
+                LoggerUtil.LogError($"[KILLER] Error analyzing attacker: {ex.Message}");
                 return false;
             }
         }
 
-        private void AnalyzeDamageDealer(MyEntity damageDealer, KillerInfo info)
+        /// <summary>
+        /// Analyze attacker entity (character, turret, grid, etc.)
+        /// </summary>
+        private bool AnalyzeDamageDealer(MyEntity damageDealer, KillerInfo info)
         {
             try
             {
-                LoggerUtil.LogDebug($"[KILLER_ANALYZE] Entity type: {damageDealer.GetType().Name}");
-                LoggerUtil.LogDebug($"[KILLER_ANALYZE] Display name: {damageDealer.DisplayName}");
+                if (damageDealer == null)
+                    return false;
 
+                LoggerUtil.LogDebug($"[KILLER_ANALYZE] Entity type: {damageDealer.GetType().Name}");
+
+                // Character attack
                 var attackerChar = damageDealer as IMyCharacter;
                 if (attackerChar != null)
                 {
@@ -316,10 +481,11 @@ namespace mamba.TorchDiscordSync.Services
                     info.KillerName = attackerChar.DisplayName;
                     info.Cause = DeathCause.Player;
                     info.WeaponName = "Weapon";
-                    LoggerUtil.LogSuccess($"[KILLER_ANALYZE] Player kill: {info.KillerName}");
-                    return;
+                    LoggerUtil.LogDebug($"[KILLER_ANALYZE] Player kill: {info.KillerName}");
+                    return true;
                 }
 
+                // Turret attack
                 var turret = damageDealer as IMyLargeTurretBase;
                 if (turret != null)
                 {
@@ -327,31 +493,28 @@ namespace mamba.TorchDiscordSync.Services
                     info.Cause = DeathCause.Turret;
                     info.WeaponName = GetTurretTypeName(turret);
                     DetectTurretOwner(turret, info);
-                    LoggerUtil.LogSuccess(
-                        $"[KILLER_ANALYZE] Turret kill: {info.KillerName} with {info.WeaponName}"
-                    );
-                    return;
+                    LoggerUtil.LogDebug($"[KILLER_ANALYZE] Turret kill: {info.KillerName} with {info.WeaponName}");
+                    return true;
                 }
 
+                // Grid collision
                 var grid = damageDealer as MyCubeGrid;
                 if (grid != null)
                 {
                     info.Cause = DeathCause.Collision;
                     info.KillerName = grid.DisplayName ?? "a ship";
                     info.WeaponName = "Collision";
-                    LoggerUtil.LogSuccess($"[KILLER_ANALYZE] Grid collision: {info.KillerName}");
-                    return;
+                    LoggerUtil.LogDebug($"[KILLER_ANALYZE] Grid collision: {info.KillerName}");
+                    return true;
                 }
 
-                LoggerUtil.LogWarning(
-                    $"[KILLER_ANALYZE] Unknown damage dealer type: {damageDealer.GetType().Name}"
-                );
-                info.KillerName = damageDealer.DisplayName ?? "Unknown";
-                info.WeaponName = "Unknown";
+                LoggerUtil.LogDebug($"[KILLER_ANALYZE] Unknown type: {damageDealer.GetType().Name}");
+                return false;
             }
             catch (Exception ex)
             {
                 LoggerUtil.LogError($"[KILLER_ANALYZE] Error: {ex.Message}");
+                return false;
             }
         }
 
@@ -384,36 +547,25 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                var grid = turret.CubeGrid;
-                if (grid == null)
-                {
-                    LoggerUtil.LogWarning("[KILLER_OWNER] Turret has no parent grid");
-                    return;
-                }
-
                 var turretBlock = turret as MyCubeBlock;
                 if (turretBlock == null || turretBlock.OwnerId == 0)
                 {
-                    LoggerUtil.LogWarning("[KILLER_OWNER] Turret has no owner");
+                    LoggerUtil.LogDebug("[KILLER_OWNER] Turret has no owner");
                     return;
                 }
 
                 long ownerId = turretBlock.OwnerId;
-                LoggerUtil.LogDebug($"[KILLER_OWNER] Owner ID: {ownerId}");
-
-                var playerIdentity = MySession.Static.Players.TryGetIdentity(ownerId);
+                var playerIdentity = MySession.Static?.Players?.TryGetIdentity(ownerId);
                 if (playerIdentity != null)
                 {
                     info.TurretOwnerName = playerIdentity.DisplayName;
                     info.KillerName = playerIdentity.DisplayName;
                     info.IsPlayerKill = true;
-                    LoggerUtil.LogSuccess(
-                        $"[KILLER_OWNER] Player: {info.TurretOwnerName} (works for offline!)"
-                    );
+                    LoggerUtil.LogDebug($"[KILLER_OWNER] Player: {info.TurretOwnerName}");
                     return;
                 }
 
-                var faction = MySession.Static.Factions.TryGetPlayerFaction(ownerId);
+                var faction = MySession.Static?.Factions?.TryGetPlayerFaction(ownerId);
                 if (faction != null)
                 {
                     info.IsNpcFaction = !faction.AcceptHumans;
@@ -422,15 +574,13 @@ namespace mamba.TorchDiscordSync.Services
                         info.NpcFactionTag = faction.Tag;
                         info.KillerName = faction.Tag;
                         info.Cause = DeathCause.NpcFaction;
-                        LoggerUtil.LogSuccess($"[KILLER_OWNER] NPC Faction: {info.NpcFactionTag}");
+                        LoggerUtil.LogDebug($"[KILLER_OWNER] NPC Faction: {info.NpcFactionTag}");
                     }
                     else
                     {
                         info.TurretOwnerName = faction.Name;
                         info.KillerName = faction.Name;
-                        LoggerUtil.LogDebug(
-                            $"[KILLER_OWNER] Player faction: {info.TurretOwnerName}"
-                        );
+                        LoggerUtil.LogDebug($"[KILLER_OWNER] Player faction: {info.TurretOwnerName}");
                     }
                     return;
                 }
@@ -441,6 +591,10 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        // ====================================================================
+        // STEP 4: OXYGEN DETECTION (FALLBACK)
+        // ====================================================================
+
         private bool CheckOxygenDeath(MyCharacter character, KillerInfo info)
         {
             try
@@ -448,15 +602,8 @@ namespace mamba.TorchDiscordSync.Services
                 if (character.StatComp == null)
                     return false;
 
-                // FIX: character.StatComp.Stats doesn't have GetStat().
-                // We use TryGetStat() on the StatComp directly.
                 MyEntityStat oxygenStat;
-                if (
-                    character.StatComp.TryGetStat(
-                        MyStringHash.GetOrCompute("oxygen"),
-                        out oxygenStat
-                    )
-                )
+                if (character.StatComp.TryGetStat(MyStringHash.GetOrCompute("oxygen"), out oxygenStat))
                 {
                     if (oxygenStat != null && oxygenStat.Value <= 0.1f)
                     {
@@ -467,6 +614,7 @@ namespace mamba.TorchDiscordSync.Services
                         return true;
                     }
                 }
+
                 return false;
             }
             catch (Exception ex)
@@ -475,6 +623,10 @@ namespace mamba.TorchDiscordSync.Services
                 return false;
             }
         }
+
+        // ====================================================================
+        // STEP 5: ENVIRONMENTAL FALLBACK
+        // ====================================================================
 
         private void DetectEnvironmentalDeath(MyCharacter character, KillerInfo info)
         {

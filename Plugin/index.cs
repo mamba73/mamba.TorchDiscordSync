@@ -159,7 +159,6 @@ namespace mamba.TorchDiscordSync.Plugin
                 // _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog);
 
                 // 1. Create DeathMessageHandler FIRST
-                // _deathMessageHandler = new DeathMessageHandler(_eventLog, _config);
                 _deathMessageHandler = new DeathMessageHandler(_eventLog, _config, _damageTracking);
                 LoggerUtil.LogDebug("[INIT] DeathMessageHandler created");
 
@@ -493,7 +492,21 @@ namespace mamba.TorchDiscordSync.Plugin
                         }
                     }
 
-                    // 2. Initialize PlayerTrackingService NOW when session is loaded
+                    // 2: Initialize KillerDetectionService
+                    if (_deathMessageHandler != null)
+                    {
+                        try
+                        {
+                            _deathMessageHandler.InitializeKillerDetection();
+                            LoggerUtil.LogSuccess("[KILLER_DETECTION] Service initialized");
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError($"[KILLER_DETECTION] Failed to initialize: {ex.Message}");
+                        }
+                    }
+
+                    // 3. Initialize PlayerTrackingService NOW when session is loaded
                     // This ensures ChatManagerServer and DamageSystem are available
                     if (_playerTracking != null && !_playerTrackingInitialized)
                     {
@@ -513,7 +526,7 @@ namespace mamba.TorchDiscordSync.Plugin
                         }
                     }
 
-                    //  3 ostalo...
+                    //  4 ostalo...
                     //  Hook chat commands NOW when session is loaded
                     try
                     {
@@ -717,6 +730,12 @@ namespace mamba.TorchDiscordSync.Plugin
 
         public override void Dispose()
         {
+            // Cleanup death message handler
+            if (_deathMessageHandler != null)
+            {
+                _deathMessageHandler.Cleanup();
+            }
+
             // Cleanup player tracking service
             if (_playerTracking != null)
             {
