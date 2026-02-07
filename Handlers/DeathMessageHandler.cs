@@ -1,7 +1,7 @@
 // ============================================================================
 // File: Handlers/DeathMessageHandler.cs
 // Purpose: Generate and send death messages to game and Discord
-// Status: COMPLETE with DamageTracking integration
+// Status: COMPLETE with DamageTracking integration and KillerDetectionService
 // ============================================================================
 
 using System;
@@ -383,5 +383,40 @@ namespace mamba.TorchDiscordSync.Handlers
                 return $"💀 {message}";
             }
         }
+
+        /// <summary>
+        /// Initialize killer detection service
+        /// </summary> <summary>
+        /// 
+        /// </summary>
+        public void InitializeKillerDetection()
+        {
+            try
+            {
+                _killerDetector.Init();
+                LoggerUtil.LogSuccess("[DEATH_HANDLER] KillerDetectionService initialized");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DEATH_HANDLER] Failed to initialize killer detection: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Cleanup resources used by killer detection service
+        /// </summary>
+        public void Cleanup()
+        {
+            try
+            {
+                _killerDetector?.Cleanup();
+                LoggerUtil.LogInfo("[DEATH_HANDLER] Cleanup complete");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DEATH_HANDLER] Cleanup error: {ex.Message}");
+            }
+        }
+
     }
 }
