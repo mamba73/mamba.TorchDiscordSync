@@ -110,6 +110,110 @@ namespace mamba.TorchDiscordSync.Config
                 "{victim} experienced rapid unplanned landing",
             };
 
+        [XmlArray("Environment_Grinding")]
+        [XmlArrayItem("Message")]
+        public List<string> GrindingMessages { get; set; } =
+                    new List<string>
+                    {
+                "{victim} met the business end of a grinder",
+                "{victim} was ground into dust",
+                "{victim} forgot to keep their distance from the grinder",
+                "{victim} became one with the grindings",
+                "{victim} experienced a fatal grinding incident",
+                "{victim} was too close to the grinder",
+                    };
+
+        [XmlArray("Environment_Heat")]
+        [XmlArrayItem("Message")]
+        public List<string> HeatMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} was incinerated",
+                "{victim} couldn't handle the heat",
+                "{victim} experienced spontaneous combustion",
+                "{victim} was consumed by flames",
+                "{victim} forgot that fire is hot",
+                "{victim} was roasted alive",
+            };
+
+        [XmlArray("Environment_Radiation")]
+        [XmlArrayItem("Message")]
+        public List<string> RadiationMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} was irradiated to death",
+                "{victim} absorbed too much radiation",
+                "{victim} became radioactive",
+                "{victim} forgot their rad suit",
+                "{victim} glowed briefly then exploded",
+                "{victim} was poisoned by radiation",
+            };
+
+        [XmlArray("Environment_Creature")]
+        [XmlArrayItem("Message")]
+        public List<string> CreatureMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} was attacked by a wild creature",
+                "{victim} met the local wildlife",
+                "{victim} learned that creatures bite",
+                "{victim} was no match for the predator",
+                "{victim} became an animal's meal",
+                "{victim} encountered a very angry animal",
+            };
+
+        [XmlArray("Environment_Hunger")]
+        [XmlArrayItem("Message")]
+        public List<string> HungerMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} starved to death",
+                "{victim} forgot to eat",
+                "{victim} experienced fatal hunger",
+                "{victim} died of malnutrition",
+                "{victim} couldn't survive without food",
+                "{victim} learned that you need to eat",
+            };
+
+        [XmlArray("Environment_Weather")]
+        [XmlArrayItem("Message")]
+        public List<string> WeatherMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} was killed by the weather",
+                "{victim} underestimated the storm",
+                "{victim} was swept away by the elements",
+                "{victim} couldn't survive the environmental conditions",
+                "{victim} was battered by the weather",
+                "{victim} learned that nature is powerful",
+            };
+
+        [XmlArray("Environment_Pressure")]
+        [XmlArrayItem("Message")]
+        public List<string> PressureMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} died from extreme pressure",
+                "{victim} was crushed by compression",
+                "{victim} couldn't withstand the pressure",
+                "{victim} was squeezed like a pancake",
+                "{victim} experienced rapid compression",
+                "{victim} popped from pressure",
+            };
+
+        [XmlArray("Environment_Boundary")]
+        [XmlArrayItem("Message")]
+        public List<string> BoundaryMessages { get; set; } =
+            new List<string>
+            {
+                "{victim} wandered too far beyond the map",
+                "{victim} fell off the edge of the world",
+                "{victim} exceeded the boundary",
+                "{victim} discovered the edge of reality",
+                "{victim} went out of bounds",
+                "{victim} learned the map has limits",
+            };
+
         [XmlArray("Grid")]
         [XmlArrayItem("Message")]
         public List<string> GridMessages { get; set; } =
@@ -162,7 +266,7 @@ namespace mamba.TorchDiscordSync.Config
                 case DeathTypeEnum.Environment_Oxygen:
                     return EnvironmentOxygenMessages;
                 case DeathTypeEnum.Environment_Pressure:
-                    return EnvironmentPressureMessages;
+                    return PressureMessages ?? EnvironmentPressureMessages;
                 case DeathTypeEnum.Environment_Collision:
                     return EnvironmentCollisionMessages;
                 case DeathTypeEnum.Accident:

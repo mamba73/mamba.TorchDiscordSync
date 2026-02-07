@@ -355,8 +355,134 @@ namespace mamba.TorchDiscordSync.Services
                         return true;
                     }
 
-                    LoggerUtil.LogDebug($"[KILLER_LOCAL] Unknown damage type: {record.DamageType}");
+                    // ✅ OXYGEN/VACUUM DEATHS
+                    if (record.DamageType == "LowPressure" || record.DamageType == "Asphyxia")
+                    {
+                        info.Cause = DeathCause.Oxygen;
+                        info.KillerName = "Vacuum";
+                        info.WeaponName = "Suffocation";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: LowPressure/Asphyxia");
+                        return true;
+                    }
+
+                    // ✅ GRAVITY/IMPACT DEATHS
+                    if (record.DamageType == "Fall")
+                    {
+                        info.Cause = DeathCause.Fall;
+                        info.KillerName = "Gravity";
+                        info.WeaponName = "Ground Impact";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Fall");
+                        return true;
+                    }
+
+                    // ✅ COLLISION/GRID DEATHS
+                    if (record.DamageType == "Deformation")
+                    {
+                        info.Cause = DeathCause.Collision;
+                        info.KillerName = "Collision";
+                        info.WeaponName = "High Velocity Impact";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Deformation");
+                        return true;
+                    }
+
+                    // ✅ SELF-INFLICTED DEATHS
+                    if (record.DamageType == "Suicide")
+                    {
+                        info.Cause = DeathCause.Suicide;
+                        info.KillerName = "Self";
+                        info.WeaponName = "Self-Inflicted";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Suicide");
+                        return true;
+                    }
+
+                    // ✅ GRINDING/DESTRUCTION
+                    if (record.DamageType == "Grind")
+                    {
+                        info.Cause = DeathCause.Grinding;
+                        info.KillerName = "Grinder";
+                        info.WeaponName = "Grinding Tool";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Grind");
+                        return true;
+                    }
+
+                    // ✅ TEMPERATURE/HEAT DAMAGE
+                    if (record.DamageType == "Temperature" || record.DamageType == "Fire")
+                    {
+                        info.Cause = DeathCause.Pressure;  // Using Pressure as generic environmental hazard
+                        info.KillerName = "Heat";
+                        info.WeaponName = "Extreme Temperature";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Temperature/Fire");
+                        return true;
+                    }
+
+                    // ✅ RADIATION DAMAGE
+                    if (record.DamageType == "Radioactivity")
+                    {
+                        info.Cause = DeathCause.Pressure;  // Using Pressure as environmental hazard
+                        info.KillerName = "Radiation";
+                        info.WeaponName = "Radioactive Exposure";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Radioactivity");
+                        return true;
+                    }
+
+                    // ✅ CREATURE ATTACKS (Wolf/Spider)
+                    if (record.DamageType == "Wolf" || record.DamageType == "Spider")
+                    {
+                        info.Cause = DeathCause.Environment;  // Creatures count as environmental
+                        info.KillerName = record.DamageType == "Wolf" ? "Wolf" : "Spider";
+                        info.WeaponName = "Animal Attack";
+                        LoggerUtil.LogDebug($"[KILLER_LOCAL] Detected: {record.DamageType}");
+                        return true;
+                    }
+
+                    // ✅ HUNGER/STARVATION
+                    if (record.DamageType == "Hunger")
+                    {
+                        info.Cause = DeathCause.Environment;
+                        info.KillerName = "Starvation";
+                        info.WeaponName = "Hunger";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Hunger");
+                        return true;
+                    }
+
+                    // ✅ WEATHER/STORMS
+                    if (record.DamageType == "Weather")
+                    {
+                        info.Cause = DeathCause.Environment;
+                        info.KillerName = "Weather";
+                        info.WeaponName = "Environmental Storm";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Weather");
+                        return true;
+                    }
+
+                    // ✅ PRESSURE DAMAGE (Squeeze)
+                    if (record.DamageType == "Squeez")  // Note: SE spells it "Squeez" not "Squeeze"
+                    {
+                        info.Cause = DeathCause.Pressure;
+                        info.KillerName = "Pressure";
+                        info.WeaponName = "Compression";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Squeeze");
+                        return true;
+                    }
+
+                    // ✅ OUT OF BOUNDS
+                    if (record.DamageType == "OutOfBounds")
+                    {
+                        info.Cause = DeathCause.Environment;
+                        info.KillerName = "Map Boundary";
+                        info.WeaponName = "Out of Bounds";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: OutOfBounds");
+                        return true;
+                    }
+
+                    // ❓ UNKNOWN/UNIMPLEMENTED TYPES
+                    // These are captured but not specifically handled:
+                    // - Explosion, Rocket, Bullet, Mine, Weapon, Bolt
+                    // - Thruster, Drill, Weld, Destruction
+                    // - Debug (testing only)
+                    LoggerUtil.LogDebug($"[KILLER_LOCAL] Unhandled damage type: {record.DamageType}");
                     return false;
+
                 }
             }
             catch (Exception ex)
