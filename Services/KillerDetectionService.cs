@@ -107,6 +107,30 @@ namespace mamba.TorchDiscordSync.Services
                     return info;
                 }
 
+                // STEP 1.5: NEW - Check DamageTracking buffer PRIJE refleksije!
+                if (damageTracking != null)
+                {
+                    try
+                    {
+                        var lastDamage = damageTracking.GetLastDamage(victim.EntityId, secondsBack: 5);
+                        if (lastDamage != null && (DateTime.Now - lastDamage.Timestamp).TotalSeconds < 5)
+                        {
+                            MyEntity attacker;
+                            if (MyEntities.TryGetEntityById(lastDamage.AttackerId, out attacker))
+                            {
+                                LoggerUtil.LogSuccess("[KILLER_BUFFER] Found via DamageTracking buffer!");
+                                AnalyzeDamageDealer(attacker, info);
+                                LoggerUtil.LogSuccess("[KILLER_BUFFER] Killer: " + info.KillerName + ", Cause: " + info.Cause + ", Weapon: " + info.WeaponName + $" (attacker: {attacker}, Info: {info} = {info.KillerName}, {info.WeaponName}, {info.Cause})");
+                                return info;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[KILLER_BUFFER] Error: {ex.Message}");
+                    }
+                }
+
                 // STEP 2: Try to get last damage dealer using reflection
                 long lastDamageDealerId = GetLastDamageDealerId(myCharacter);
 
