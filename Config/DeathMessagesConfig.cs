@@ -23,12 +23,22 @@ namespace mamba.TorchDiscordSync.Config
         public List<string> SuicideMessages { get; set; } =
             new List<string>
             {
-                "{victim} committed suicide",
+                "{victim} restarted their character",
                 "{victim} chose the easy way out",
                 "{victim} decided to leave this world",
                 "{victim} embraced the void",
-                "{victim} pressed the big red button... on themselves",
                 "{victim} became a permanent part of the scenery",
+                "{victim} took matters into their own hands",
+                "{victim} decided the universe was too much to handle",
+                "{victim} embraced the void permanently",
+                "{victim} pressed the big red button... on themselves",
+                "{victim} found a permanent solution to their problems",
+                "{victim} decided to take a one-way trip",
+                "{victim} chose not to respawn",
+                "{victim} became one with the abyss",
+                "{victim} gave up on life",
+                "{victim} was too lazy to respawn",
+                "{victim} decided to nope out of existence",
             };
 
         [XmlArray("PvP")]

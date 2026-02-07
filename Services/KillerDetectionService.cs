@@ -345,6 +345,16 @@ namespace mamba.TorchDiscordSync.Services
                         return true;
                     }
 
+                    // Detect Suicide (self-inflicted damage)
+                    if (record.DamageType == "Suicide")
+                    {
+                        info.Cause = DeathCause.Suicide;
+                        info.KillerName = "Self";
+                        info.WeaponName = "Self-Inflicted";
+                        LoggerUtil.LogDebug("[KILLER_LOCAL] Detected: Suicide");
+                        return true;
+                    }
+
                     LoggerUtil.LogDebug($"[KILLER_LOCAL] Unknown damage type: {record.DamageType}");
                     return false;
                 }
