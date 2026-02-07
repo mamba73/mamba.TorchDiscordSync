@@ -477,6 +477,22 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogSuccess("=== Server session LOADED ===");
                     _serverStartupLogged = false;
 
+
+                    // ✅ Initialize DamageTrackingService (if not already initialized)
+                    if (_damageTracking != null && !_damageTrackingInitialized)
+                    {
+                        try
+                        {
+                            _damageTracking.Init();
+                            _damageTrackingInitialized = true;  // ← KORISTI flag!
+                            LoggerUtil.LogSuccess("[DAMAGE_TRACK] DamageTrackingService initialized");
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError($"[DAMAGE_TRACK] Failed to initialize: {ex.Message}");
+                        }
+                    }
+                    
                     // Initialize PlayerTrackingService NOW when session is loaded
                     // This ensures ChatManagerServer and DamageSystem are available
                     if (_playerTracking != null && !_playerTrackingInitialized)
