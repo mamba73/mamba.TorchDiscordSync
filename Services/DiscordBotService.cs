@@ -315,12 +315,34 @@ namespace mamba.TorchDiscordSync.Services
                     return 0;
                 }
 
-                // Create the text channel
+                // Create the text channel with category if provided
                 var channel = await guild.CreateTextChannelAsync(channelName);
                 if (channel == null)
                 {
                     LoggerUtil.LogError("[DISCORD_BOT] Failed to create channel: " + channelName);
                     return 0;
+                }
+
+                // IF categoryID is provided, move channel to that category
+                if (categoryID.HasValue && categoryID > 0)
+                {
+                    try
+                    {
+                        var category = guild.GetCategoryChannel(categoryID.Value);
+                        if (category != null)
+                        {
+                            await channel.ModifyAsync(x => x.CategoryId = categoryID.Value);
+                            LoggerUtil.LogDebug("[DISCORD_BOT] Channel " + channelName + " moved to category: " + categoryID);
+                        }
+                        else
+                        {
+                            LoggerUtil.LogWarning("[DISCORD_BOT] Category not found: " + categoryID + " - channel created without category");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogWarning("[DISCORD_BOT] Failed to move channel to category: " + ex.Message);
+                    }
                 }
 
                 LoggerUtil.LogSuccess("[DISCORD_BOT] Created text channel: " + channelName + " (ID: " + channel.Id + ")");
@@ -332,6 +354,7 @@ namespace mamba.TorchDiscordSync.Services
                 return 0;
             }
         }
+
 
         /// <summary>
         /// Delete a channel by ID
