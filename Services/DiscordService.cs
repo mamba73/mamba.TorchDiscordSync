@@ -69,7 +69,7 @@ namespace mamba.TorchDiscordSync.Services
         /// <summary>
         /// Create Discord text channel for faction
         /// </summary>
-        public async Task<ulong> CreateChannelAsync(string channelName)
+        public async Task<ulong> CreateChannelAsync(string channelName, ulong factionCategoryId)
         {
             try
             {
