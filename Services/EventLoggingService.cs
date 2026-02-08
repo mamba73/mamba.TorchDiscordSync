@@ -123,7 +123,7 @@ namespace mamba.TorchDiscordSync.Services
             {
                 string threshold =
                     _config != null && _config.Monitoring != null
-                        ? _config.Monitoring.SimThresh.ToString("F2")
+                        ? _config.Monitoring.SimSpeedThreshold.ToString("F2")
                         : "0.60";
                 string message =
                     "SIMSPEED ALERT - Current: "

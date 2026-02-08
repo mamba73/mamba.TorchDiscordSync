@@ -186,13 +186,18 @@ namespace mamba.TorchDiscordSync.Config
 
         [XmlElement]
         public ulong StatusChannelId { get; set; }
-        
+
         [XmlElement]
         public ulong SimSpeedChannelId { get; set; }
 
         [XmlElement]
         public ulong PlayerCountChannelId { get; set; }
 
+        [XmlElement]
+        public ulong FactionCategoryId { get; set; }
+
+        [XmlElement]
+        public ulong AdminAlertChannelId { get; set; }
 
         public DiscordConfig()
         {
@@ -206,6 +211,8 @@ namespace mamba.TorchDiscordSync.Config
             StatusChannelId = 0;
             SimSpeedChannelId = 0;
             PlayerCountChannelId = 0;
+            FactionCategoryId = 0;
+            AdminAlertChannelId = 0;
         }
     }
 
@@ -372,7 +379,7 @@ namespace mamba.TorchDiscordSync.Config
             EnableLocationZones = true;
             GridDetectionEnabled = true;
             ShowGridName = true;
-            
+
             DeathMessageEmotes = "📢,⚔️,💀,🔥,⚡";
             MessageDeduplicationWindowSeconds = 3;
 
@@ -391,13 +398,27 @@ namespace mamba.TorchDiscordSync.Config
         public bool Enabled { get; set; }
 
         [XmlElement]
-        public float SimThresh { get; set; }
+        public float SimSpeedThreshold { get; set; }
 
         [XmlElement]
-        public int CheckIntervalSeconds { get; set; }
+        public int StatusUpdateIntervalSeconds { get; set; }
 
         [XmlElement]
         public bool EnableSimSpeedMonitoring { get; set; }
+
+        // NEW: SimSpeed Channel Naming
+        [XmlElement]
+        public string SimSpeedChannelNameFormat { get; set; }
+
+        [XmlElement]
+        public string SimSpeedNormalEmoji { get; set; }
+
+        [XmlElement]
+        public string SimSpeedWarningEmoji { get; set; }
+
+        // NEW: SimSpeed Alerts
+        [XmlElement]
+        public bool EnableSimSpeedAlerts { get; set; }
 
         [XmlElement]
         public string SimSpeedAlertMessage { get; set; }
@@ -405,15 +426,28 @@ namespace mamba.TorchDiscordSync.Config
         [XmlElement]
         public int SimSpeedAlertCooldownSeconds { get; set; }
 
+        // NEW: Player Count Channel Naming
         [XmlElement]
-        public bool UseStatusUpdates { get; set; }
+        public bool EnablePlayerCountMonitoring { get; set; }
 
         [XmlElement]
-        public int StatusUpdateIntervalSeconds { get; set; }
+        public string PlayerCountChannelNameFormat { get; set; }
+
+        // NEW: Player Count Alerts
+        [XmlElement]
+        public bool EnablePlayerCountAlerts { get; set; }
 
         [XmlElement]
-        public string StatusMessageFormat { get; set; }
+        public int PlayerCountAlertThreshold { get; set; }
 
+        [XmlElement]
+        public string PlayerCountAlertMessage { get; set; }
+
+        // NEW: Admin Alerts
+        [XmlElement]
+        public bool EnableAdminAlerts { get; set; }
+
+        // NEW: Server Status Messages
         [XmlElement]
         public string ServerStartedMessage { get; set; }
 
@@ -423,20 +457,41 @@ namespace mamba.TorchDiscordSync.Config
         [XmlElement]
         public string ServerRestartedMessage { get; set; }
 
+        [XmlElement]
+        public string ServerCrashedMessage { get; set; }
+
         public MonitoringConfig()
         {
-            Enabled = false;
-            SimThresh = 0.6f;
-            CheckIntervalSeconds = 30;
-            EnableSimSpeedMonitoring = false;
-            SimSpeedAlertMessage = "@here Simulation speed has dropped below threshold!";
+            Enabled = true;
+            SimSpeedThreshold = 0.6f;
+            StatusUpdateIntervalSeconds = 30;
+            EnableSimSpeedMonitoring = true;
+
+            // SimSpeed Channel Naming
+            SimSpeedChannelNameFormat = "{emoji} SimSpeed: {ss}";
+            SimSpeedNormalEmoji = "🔧";
+            SimSpeedWarningEmoji = "⚠️";
+
+            // SimSpeed Alerts
+            EnableSimSpeedAlerts = true;
+            SimSpeedAlertMessage = "🚨 **SIMSPEED WARNING** 🚨\nCurrent: **{ss}**\nThreshold: **{threshold}**";
             SimSpeedAlertCooldownSeconds = 1200;
-            UseStatusUpdates = false;
-            StatusUpdateIntervalSeconds = 5000;
-            StatusMessageFormat = "{p} players | SimSpeed {ss}";
-            ServerStartedMessage = ":white_check_mark: Server Started!";
-            ServerStoppedMessage = ":x: Server Stopped!";
-            ServerRestartedMessage = ":arrows_counterclockwise: Server Restarted!";
+
+            // Player Count
+            EnablePlayerCountMonitoring = true;
+            PlayerCountChannelNameFormat = "👥 {p}/{pp} players";
+            EnablePlayerCountAlerts = false;
+            PlayerCountAlertThreshold = 10;
+            PlayerCountAlertMessage = "📊 Player count: **{p}** / {pp}";
+
+            // Admin Alerts
+            EnableAdminAlerts = true;
+
+            // Server Status Messages
+            ServerStartedMessage = "✅ Server Started!";
+            ServerStoppedMessage = "❌ Server Stopped!";
+            ServerRestartedMessage = "🔄 Server Restarted!";
+            ServerCrashedMessage = "💥 **CRITICAL: SERVER CRASHED** - Manual restart required!";
         }
     }
 

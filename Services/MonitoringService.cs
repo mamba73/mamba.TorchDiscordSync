@@ -2,6 +2,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Timers;
+using Discord;
 using Discord.WebSocket;
 using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Utils;
@@ -149,12 +150,12 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                LoggerUtil.LogDebug($"[MONITORING_SIMSPEED] Updating SimSpeed channel to {simSpeed:F2}");
+                LoggerUtil.LogDebug("[MONITORING_SIMSPEED] Updating SimSpeed channel to " + simSpeed.ToString("F2"));
 
                 ulong channelId = _config.Discord.SimSpeedChannelId;
                 if (channelId == 0)
                 {
-                    LoggerUtil.LogWarning("[MONITORING_SIMSPEED] SimSpeedChannelId not configured in Discord config");
+                    LoggerUtil.LogWarning("[MONITORING_SIMSPEED] SimSpeedChannelId not configured");
                     return;
                 }
 
@@ -169,26 +170,40 @@ namespace mamba.TorchDiscordSync.Services
 
                 if (channel == null)
                 {
-                    LoggerUtil.LogError($"[MONITORING_SIMSPEED] Channel {channelId} not found or not a voice channel");
+                    LoggerUtil.LogError("[MONITORING_SIMSPEED] Channel " + channelId + " not found or not a voice channel");
                     return;
                 }
 
-                // Format: "🔧 SimSpeed: 0.95" or "⚠️ SimSpeed: 0.45" if below threshold
-                string emoji = simSpeed >= _config.Monitoring.SimThresh ? "🔧" : "⚠️";
-                string newName = $"{emoji} SimSpeed: {simSpeed:F2}";
+                // Use configured emoji based on threshold
+                string emoji = simSpeed >= _config.Monitoring.SimSpeedThreshold
+                    ? _config.Monitoring.SimSpeedNormalEmoji
+                    : _config.Monitoring.SimSpeedWarningEmoji;
 
-                LoggerUtil.LogDebug($"[MONITORING_SIMSPEED] Setting channel name to: {newName}");
+                // Format using configured template
+                string newName = _config.Monitoring.SimSpeedChannelNameFormat
+                    .Replace("{emoji}", emoji)
+                    .Replace("{ss}", simSpeed.ToString("F2"));
 
-                await channel.ModifyAsync(props =>
+                LoggerUtil.LogDebug("[MONITORING_SIMSPEED] Setting channel name to: " + newName);
+
+                await channel.ModifyAsync(props => { props.Name = newName; });
+
+                LoggerUtil.LogSuccess("[MONITORING_SIMSPEED] Channel updated: " + newName);
+
+                // Send alert if below threshold
+                if (simSpeed < _config.Monitoring.SimSpeedThreshold &&
+                    _config.Monitoring.EnableSimSpeedAlerts)
                 {
-                    props.Name = newName;
-                });
-
-                LoggerUtil.LogSuccess($"[MONITORING_SIMSPEED] Channel updated: {newName}");
+                    await SendAdminAlertAsync(
+                        _config.Monitoring.SimSpeedAlertMessage
+                            .Replace("{ss}", simSpeed.ToString("F2"))
+                            .Replace("{threshold}", _config.Monitoring.SimSpeedThreshold.ToString("F2"))
+                    );
+                }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[MONITORING_SIMSPEED] Failed to update channel: {ex.Message}");
+                LoggerUtil.LogError("[MONITORING_SIMSPEED] Failed to update channel: " + ex.Message);
             }
         }
 
@@ -200,7 +215,7 @@ namespace mamba.TorchDiscordSync.Services
         {
             try
             {
-                LoggerUtil.LogDebug($"[MONITORING_PLAYERS] Updating player count channel to {playerCount}");
+                LoggerUtil.LogDebug("[MONITORING_PLAYERS] Updating player count channel to " + playerCount);
 
                 ulong channelId = _config.Discord.PlayerCountChannelId;
                 if (channelId == 0)
@@ -220,28 +235,77 @@ namespace mamba.TorchDiscordSync.Services
 
                 if (channel == null)
                 {
-                    LoggerUtil.LogError($"[MONITORING_PLAYERS] Channel {channelId} not found or not a voice channel");
+                    LoggerUtil.LogError("[MONITORING_PLAYERS] Channel " + channelId + " not found");
                     return;
                 }
 
-                // Get max players from server settings
                 int maxPlayers = GetMaxPlayerCount();
 
-                // Format: "👥 Players: 5/20"
-                string newName = $"👥 Players: {playerCount}/{maxPlayers}";
+                // Format using configured template
+                string newName = _config.Monitoring.PlayerCountChannelNameFormat
+                    .Replace("{p}", playerCount.ToString())
+                    .Replace("{pp}", maxPlayers.ToString());
 
-                LoggerUtil.LogDebug($"[MONITORING_PLAYERS] Setting channel name to: {newName}");
+                LoggerUtil.LogDebug("[MONITORING_PLAYERS] Setting channel name to: " + newName);
 
-                await channel.ModifyAsync(props =>
-                {
-                    props.Name = newName;
-                });
+                await channel.ModifyAsync(props => { props.Name = newName; });
 
-                LoggerUtil.LogSuccess($"[MONITORING_PLAYERS] Channel updated: {newName}");
+                LoggerUtil.LogSuccess("[MONITORING_PLAYERS] Channel updated: " + newName);
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[MONITORING_PLAYERS] Failed to update channel: {ex.Message}");
+                LoggerUtil.LogError("[MONITORING_PLAYERS] Failed to update channel: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Send alert to admin/staff channel if SimSpeed drops below threshold
+        /// </summary>
+        /// 
+        /// <param name="message"></param>
+        /// 
+        private async Task SendAdminAlertAsync(string message)
+        {
+            try
+            {
+                if (!_config.Monitoring.EnableAdminAlerts)
+                {
+                    LoggerUtil.LogDebug("[MONITORING] Admin alerts disabled");
+                    return;
+                }
+
+                ulong channelId = _config.Discord.AdminAlertChannelId;
+                if (channelId == 0)
+                {
+                    channelId = _config.Discord.StaffLog; // Fallback na StaffLog ako AdminAlertChannelId nije postavljen
+                }
+
+                if (channelId == 0)
+                {
+                    LoggerUtil.LogWarning("[MONITORING] Admin alert channel not configured");
+                    return;
+                }
+
+                var client = _discordBot.GetClient();
+                if (client == null)
+                {
+                    LoggerUtil.LogWarning("[MONITORING] Discord client not ready for alert");
+                    return;
+                }
+
+                var channel = client.GetChannel(channelId) as IMessageChannel;
+                if (channel == null)
+                {
+                    LoggerUtil.LogWarning("[MONITORING] Admin alert channel not found: " + channelId);
+                    return;
+                }
+
+                await channel.SendMessageAsync(message);
+                LoggerUtil.LogSuccess("[MONITORING] Admin alert sent");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[MONITORING] Send admin alert error: " + ex.Message);
             }
         }
 

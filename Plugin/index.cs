@@ -45,6 +45,7 @@ namespace mamba.TorchDiscordSync.Plugin
         private PlayerTrackingService _playerTracking;
         private DamageTrackingService _damageTracking;
         private bool _damageTrackingInitialized = false;
+        private MonitoringService _monitoringService;
 
         // Handlers
         private CommandProcessor _commandProcessor;
@@ -156,7 +157,6 @@ namespace mamba.TorchDiscordSync.Plugin
 
                 // Initialize player tracking service - DO NOT call Initialize() yet
                 // It will be called in OnSessionStateChanged when session is loaded
-                // _playerTracking = new PlayerTrackingService(_eventLog, torchBase, _deathLog);
 
                 // 1. Create DeathMessageHandler FIRST
                 _deathMessageHandler = new DeathMessageHandler(_eventLog, _config, _damageTracking);
@@ -222,7 +222,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     _config
                 );
 
-                // CRITICAL FIX: Initialize verification command handler BEFORE CommandProcessor
+                // Initialize verification command handler BEFORE CommandProcessor
                 _verificationCommandHandler = new VerificationCommandHandler(
                     _verification,
                     _eventLog,
@@ -241,7 +241,7 @@ namespace mamba.TorchDiscordSync.Plugin
                     _eventLog,
                     _orchestrator,
                     _verification,
-                    _verificationCommandHandler  // CRITICAL FIX: Pass the handler!
+                    _verificationCommandHandler 
                 );
                 LoggerUtil.LogInfo("[INIT] CommandProcessor created with VerificationCommandHandler");
 
@@ -567,6 +567,21 @@ namespace mamba.TorchDiscordSync.Plugin
                         );
                     }
 
+                    // 5. Initialize MonitoringService for SimSpeed and player count monitoring
+                    try
+                    {
+                        if (_monitoringService == null && _discordBot != null)
+                        {
+                            _monitoringService = new MonitoringService(_config, _discordBot);
+                            _monitoringService.Initialize();
+                            LoggerUtil.LogSuccess("[MONITORING] MonitoringService initialized after session load");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[MONITORING] Failed to initialize MonitoringService: {ex.Message}");
+                    }
+
                     // OPTIMIZED: Get simulation speed using helper method
                     float currentSimSpeed = PluginUtils.GetCurrentSimSpeed();
 
@@ -598,6 +613,12 @@ namespace mamba.TorchDiscordSync.Plugin
                     LoggerUtil.LogInfo("=== Server session UNLOADING ===");
                     if (_syncTimer != null && _syncTimer.Enabled)
                         _syncTimer.Stop();
+                    // Stop MonitoringService
+                    if (_monitoringService != null)
+                    {
+                        _monitoringService.Stop();
+                        LoggerUtil.LogInfo("[MONITORING] MonitoringService stopped");
+                    }
                     break;
 
                 case TorchSessionState.Unloaded:
@@ -753,6 +774,13 @@ namespace mamba.TorchDiscordSync.Plugin
             if (_discordBot != null)
             {
                 _discordBot.OnVerificationAttempt -= null;
+            }
+
+            // Cleanup monitoring service
+            if (_monitoringService != null)
+            {
+                _monitoringService.Dispose();
+                _monitoringService = null;
             }
 
             try
