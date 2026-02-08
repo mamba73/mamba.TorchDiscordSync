@@ -28,6 +28,14 @@ namespace mamba.TorchDiscordSync.Services
         {
             _config = config;
         }
+        
+        /// <summary>
+        /// Get the underlying Discord client (for advanced operations if needed)
+        /// </summary>
+        public DiscordSocketClient GetClient()
+        {
+            return _client;
+        }
 
         /// <summary>
         /// Initialize and connect the Discord bot
@@ -290,6 +298,79 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+
+        /// <summary>
+        /// Create a text channel in the guild
+        /// </summary>
+        public async Task<ulong> CreateChannelAsync(string channelName, ulong? categoryID = null)
+        {
+            try
+            {
+                if (!_isReady) return 0;
+
+                var guild = _client.GetGuild(_config.GuildID);
+                if (guild == null)
+                {
+                    LoggerUtil.LogError("[DISCORD_BOT] Guild not found for channel creation");
+                    return 0;
+                }
+
+                // Create the text channel
+                var channel = await guild.CreateTextChannelAsync(channelName);
+                if (channel == null)
+                {
+                    LoggerUtil.LogError("[DISCORD_BOT] Failed to create channel: " + channelName);
+                    return 0;
+                }
+
+                LoggerUtil.LogSuccess("[DISCORD_BOT] Created text channel: " + channelName + " (ID: " + channel.Id + ")");
+                return channel.Id;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD_BOT] Create channel error: " + ex.Message);
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Delete a channel by ID
+        /// </summary>
+        public async Task<bool> DeleteChannelAsync(ulong channelID)
+        {
+            try
+            {
+                if (!_isReady) return false;
+
+                var guild = _client.GetGuild(_config.GuildID);
+                if (guild == null) return false;
+
+                var channel = guild.GetChannel(channelID);
+                if (channel == null)
+                {
+                    LoggerUtil.LogWarning("[DISCORD_BOT] Channel not found for deletion: " + channelID);
+                    return false;
+                }
+
+                // Cast to IGuildChannel - ima DeleteAsync()
+                var guildChannel = channel as IGuildChannel;
+                if (guildChannel == null)
+                {
+                    LoggerUtil.LogWarning("[DISCORD_BOT] Channel is not a guild channel: " + channelID);
+                    return false;
+                }
+
+                await guildChannel.DeleteAsync();
+                LoggerUtil.LogSuccess("[DISCORD_BOT] Deleted channel: " + channelID);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD_BOT] Delete channel error: " + ex.Message);
+                return false;
+            }
+        }
+
         /// <summary>
         /// Assign role to a user
         /// </summary>
@@ -511,7 +592,7 @@ namespace mamba.TorchDiscordSync.Services
         /// <summary>
         /// Find user by username or nickname in the guild
         /// </summary>
-        private SocketUser FindUserByUsername(string username)
+        private SocketUser FindUserByUsername(string searchTerm)
         {
             try
             {
@@ -522,15 +603,66 @@ namespace mamba.TorchDiscordSync.Services
                     return null;
                 }
 
+                if (string.IsNullOrWhiteSpace(searchTerm))
+                {
+                    LoggerUtil.LogWarning("[DISCORD_BOT] Empty search term");
+                    return null;
+                }
+
+                // Normalize search term - remove @ if present
+                string search = searchTerm.ToLower().Replace("@", "").Trim();
+                LoggerUtil.LogDebug("[DISCORD_BOT] Searching for Discord user: '" + search + "'");
+
+                // Try exact matches first
                 foreach (var user in guild.Users)
                 {
-                    if (string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase) ||
-                        (user.Nickname != null && string.Equals(user.Nickname, username, StringComparison.OrdinalIgnoreCase)))
+                    // Method 1: Exact match on Username (Discord username)
+                    if (!string.IsNullOrEmpty(user.Username))
                     {
-                        return user;
+                        if (user.Username.Equals(search, StringComparison.OrdinalIgnoreCase))
+                        {
+                            LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by Username: " + user.Username);
+                            return user;
+                        }
+                    }
+
+                    // Method 2: Exact match on Nickname (server nickname)
+                    if (!string.IsNullOrEmpty(user.Nickname))
+                    {
+                        if (user.Nickname.Equals(search, StringComparison.OrdinalIgnoreCase))
+                        {
+                            LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by Nickname: " + user.Nickname);
+                            return user;
+                        }
                     }
                 }
 
+                // Try partial matches if no exact match found
+                LoggerUtil.LogDebug("[DISCORD_BOT] No exact match found, trying partial matches...");
+                foreach (var user in guild.Users)
+                {
+                    // Method 3: Partial match on Username
+                    if (!string.IsNullOrEmpty(user.Username))
+                    {
+                        if (user.Username.ToLower().Contains(search))
+                        {
+                            LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by partial Username: " + user.Username);
+                            return user;
+                        }
+                    }
+
+                    // Method 4: Discord ID match (if search term is numeric)
+                    if (ulong.TryParse(search, out ulong userId))
+                    {
+                        if (user.Id == userId)
+                        {
+                            LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by Discord ID: " + userId);
+                            return user;
+                        }
+                    }
+                }
+
+                LoggerUtil.LogWarning("[DISCORD_BOT] User NOT found: '" + searchTerm + "'");
                 return null;
             }
             catch (Exception ex)

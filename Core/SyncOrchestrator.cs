@@ -104,7 +104,7 @@ namespace mamba.TorchDiscordSync.Core
             {
                 if (_config != null && _config.Monitoring != null)
                 {
-                    if (currentSimSpeed < _config.Monitoring.SimThresh)
+                    if (currentSimSpeed < _config.Monitoring.SimSpeedThreshold)
                     {
                         if (_eventLog != null)
                         {
@@ -154,7 +154,7 @@ namespace mamba.TorchDiscordSync.Core
                 if (_config == null || _config.Monitoring == null)
                     return Task.FromResult(0);
 
-                float threshold = _config.Monitoring.SimThresh;
+                float threshold = _config.Monitoring.SimSpeedThreshold;
 
                 if (currentSimSpeed < threshold)
                 {

@@ -74,8 +74,9 @@ namespace mamba.TorchDiscordSync.Services
             try
             {
                 LoggerUtil.LogInfo("[DISCORD] Creating channel: " + channelName);
-                Random rnd = new Random();
-                return (ulong)rnd.Next(100000, 999999);
+                if (_botService != null)
+                    return await _botService.CreateChannelAsync(channelName);
+                return 0;
             }
             catch (Exception ex)
             {
@@ -112,7 +113,9 @@ namespace mamba.TorchDiscordSync.Services
             try
             {
                 LoggerUtil.LogInfo("[DISCORD] Deleting channel: " + channelID);
-                return true;
+                if (_botService != null)
+                    return await _botService.DeleteChannelAsync(channelID);
+                return false;
             }
             catch (Exception ex)
             {
