@@ -1,11 +1,7 @@
-// Handlers\CommandProcessor.cs - ISPRAVLJENA VERZIJA
-// Unified admin commands structure
-// Includes: verify, unverify, admin:verify:list/pending/delete
-
+// Handlers\CommandProcessor.cs - FULLY CORRECTED
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Linq;
 using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Services;
 using mamba.TorchDiscordSync.Utils;
@@ -56,7 +52,8 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// Process incoming /tds commands
+        /// Main command processor
+        /// Routes commands to appropriate handlers based on authorization
         /// </summary>
         public void ProcessCommand(string command, long playerSteamID, string playerName)
         {
@@ -81,7 +78,23 @@ namespace mamba.TorchDiscordSync.Handlers
                     _config.AdminSteamIDs
                 );
 
-                // ===== UNIFIED ADMIN COMMANDS LIST =====
+                // NEW: Check for verify:status BEFORE verify
+                if (subcommand == "verify:status")
+                {
+                    LoggerUtil.LogInfo($"[VERIFY_STATUS_CMD] Verify status command from {playerName}");
+                    HandleVerifyStatusCommand(playerSteamID, playerName);
+                    return;
+                }
+
+                // User commands - verify
+                if (subcommand == "verify")
+                {
+                    LoggerUtil.LogInfo($"[VERIFY_CMD] Verify command detected for {playerName}");
+                    HandleVerifyCommand(playerSteamID, playerName, parts);
+                    return;
+                }
+
+                // Admin-only commands
                 List<string> adminOnlyCommands = new List<string>
                 {
                     "sync",
@@ -94,15 +107,6 @@ namespace mamba.TorchDiscordSync.Handlers
                     "admin:verify:delete",
                 };
 
-                // Commands that only non-admins can use
-                if (subcommand == "verify")
-                {
-                    LoggerUtil.LogInfo($"[VERIFY_CMD] Verify command detected for {playerName}");
-                    HandleVerifyCommand(playerSteamID, playerName, parts);
-                    return;
-                }
-
-                // Commands that only admins can use - UNIFIED HANDLER
                 if (adminOnlyCommands.Contains(subcommand))
                 {
                     if (!isAdmin)
@@ -114,7 +118,7 @@ namespace mamba.TorchDiscordSync.Handlers
                         return;
                     }
 
-                    // Execute admin command - UNIFIED SWITCH
+                    // Execute admin command
                     switch (subcommand)
                     {
                         case "sync":
@@ -160,9 +164,7 @@ namespace mamba.TorchDiscordSync.Handlers
 
                 // Unknown command
                 ChatUtils.SendError(
-                    "Unknown command: /tds "
-                        + subcommand
-                        + ". Type /tds help for available commands."
+                    "Unknown command: /tds " + subcommand + ". Type /tds help for available commands."
                 );
             }
             catch (Exception ex)
@@ -174,6 +176,8 @@ namespace mamba.TorchDiscordSync.Handlers
 
         /// <summary>
         /// Display help text based on user authorization level
+        /// Non-admins see only: verify, verify:status, help, status
+        /// Admins see all commands
         /// </summary>
         private void HandleHelpCommand(long playerSteamID)
         {
@@ -190,7 +194,7 @@ namespace mamba.TorchDiscordSync.Handlers
 
                 if (isAdmin)
                 {
-                    // ADMIN - show all commands
+                    // ADMIN - show all commands (ASCII only - no emoji)
                     helpText += "[ADMIN] COMMANDS:\n";
                     helpText += "/tds sync - Synchronize factions\n";
                     helpText += "/tds reset - Reset Discord roles/channels\n";
@@ -203,10 +207,11 @@ namespace mamba.TorchDiscordSync.Handlers
                     helpText += "\n";
                 }
 
-                // USER - show available commands (for everyone)
+                // USER - show available commands (for everyone - ASCII only)
                 helpText += "[USER] COMMANDS:\n";
                 helpText += "/tds verify @DiscordName - Link your Discord account\n";
                 helpText += "/tds verify <DiscordUserID> - Link using Discord User ID\n";
+                helpText += "/tds verify:status - Check your verification status\n";
                 helpText += "/tds status - Show plugin status\n";
                 helpText += "/tds help - Show this help\n";
                 helpText += "===================";
@@ -224,7 +229,62 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// Handle /tds verify @DiscordName or /tds verify <DiscordUserID> command
+        /// NEW: Handle /tds verify:status command
+        /// Shows verification status for current player
+        /// </summary>
+        private void HandleVerifyStatusCommand(long playerSteamID, string playerName)
+        {
+            try
+            {
+                LoggerUtil.LogDebug($"[VERIFY_STATUS_CMD] Checking status for {playerName} (SteamID: {playerSteamID})");
+
+                // Get verification status from database
+                var verification = _db?.GetVerification(playerSteamID);
+
+                string statusText = "";
+                if (verification == null)
+                {
+                    statusText = "[NOT VERIFIED] You have not started verification yet\nType /tds verify @DiscordName to begin";
+                }
+                else if (verification.IsVerified)
+                {
+                    statusText = "[VERIFIED] You are verified!\n";
+                    statusText += $"Discord: {verification.DiscordUsername}\n";
+                    statusText += $"Verified at: {verification.VerifiedAt:yyyy-MM-dd HH:mm}";
+                }
+                else
+                {
+                    // Calculate time remaining
+                    var codeAge = DateTime.UtcNow - verification.CodeGeneratedAt;
+                    var timeRemaining = TimeSpan.FromMinutes(15) - codeAge;
+
+                    if (timeRemaining.TotalSeconds <= 0)
+                    {
+                        statusText = "[EXPIRED] Your verification code has expired\nType /tds verify @DiscordName to generate a new code";
+                    }
+                    else
+                    {
+                        statusText = "[IN PROGRESS] Verification pending\n";
+                        statusText += $"Discord Username: {verification.DiscordUsername}\n";
+                        statusText += $"Code: {verification.VerificationCode}\n";
+                        statusText += $"Time Remaining: {(int)timeRemaining.TotalMinutes}m {(int)timeRemaining.Seconds}s";
+                    }
+                }
+
+                ChatUtils.SendInfo(statusText);
+                LoggerUtil.LogInfo($"[VERIFY_STATUS_CMD] Status shown to {playerName}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[VERIFY_STATUS_CMD] Error: {ex.Message}");
+                ChatUtils.SendError($"Status error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handle /tds verify @DiscordName command
+        /// Generates verification code and sends DM to Discord user
+        /// Admin logged privately with SteamID
         /// </summary>
         private void HandleVerifyCommand(long playerSteamID, string playerName, string[] args)
         {
@@ -237,10 +297,11 @@ namespace mamba.TorchDiscordSync.Handlers
                 if (args.Length < 3)
                 {
                     ChatUtils.SendError("Usage: /tds verify @DiscordName or /tds verify <DiscordUserID>");
+                    LoggerUtil.LogWarning("[VERIFY_CMD] Invalid arguments - need Discord username");
                     return;
                 }
 
-                // CRITICAL: Check if handler exists
+                // CRITICAL FIX: Check if handler exists
                 if (_verificationCommandHandler == null)
                 {
                     LoggerUtil.LogError("[VERIFY_CMD] CRITICAL: VerificationCommandHandler is NULL!");
@@ -251,7 +312,11 @@ namespace mamba.TorchDiscordSync.Handlers
                 string discordUsername = args[2];
                 LoggerUtil.LogInfo($"[VERIFY_CMD] Processing verification for Discord user: {discordUsername}");
 
-                // Call verification handler asynchronously
+                // Log verification attempt to admin log (with SteamID, but not in public chat)
+                _ = _eventLog.LogAsync("VerificationAttempt",
+                    $"Player: {playerName} | SteamID: {playerSteamID} | Discord: {discordUsername}");
+
+                // Call the verification handler asynchronously
                 Task.Run(async () =>
                 {
                     try
@@ -276,24 +341,22 @@ namespace mamba.TorchDiscordSync.Handlers
                             ChatUtils.SendSuccess(result);
                         }
                     }
-                    catch (Exception asyncEx)
+                    catch (Exception ex)
                     {
-                        LoggerUtil.LogError($"[VERIFY_CMD] Async error: {asyncEx.Message}\n{asyncEx.StackTrace}");
-                        ChatUtils.SendError($"Verification error: {asyncEx.Message}");
+                        LoggerUtil.LogError($"[VERIFY_CMD] Async error: {ex.Message}");
+                        ChatUtils.SendError($"Verification error: {ex.Message}");
                     }
                 });
-
-                LoggerUtil.LogSuccess($"[VERIFY_CMD] Verification request queued for {playerName}");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[VERIFY_CMD] Error: {ex.Message}\n{ex.StackTrace}");
-                ChatUtils.SendError($"Verify error: {ex.Message}");
+                LoggerUtil.LogError($"[VERIFY_CMD] Error: {ex.Message}");
+                ChatUtils.SendError($"Verification error: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Handle /tds sync command
+        /// Handle /tds sync command (admin only)
         /// </summary>
         private void HandleSyncCommand(string playerName)
         {
@@ -315,7 +378,7 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// Handle /tds reset command
+        /// Handle /tds reset command (admin only)
         /// </summary>
         private void HandleResetCommand(string playerName)
         {
@@ -339,7 +402,7 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// Handle /tds cleanup command
+        /// Handle /tds cleanup command (admin only)
         /// </summary>
         private void HandleCleanupCommand(string playerName)
         {
@@ -361,7 +424,7 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// Handle /tds reload command
+        /// Handle /tds reload command (admin only)
         /// </summary>
         private void HandleReloadCommand(string playerName)
         {
@@ -397,25 +460,22 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// Handle /tds unverify STEAMID [reason] command
-        /// NOW PROPERLY INTEGRATED
+        /// Handle /tds unverify STEAMID [reason] command (admin only)
         /// </summary>
         private void HandleUnverifyCommand(long adminSteamID, string adminName, string[] args)
         {
             try
             {
-                LoggerUtil.LogInfo("[UNVERIFY_CMD] Unverify command from " + adminName);
-
                 if (args.Length < 3)
                 {
-                    ChatUtils.SendError("Usage: /tds unverify <SteamID> [reason]");
+                    ChatUtils.SendError("Usage: /tds unverify STEAMID [reason]");
                     return;
                 }
 
                 long targetSteamID = 0;
                 if (!long.TryParse(args[2], out targetSteamID))
                 {
-                    ChatUtils.SendError("Invalid SteamID format");
+                    ChatUtils.SendError("Invalid Steam ID format");
                     return;
                 }
 
@@ -430,7 +490,7 @@ namespace mamba.TorchDiscordSync.Handlers
                     reason = string.Join(" ", reasonParts);
                 }
 
-                // Delete verification from database
+                // Get verification info before deleting
                 var verification = _db?.GetVerification(targetSteamID);
                 if (verification == null)
                 {
@@ -439,12 +499,15 @@ namespace mamba.TorchDiscordSync.Handlers
                     return;
                 }
 
-                // DeleteVerification() returns void, so just call it directly
+                // Delete verification
                 _db?.DeleteVerification(targetSteamID);
 
                 ChatUtils.SendSuccess("Verification removed for: " + verification.DiscordUsername + " (SteamID: " + targetSteamID + ")");
                 LoggerUtil.LogSuccess("[UNVERIFY_CMD] " + adminName + " removed verification for " + verification.DiscordUsername + " (SteamID: " + targetSteamID + ") - Reason: " + reason);
-                _ = _eventLog.LogAsync("UnverifyCommand", adminName + " unverified SteamID " + targetSteamID + ": " + reason);
+
+                // Log to admin log with SteamID
+                _ = _eventLog.LogAsync("UnverifyCommand",
+                    $"Admin: {adminName} | Unverified SteamID: {targetSteamID} | Discord: {verification.DiscordUsername} | Reason: {reason}");
             }
             catch (Exception ex)
             {
@@ -454,114 +517,95 @@ namespace mamba.TorchDiscordSync.Handlers
         }
 
         /// <summary>
-        /// Handle /tds admin:verify:list command
-        /// Shows all verified users
+        /// Handle /tds admin:verify:list command (admin only)
+        /// Lists all verified users
         /// </summary>
         private void HandleAdminVerifyList(string adminName)
         {
             try
             {
-                LoggerUtil.LogDebug("[VERIFY_LIST] Admin list command from " + adminName);
+                var allVerifications = _db?.GetAllVerifications();
+                var verified = allVerifications?.FindAll(v => v.IsVerified);
 
-                var verifications = _db?.GetAllVerifications();
-                if (verifications == null || verifications.Count == 0)
+                if (verified == null || verified.Count == 0)
                 {
-                    ChatUtils.SendInfo("No verification data found");
+                    ChatUtils.SendInfo("No verified users found");
                     return;
                 }
 
-                string output = "=== VERIFIED USERS ===\n";
-                int count = 0;
-
-                foreach (var v in verifications.Where(x => x.IsVerified))
+                string listText = "[VERIFIED USERS]\n";
+                int count = 1;
+                foreach (var v in verified)
                 {
+                    listText += $"{count}. {v.DiscordUsername} | SteamID: {v.SteamID} | Verified: {v.VerifiedAt:yyyy-MM-dd HH:mm}\n";
                     count++;
-                    output += count + ". Discord: " + v.DiscordUsername
-                           + " | SteamID: " + v.SteamID
-                           + " | Verified: " + v.VerifiedAt.ToString("yyyy-MM-dd HH:mm") + "\n";
                 }
 
-                if (count == 0)
-                {
-                    output += "No verified users found.";
-                }
-
-                ChatUtils.SendServerMessage(output);
-                LoggerUtil.LogInfo("[VERIFY_LIST] " + adminName + " listed verified users (" + count + " total)");
+                ChatUtils.SendHelpText(listText);
+                LoggerUtil.LogInfo($"[ADMIN_VERIFY_LIST] List shown to {adminName}");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[VERIFY_LIST] Error: " + ex.Message);
-                ChatUtils.SendError("Error listing verified users: " + ex.Message);
+                LoggerUtil.LogError($"[ADMIN_VERIFY_LIST] Error: {ex.Message}");
+                ChatUtils.SendError($"List error: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Handle /tds admin:verify:pending command
-        /// Shows all pending verifications (not yet verified)
+        /// Handle /tds admin:verify:pending command (admin only)
+        /// Lists all pending verifications
         /// </summary>
         private void HandleAdminVerifyPending(string adminName)
         {
             try
             {
-                LoggerUtil.LogDebug("[VERIFY_PENDING] Admin pending command from " + adminName);
+                var allVerifications = _db?.GetAllVerifications();
+                var pending = allVerifications?.FindAll(v => !v.IsVerified);
 
-                var verifications = _db?.GetAllVerifications();
-                if (verifications == null || verifications.Count == 0)
+                if (pending == null || pending.Count == 0)
                 {
-                    ChatUtils.SendInfo("No verification data found");
+                    ChatUtils.SendInfo("No pending verifications");
                     return;
                 }
 
-                string output = "=== PENDING VERIFICATIONS ===\n";
-                int count = 0;
-
-                foreach (var v in verifications.Where(x => !x.IsVerified))
+                string listText = "[PENDING VERIFICATIONS]\n";
+                int count = 1;
+                foreach (var p in pending)
                 {
+                    var age = DateTime.UtcNow - p.CodeGeneratedAt;
+                    string ageStr = age.TotalMinutes < 1 ? $"{(int)age.TotalSeconds}s" : $"{(int)age.TotalMinutes}m";
+                    listText += $"{count}. {p.DiscordUsername} | SteamID: {p.SteamID} | Code: {p.VerificationCode} | Age: {ageStr}\n";
                     count++;
-                    TimeSpan age = DateTime.UtcNow - v.CodeGeneratedAt;
-                    string ageStr = age.Hours + "h " + age.Minutes + "m ago";
-
-                    output += count + ". Discord: " + v.DiscordUsername
-                           + " | SteamID: " + v.SteamID
-                           + " | Code: " + v.VerificationCode
-                           + " | " + ageStr + "\n";
                 }
 
-                if (count == 0)
-                {
-                    output += "No pending verifications found.";
-                }
-
-                ChatUtils.SendServerMessage(output);
-                LoggerUtil.LogInfo("[VERIFY_PENDING] " + adminName + " listed pending verifications (" + count + " total)");
+                ChatUtils.SendHelpText(listText);
+                LoggerUtil.LogInfo($"[ADMIN_VERIFY_PENDING] List shown to {adminName}");
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[VERIFY_PENDING] Error: " + ex.Message);
-                ChatUtils.SendError("Error listing pending verifications: " + ex.Message);
+                LoggerUtil.LogError($"[ADMIN_VERIFY_PENDING] Error: {ex.Message}");
+                ChatUtils.SendError($"List error: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Handle /tds admin:verify:delete STEAMID command
-        /// Removes verification record
+        /// Handle /tds admin:verify:delete STEAMID command (admin only)
+        /// Deletes a verification record
         /// </summary>
         private void HandleAdminVerifyDelete(string adminName, string[] args)
         {
             try
             {
-                LoggerUtil.LogDebug("[VERIFY_DELETE] Admin delete command from " + adminName);
-
-                if (args.Length < 4)
+                if (args.Length < 3)
                 {
-                    ChatUtils.SendError("Usage: /tds admin:verify:delete <SteamID>");
+                    ChatUtils.SendError("Usage: /tds admin:verify:delete STEAMID");
                     return;
                 }
 
-                if (!long.TryParse(args[3], out long targetSteamID))
+                long targetSteamID = 0;
+                if (!long.TryParse(args[3], out targetSteamID))
                 {
-                    ChatUtils.SendError("Invalid SteamID format");
+                    ChatUtils.SendError("Invalid Steam ID format");
                     return;
                 }
 
@@ -573,23 +617,26 @@ namespace mamba.TorchDiscordSync.Handlers
                     return;
                 }
 
-                // DeleteVerification() returns void, so just call it directly
+                // Delete verification
                 _db?.DeleteVerification(targetSteamID);
 
                 ChatUtils.SendSuccess("Verification deleted for: " + verification.DiscordUsername + " (SteamID: " + targetSteamID + ")");
                 LoggerUtil.LogSuccess("[VERIFY_DELETE] " + adminName + " deleted verification for " + verification.DiscordUsername + " (SteamID: " + targetSteamID + ")");
-                _ = _eventLog.LogAsync("VerificationDeleted", adminName + " deleted verification for " + verification.DiscordUsername);
+
+                // Log to admin log
+                _ = _eventLog.LogAsync("VerificationDeleted",
+                    $"Admin: {adminName} | Deleted SteamID: {targetSteamID} | Discord: {verification.DiscordUsername}");
             }
             catch (Exception ex)
             {
                 LoggerUtil.LogError("[VERIFY_DELETE] Error: " + ex.Message);
-                ChatUtils.SendError("Error deleting verification: " + ex.Message);
+                ChatUtils.SendError("Delete error: " + ex.Message);
             }
         }
 
         /// <summary>
         /// Handle /tds status command
-        /// Shows plugin and server status
+        /// Shows plugin and server status (ASCII only - no emoji)
         /// </summary>
         private void HandleStatusCommand(string playerName)
         {
@@ -611,7 +658,7 @@ namespace mamba.TorchDiscordSync.Handlers
                     }
                 }
 
-                // Build status message
+                // Build status message (ASCII only - no emoji)
                 string statusText = "=== TDS Plugin Status ===\n";
                 statusText += $"Status: [OK] ONLINE\n";
                 statusText += $"Factions: {totalFactions}\n";
