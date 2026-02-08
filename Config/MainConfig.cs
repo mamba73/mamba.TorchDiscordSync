@@ -186,6 +186,13 @@ namespace mamba.TorchDiscordSync.Config
 
         [XmlElement]
         public ulong StatusChannelId { get; set; }
+        
+        [XmlElement]
+        public ulong SimSpeedChannelId { get; set; }
+
+        [XmlElement]
+        public ulong PlayerCountChannelId { get; set; }
+
 
         public DiscordConfig()
         {
@@ -197,6 +204,8 @@ namespace mamba.TorchDiscordSync.Config
             ChatChannelId = 0;
             StaffLog = 0;
             StatusChannelId = 0;
+            SimSpeedChannelId = 0;
+            PlayerCountChannelId = 0;
         }
     }
 

@@ -661,7 +661,7 @@ namespace mamba.TorchDiscordSync.Plugin
                 {
                     LoggerUtil.LogInfo("[STARTUP] Found " + factions.Count + " player factions");
                     // disabled
-                    // _orchestrator.ExecuteFullSyncAsync(factions).Wait();
+                    _orchestrator.ExecuteFullSyncAsync(factions).Wait();
                 }
                 else
                 {

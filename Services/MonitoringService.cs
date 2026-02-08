@@ -1,0 +1,334 @@
+// Services/MonitoringService.cs
+using System;
+using System.Threading.Tasks;
+using System.Timers;
+using Discord.WebSocket;
+using mamba.TorchDiscordSync.Config;
+using mamba.TorchDiscordSync.Utils;
+using mamba.TorchDiscordSync.Services;
+using Sandbox.Game.World;
+using VRage.Game.ModAPI;
+
+namespace mamba.TorchDiscordSync.Services
+{
+    /// <summary>
+    /// Monitors server performance and updates Discord channel names
+    /// Handles SimSpeed monitoring and Player count tracking
+    /// </summary>
+    public class MonitoringService : IDisposable
+    {
+        private readonly MainConfig _config;
+        private readonly DiscordBotService _discordBot;
+        private Timer _monitoringTimer;
+        private bool _isDisposed = false;
+
+        // Last known values to avoid unnecessary Discord API calls
+        private float _lastSimSpeed = -1f;
+        private int _lastPlayerCount = -1;
+
+        public MonitoringService(MainConfig config, DiscordBotService discordBot)
+        {
+            _config = config;
+            _discordBot = discordBot;
+
+            LoggerUtil.LogDebug("[MONITORING] MonitoringService instance created");
+        }
+
+        /// <summary>
+        /// Initialize and start monitoring timer
+        /// Called when server session is loaded
+        /// </summary>
+        public void Initialize()
+        {
+            try
+            {
+                if (_config?.Monitoring?.Enabled != true)
+                {
+                    LoggerUtil.LogInfo("[MONITORING] Monitoring disabled in config");
+                    return;
+                }
+
+                int intervalSeconds = _config.Monitoring.StatusUpdateIntervalSeconds;
+                if (intervalSeconds <= 0)
+                {
+                    LoggerUtil.LogWarning("[MONITORING] Invalid monitoring interval, using default 30s");
+                    intervalSeconds = 30;
+                }
+
+                int intervalMs = intervalSeconds * 1000;
+
+                _monitoringTimer = new Timer(intervalMs);
+                _monitoringTimer.Elapsed += OnMonitoringTimerElapsed;
+                _monitoringTimer.AutoReset = true;
+                _monitoringTimer.Start();
+
+                LoggerUtil.LogSuccess($"[MONITORING] Monitoring service started (interval: {intervalSeconds}s)");
+
+                // Do initial update immediately
+                Task.Run(async () => await UpdateChannelNamesAsync());
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[MONITORING] Initialization failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Timer callback - updates channel names periodically
+        /// </summary>
+        private void OnMonitoringTimerElapsed(object sender, ElapsedEventArgs e)
+        {
+            try
+            {
+                LoggerUtil.LogDebug("[MONITORING] Timer elapsed - updating channel names");
+                Task.Run(async () => await UpdateChannelNamesAsync());
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[MONITORING] Timer callback error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Updates Discord channel names with current server stats
+        /// </summary>
+        private async Task UpdateChannelNamesAsync()
+        {
+            try
+            {
+                LoggerUtil.LogDebug("[MONITORING_UPDATE] Starting channel name update...");
+
+                // Step 1: Get current SimSpeed using existing PluginUtils method
+                float currentSimSpeed = PluginUtils.GetCurrentSimSpeed();
+                LoggerUtil.LogDebug($"[MONITORING_UPDATE] Current SimSpeed: {currentSimSpeed:F2}");
+
+                // Step 2: Get current player count
+                int currentPlayerCount = GetOnlinePlayerCount();
+                LoggerUtil.LogDebug($"[MONITORING_UPDATE] Current player count: {currentPlayerCount}");
+
+                // Step 3: Update SimSpeed channel if changed
+                if (_config.Monitoring.EnableSimSpeedMonitoring)
+                {
+                    if (Math.Abs(currentSimSpeed - _lastSimSpeed) > 0.01f) // Only update if changed by >1%
+                    {
+                        LoggerUtil.LogDebug($"[MONITORING_UPDATE] SimSpeed changed: {_lastSimSpeed:F2} → {currentSimSpeed:F2}");
+                        await UpdateSimSpeedChannelAsync(currentSimSpeed);
+                        _lastSimSpeed = currentSimSpeed;
+                    }
+                    else
+                    {
+                        LoggerUtil.LogDebug("[MONITORING_UPDATE] SimSpeed unchanged, skipping update");
+                    }
+                }
+
+                // Step 4: Update player count channel if changed
+                if (currentPlayerCount != _lastPlayerCount)
+                {
+                    LoggerUtil.LogDebug($"[MONITORING_UPDATE] Player count changed: {_lastPlayerCount} → {currentPlayerCount}");
+                    await UpdatePlayerCountChannelAsync(currentPlayerCount);
+                    _lastPlayerCount = currentPlayerCount;
+                }
+                else
+                {
+                    LoggerUtil.LogDebug("[MONITORING_UPDATE] Player count unchanged, skipping update");
+                }
+
+                LoggerUtil.LogDebug("[MONITORING_UPDATE] Channel name update complete");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[MONITORING_UPDATE] Error: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// Update SimSpeed monitoring channel name
+        /// Format: "🔧 SimSpeed: 0.95"
+        /// </summary>
+        private async Task UpdateSimSpeedChannelAsync(float simSpeed)
+        {
+            try
+            {
+                LoggerUtil.LogDebug($"[MONITORING_SIMSPEED] Updating SimSpeed channel to {simSpeed:F2}");
+
+                ulong channelId = _config.Discord.SimSpeedChannelId;
+                if (channelId == 0)
+                {
+                    LoggerUtil.LogWarning("[MONITORING_SIMSPEED] SimSpeedChannelId not configured in Discord config");
+                    return;
+                }
+
+                if (_discordBot == null || _discordBot.GetClient() == null)
+                {
+                    LoggerUtil.LogError("[MONITORING_SIMSPEED] Discord bot not ready");
+                    return;
+                }
+
+                var client = _discordBot.GetClient();
+                var channel = client.GetChannel(channelId) as SocketVoiceChannel;
+
+                if (channel == null)
+                {
+                    LoggerUtil.LogError($"[MONITORING_SIMSPEED] Channel {channelId} not found or not a voice channel");
+                    return;
+                }
+
+                // Format: "🔧 SimSpeed: 0.95" or "⚠️ SimSpeed: 0.45" if below threshold
+                string emoji = simSpeed >= _config.Monitoring.SimThresh ? "🔧" : "⚠️";
+                string newName = $"{emoji} SimSpeed: {simSpeed:F2}";
+
+                LoggerUtil.LogDebug($"[MONITORING_SIMSPEED] Setting channel name to: {newName}");
+
+                await channel.ModifyAsync(props =>
+                {
+                    props.Name = newName;
+                });
+
+                LoggerUtil.LogSuccess($"[MONITORING_SIMSPEED] Channel updated: {newName}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[MONITORING_SIMSPEED] Failed to update channel: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Update player count monitoring channel name
+        /// Format: "👥 Players: 5/20"
+        /// </summary>
+        private async Task UpdatePlayerCountChannelAsync(int playerCount)
+        {
+            try
+            {
+                LoggerUtil.LogDebug($"[MONITORING_PLAYERS] Updating player count channel to {playerCount}");
+
+                ulong channelId = _config.Discord.PlayerCountChannelId;
+                if (channelId == 0)
+                {
+                    LoggerUtil.LogWarning("[MONITORING_PLAYERS] PlayerCountChannelId not configured");
+                    return;
+                }
+
+                if (_discordBot == null || _discordBot.GetClient() == null)
+                {
+                    LoggerUtil.LogError("[MONITORING_PLAYERS] Discord bot not ready");
+                    return;
+                }
+
+                var client = _discordBot.GetClient();
+                var channel = client.GetChannel(channelId) as SocketVoiceChannel;
+
+                if (channel == null)
+                {
+                    LoggerUtil.LogError($"[MONITORING_PLAYERS] Channel {channelId} not found or not a voice channel");
+                    return;
+                }
+
+                // Get max players from server settings
+                int maxPlayers = GetMaxPlayerCount();
+
+                // Format: "👥 Players: 5/20"
+                string newName = $"👥 Players: {playerCount}/{maxPlayers}";
+
+                LoggerUtil.LogDebug($"[MONITORING_PLAYERS] Setting channel name to: {newName}");
+
+                await channel.ModifyAsync(props =>
+                {
+                    props.Name = newName;
+                });
+
+                LoggerUtil.LogSuccess($"[MONITORING_PLAYERS] Channel updated: {newName}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[MONITORING_PLAYERS] Failed to update channel: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Get current number of online players
+        /// </summary>
+        private int GetOnlinePlayerCount()
+        {
+            try
+            {
+                LoggerUtil.LogDebug("[MONITORING_COUNT] Getting online player count...");
+
+                if (MySession.Static == null || MySession.Static.Players == null)
+                {
+                    LoggerUtil.LogWarning("[MONITORING_COUNT] Session or Players is null");
+                    return 0;
+                }
+
+                int count = MySession.Static.Players.GetOnlinePlayerCount();
+                LoggerUtil.LogDebug($"[MONITORING_COUNT] Found {count} online players");
+                return count;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[MONITORING_COUNT] Error getting player count: {ex.Message}");
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Get maximum player count from server settings
+        /// </summary>
+        private int GetMaxPlayerCount()
+        {
+            try
+            {
+                // Default to 20 if we can't get the actual value
+                int maxPlayers = 20;
+
+                // Try to get from session settings
+                if (MySession.Static != null && MySession.Static.Settings != null)
+                {
+                    maxPlayers = MySession.Static.Settings.MaxPlayers;
+                    LoggerUtil.LogDebug($"[MONITORING_MAX] Max players from settings: {maxPlayers}");
+                }
+
+                return maxPlayers;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[MONITORING_MAX] Error getting max player count: {ex.Message}");
+                return 20; // Safe default
+            }
+        }
+
+        /// <summary>
+        /// Stop monitoring and cleanup
+        /// </summary>
+        public void Stop()
+        {
+            try
+            {
+                if (_monitoringTimer != null)
+                {
+                    _monitoringTimer.Stop();
+                    _monitoringTimer.Dispose();
+                    _monitoringTimer = null;
+                    LoggerUtil.LogInfo("[MONITORING] Monitoring service stopped");
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[MONITORING] Stop error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Dispose pattern implementation
+        /// </summary>
+        public void Dispose()
+        {
+            if (!_isDisposed)
+            {
+                Stop();
+                _isDisposed = true;
+                LoggerUtil.LogDebug("[MONITORING] MonitoringService disposed");
+            }
+        }
+    }
+}
