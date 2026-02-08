@@ -1,6 +1,5 @@
-// Services/FactionSyncService.cs - UPDATED VERSION
-// Merged with FactionReaderService functionality
-// File: FactionReaderService.cs can be DELETED after this update
+// Services/FactionSyncService.cs - ISPRAVLJENA VERZIJA
+// Dodano: FactionCategoryId korištenje pri kreiranju Discord kanala
 
 using System;
 using System.Collections.Generic;
@@ -28,7 +27,6 @@ namespace mamba.TorchDiscordSync.Services
 
         /// <summary>
         /// Initialize FactionSyncService with required dependencies
-        /// NOTE: FactionReaderService is no longer required - merged into this service
         /// </summary>
         public FactionSyncService(DatabaseService db, DiscordService discord, MainConfig config)
         {
@@ -42,9 +40,7 @@ namespace mamba.TorchDiscordSync.Services
         /// <summary>
         /// Loads all player-created factions from the current game session.
         /// Filters out NPC factions and factions with non-standard tags.
-        /// MERGED from FactionReaderService.LoadFactionsFromGame()
         /// </summary>
-        /// <returns>List of FactionModel objects representing player factions</returns>
         public List<FactionModel> LoadFactionsFromGame()
         {
             var factionModels = new List<FactionModel>();
@@ -92,13 +88,12 @@ namespace mamba.TorchDiscordSync.Services
                     // Create faction model
                     var factionModel = new FactionModel
                     {
-                        FactionID = (int)faction.FactionId, // long to int conversion
+                        FactionID = (int)faction.FactionId,
                         Tag = faction.Tag,
                         Name = faction.Name ?? "Unknown",
                     };
 
                     // Load faction members
-                    // DictionaryReader doesn't support null check - check Count instead
                     if (faction.Members.Count > 0)
                     {
                         foreach (var memberKvp in faction.Members)
@@ -123,8 +118,8 @@ namespace mamba.TorchDiscordSync.Services
                             // Create faction member model
                             var factionPlayer = new FactionPlayerModel
                             {
-                                PlayerID = (int)playerId, // long to int conversion
-                                SteamID = (long)steamId, // ulong to long for XML serialization
+                                PlayerID = (int)playerId,
+                                SteamID = (long)steamId,
                                 OriginalNick = playerName,
                                 SyncedNick = playerName,
                             };
@@ -156,6 +151,7 @@ namespace mamba.TorchDiscordSync.Services
         /// <summary>
         /// Synchronize all player factions to Discord
         /// Creates Discord roles and channels for each faction
+        /// FIXED: Now uses FactionCategoryId when creating channels
         /// </summary>
         public async Task SyncFactionsAsync(List<FactionModel> factions = null)
         {
@@ -198,13 +194,19 @@ namespace mamba.TorchDiscordSync.Services
                     if (existing == null)
                     {
                         // New faction - create Discord role and channel
+                        LoggerUtil.LogDebug($"[FACTION_SYNC] Creating Discord role for new faction: {faction.Tag}");
                         faction.DiscordRoleID = await _discord.CreateRoleAsync(faction.Tag);
+
+                        LoggerUtil.LogDebug($"[FACTION_SYNC] Creating Discord channel for new faction: {faction.Name}");
+                        // FIXED: Now passes FactionCategoryId to CreateChannelAsync
                         faction.DiscordChannelID = await _discord.CreateChannelAsync(
-                            faction.Name.ToLower()
+                            faction.Name.ToLower(),
+                            _config.Discord.FactionCategoryId
                         );
+
                         _db.SaveFaction(faction);
                         LoggerUtil.LogInfo(
-                            $"[FACTION_SYNC] Created new faction: {faction.Tag} - {faction.Name}"
+                            $"[FACTION_SYNC] Created new faction: {faction.Tag} - {faction.Name} (Discord Role: {faction.DiscordRoleID}, Channel: {faction.DiscordChannelID})"
                         );
                     }
                     else
@@ -245,7 +247,7 @@ namespace mamba.TorchDiscordSync.Services
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[FACTION_SYNC] Sync error: {ex.Message}");
+                LoggerUtil.LogError($"[FACTION_SYNC] Sync error: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -298,10 +300,7 @@ namespace mamba.TorchDiscordSync.Services
 
         /// <summary>
         /// Retrieves the display name for a player by their identity ID.
-        /// MERGED from FactionReaderService.GetPlayerName()
         /// </summary>
-        /// <param name="playerId">The player's identity ID</param>
-        /// <returns>Player display name or "Unknown" if not found</returns>
         private string GetPlayerName(long playerId)
         {
             try

@@ -1,4 +1,4 @@
-// Utils/ChatUtils.cs - UPDATED WITH PRIVATE MESSAGE SUPPORT
+// Utils/ChatUtils.cs - UPDATED WITH ASCII CHARACTERS FOR GAME CHAT
 
 using System;
 using mamba.TorchDiscordSync.Config;
@@ -11,6 +11,7 @@ namespace mamba.TorchDiscordSync.Utils
     /// <summary>
     /// Chat utility methods for sending messages to players in-game
     /// Supports both broadcast and private messages
+    /// Uses ASCII characters instead of emoji for Space Engineers game chat compatibility
     /// </summary>
     public static class ChatUtils
     {
@@ -51,13 +52,13 @@ namespace mamba.TorchDiscordSync.Utils
 
         /// <summary>
         /// Send command response to player (PRIVATE - not forwarded to Discord)
-        /// Shows as: [TDS] ✅ Message
+        /// Shows as: [TDS] [OK] Message
         /// </summary>
         public static void SendCommandResponse(string playerName, string result)
         {
             try
             {
-                string message = $"✅ {result}";
+                string message = $"[OK] {result}";
                 LoggerUtil.LogDebug($"[CMD_RESPONSE] {playerName}: {message}");
                 SendPrivateToPlayer(message, "Green");
             }
@@ -69,13 +70,13 @@ namespace mamba.TorchDiscordSync.Utils
 
         /// <summary>
         /// Send warning message to player (PRIVATE)
-        /// Shows as: [TDS] ⚠️ Message
+        /// Shows as: [TDS] [!] Message
         /// </summary>
         public static void SendWarning(string message)
         {
             try
             {
-                string formattedMsg = $"⚠️ {message}";
+                string formattedMsg = $"[!] {message}";
                 LoggerUtil.LogDebug($"[WARNING] {message}");
                 SendPrivateToPlayer(formattedMsg, "Yellow");
             }
@@ -87,13 +88,13 @@ namespace mamba.TorchDiscordSync.Utils
 
         /// <summary>
         /// Send error message to player (PRIVATE)
-        /// Shows as: [TDS] ❌ Message
+        /// Shows as: [TDS] [FAIL] Message
         /// </summary>
         public static void SendError(string message)
         {
             try
             {
-                string formattedMsg = $"❌ {message}";
+                string formattedMsg = $"[FAIL] {message}";
                 LoggerUtil.LogDebug($"[ERROR] {message}");
                 SendPrivateToPlayer(formattedMsg, "Red");
             }
@@ -105,13 +106,13 @@ namespace mamba.TorchDiscordSync.Utils
 
         /// <summary>
         /// Send success message to player (PRIVATE)
-        /// Shows as: [TDS] ✅ Message
+        /// Shows as: [TDS] [OK] Message
         /// </summary>
         public static void SendSuccess(string message)
         {
             try
             {
-                string formattedMsg = $"✅ {message}";
+                string formattedMsg = $"[OK] {message}";
                 LoggerUtil.LogDebug($"[SUCCESS] {message}");
                 SendPrivateToPlayer(formattedMsg, "Green");
             }
@@ -123,13 +124,13 @@ namespace mamba.TorchDiscordSync.Utils
 
         /// <summary>
         /// Send info message to player (PRIVATE)
-        /// Shows as: [TDS] ℹ️ Message
+        /// Shows as: [TDS] [I] Message
         /// </summary>
         public static void SendInfo(string message)
         {
             try
             {
-                string formattedMsg = $"ℹ️ {message}";
+                string formattedMsg = $"[I] {message}";
                 LoggerUtil.LogDebug($"[INFO] {message}");
                 SendPrivateToPlayer(formattedMsg, "Blue");
             }
