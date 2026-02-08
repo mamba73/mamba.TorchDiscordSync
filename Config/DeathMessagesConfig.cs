@@ -91,10 +91,12 @@ namespace mamba.TorchDiscordSync.Config
             {
                 "{victim} died from environmental pressure",
                 "{victim} couldn't handle the pressure",
-                "{victim} was crushed by pressure",
                 "{victim} experienced rapid decompression",
                 "{victim}'s suit failed under pressure",
                 "{victim} popped like a balloon",
+                "{victim} was crushed by compression",
+                "{victim} was squeezed like a pancake",
+                "{victim} popped from pressure",
             };
 
         [XmlArray("Environment_Collision")]
@@ -187,20 +189,7 @@ namespace mamba.TorchDiscordSync.Config
                 "{victim} was battered by the weather",
                 "{victim} learned that nature is powerful",
             };
-
-        [XmlArray("Environment_Pressure")]
-        [XmlArrayItem("Message")]
-        public List<string> PressureMessages { get; set; } =
-            new List<string>
-            {
-                "{victim} died from extreme pressure",
-                "{victim} was crushed by compression",
-                "{victim} couldn't withstand the pressure",
-                "{victim} was squeezed like a pancake",
-                "{victim} experienced rapid compression",
-                "{victim} popped from pressure",
-            };
-
+  
         [XmlArray("Environment_Boundary")]
         [XmlArrayItem("Message")]
         public List<string> BoundaryMessages { get; set; } =
@@ -266,7 +255,7 @@ namespace mamba.TorchDiscordSync.Config
                 case DeathTypeEnum.Environment_Oxygen:
                     return EnvironmentOxygenMessages;
                 case DeathTypeEnum.Environment_Pressure:
-                    return PressureMessages ?? EnvironmentPressureMessages;
+                    return EnvironmentPressureMessages;
                 case DeathTypeEnum.Environment_Collision:
                     return EnvironmentCollisionMessages;
                 case DeathTypeEnum.Accident:
