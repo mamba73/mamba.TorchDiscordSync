@@ -191,32 +191,41 @@ namespace mamba.TorchDiscordSync.Services
 
                     var existing = _db.GetFaction(faction.FactionID);
 
-                    if (existing == null)
+                    // FIXED: Check if new OR if existing but IDs are 0 (need to create)
+                    if (existing == null || existing.DiscordRoleID == 0 || existing.DiscordChannelID == 0)
                     {
-                        // New faction - create Discord role and channel
-                        LoggerUtil.LogDebug($"[FACTION_SYNC] Creating Discord role for new faction: {faction.Tag}");
+                        // New faction OR existing with missing IDs - create Discord role and channel
+                        LoggerUtil.LogDebug($"[FACTION_SYNC] Creating Discord role for faction: {faction.Tag}");
                         faction.DiscordRoleID = await _discord.CreateRoleAsync(faction.Tag);
 
-                        LoggerUtil.LogDebug($"[FACTION_SYNC] Creating Discord channel for new faction: {faction.Name}");
+                        LoggerUtil.LogDebug($"[FACTION_SYNC] Creating Discord channel for faction: {faction.Name}");
                         // FIXED: Now passes FactionCategoryId to CreateChannelAsync
                         faction.DiscordChannelID = await _discord.CreateChannelAsync(
                             faction.Name.ToLower(),
                             _config.Discord.FactionCategoryId
                         );
 
+                        // Log results
+                        if (faction.DiscordRoleID == 0 || faction.DiscordChannelID == 0)
+                        {
+                            LoggerUtil.LogWarning(
+                                $"[FACTION_SYNC] WARNING - Faction {faction.Tag} created but some IDs are 0: Role={faction.DiscordRoleID}, Channel={faction.DiscordChannelID}"
+                            );
+                        }
+
                         _db.SaveFaction(faction);
                         LoggerUtil.LogInfo(
-                            $"[FACTION_SYNC] Created new faction: {faction.Tag} - {faction.Name} (Discord Role: {faction.DiscordRoleID}, Channel: {faction.DiscordChannelID})"
+                            $"[FACTION_SYNC] Created faction Discord items: {faction.Tag} - {faction.Name} (Role ID: {faction.DiscordRoleID}, Channel ID: {faction.DiscordChannelID})"
                         );
                     }
                     else
                     {
-                        // Existing faction - update with stored Discord IDs
+                        // Existing faction with valid IDs - use stored values
                         faction.DiscordRoleID = existing.DiscordRoleID;
                         faction.DiscordChannelID = existing.DiscordChannelID;
                         _db.SaveFaction(faction);
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Updated existing faction: {faction.Tag}"
+                            $"[FACTION_SYNC] Using existing Discord items for faction: {faction.Tag} (Role: {faction.DiscordRoleID}, Channel: {faction.DiscordChannelID})"
                         );
                     }
 
