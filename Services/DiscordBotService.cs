@@ -639,6 +639,11 @@ namespace mamba.TorchDiscordSync.Services
                 // Try exact matches first
                 foreach (var user in guild.Users)
                 {
+                    if (user.IsBot)  // bot check
+                    {
+                        LoggerUtil.LogDebug("[DISCORD_BOT] Skipping bot account: " + user.Username);
+                        continue;
+                    }
                     // Method 1: Exact match on Username (Discord username)
                     if (!string.IsNullOrEmpty(user.Username))
                     {
@@ -664,6 +669,11 @@ namespace mamba.TorchDiscordSync.Services
                 LoggerUtil.LogDebug("[DISCORD_BOT] No exact match found, trying partial matches...");
                 foreach (var user in guild.Users)
                 {
+                    if (user.IsBot)  // bot check
+                    {
+                        LoggerUtil.LogDebug("[DISCORD_BOT] Skipping bot account: " + user.Username);
+                        continue;
+                    }
                     // Method 3: Partial match on Username
                     if (!string.IsNullOrEmpty(user.Username))
                     {
