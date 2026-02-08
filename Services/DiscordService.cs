@@ -155,7 +155,6 @@ namespace mamba.TorchDiscordSync.Services
             {
                 if (_discordConfig != null && _discordConfig.StatusChannelId != 0 && _botService != null)
                 {
-                    // LINIJA 158 - POPRAVLJENO: Dodan await
                     var _ = _botService.SendChannelMessageAsync(_discordConfig.StatusChannelId, message);
                 }
             }
@@ -164,5 +163,43 @@ namespace mamba.TorchDiscordSync.Services
                 LoggerUtil.LogError("[DISCORD] Send message error: " + ex.Message);
             }
         }
+
+
+        /// <summary>
+        /// Assign a role to a Discord user
+        /// Used for verification role assignment
+        /// </summary>
+        public async Task<bool> AssignRoleToUserAsync(ulong userId, ulong roleId)
+        {
+            try
+            {
+                LoggerUtil.LogDebug($"[DISCORD_ROLE] Assigning role {roleId} to user {userId}");
+
+                if (_botService != null)
+                {
+                    bool result = await _botService.AssignRoleAsync(userId, roleId);
+
+                    if (result)
+                    {
+                        LoggerUtil.LogSuccess($"[DISCORD_ROLE] Successfully assigned role {roleId} to user {userId}");
+                    }
+                    else
+                    {
+                        LoggerUtil.LogWarning($"[DISCORD_ROLE] Failed to assign role {roleId} to user {userId}");
+                    }
+
+                    return result;
+                }
+
+                LoggerUtil.LogError("[DISCORD_ROLE] Bot service is null");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DISCORD_ROLE] Assign role error: {ex.Message}");
+                return false;
+            }
+        }
+
     }
 }

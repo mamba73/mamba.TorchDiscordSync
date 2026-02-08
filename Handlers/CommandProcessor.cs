@@ -473,51 +473,5 @@ namespace mamba.TorchDiscordSync.Handlers
             }
         }
 
-/*
-        /// <summary>
-        /// Handle /tds unverify STEAMID [reason] command
-        /// </summary>
-        private void HandleUnverifyCommand(long adminSteamID, string adminName, string[] args)
-        {
-            try
-            {
-                if (args.Length < 3)
-                {
-                    ChatUtils.SendError("Usage: /tds unverify STEAMID [reason]");
-                    return;
-                }
-
-                long targetSteamID = 0;
-                if (!long.TryParse(args[2], out targetSteamID))
-                {
-                    ChatUtils.SendError("Invalid Steam ID format");
-                    return;
-                }
-
-                string reason = "Admin removal";
-                if (args.Length > 3)
-                {
-                    var reasonParts = new List<string>();
-                    for (int i = 3; i < args.Length; i++)
-                    {
-                        reasonParts.Add(args[i]);
-                    }
-                    reason = string.Join(" ", reasonParts);
-                }
-
-                // This also needs to be handled through main plugin
-                ChatUtils.SendServerMessage("Unverify command received for SteamID: " + targetSteamID);
-                // FIXED: Added await fix
-                var _ = _eventLog.LogAsync("UnverifyCommand", adminName + " unverified SteamID " + targetSteamID + ": " + reason);
-
-                LoggerUtil.LogInfo("[COMMAND] " + adminName + " executed: /tds unverify " + targetSteamID + " (" + reason + ")");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[UNVERIFY_CMD] Error: " + ex.Message);
-                ChatUtils.SendError("Unverify error: " + ex.Message);
-            }
-        }
-        //*/
     }
 }
