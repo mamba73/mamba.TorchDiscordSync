@@ -615,6 +615,8 @@ namespace mamba.TorchDiscordSync.Services
         /// <summary>
         /// Find user by username or nickname in the guild
         /// </summary>
+
+
         private SocketUser FindUserByUsername(string searchTerm)
         {
             try
@@ -636,14 +638,33 @@ namespace mamba.TorchDiscordSync.Services
                 string search = searchTerm.ToLower().Replace("@", "").Trim();
                 LoggerUtil.LogDebug("[DISCORD_BOT] Searching for Discord user: '" + search + "'");
 
-                // Try exact matches first
+                // FIRST: Try Discord ID match DIRECTLY (if search term is numeric)
+                if (ulong.TryParse(search, out ulong userId))
+                {
+                    LoggerUtil.LogDebug("[DISCORD_BOT] Search term is numeric, trying Discord ID: " + userId);
+                    var userById = guild.GetUser(userId);
+                    if (userById != null)
+                    {
+                        LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by Discord ID: " + userId);
+                        return userById;
+                    }
+                    else
+                    {
+                        LoggerUtil.LogWarning("[DISCORD_BOT] User not found by ID: " + userId + " - not in guild");
+                        return null;
+                    }
+                }
+
+                // SECOND: Try exact and partial matches on username/nickname
                 foreach (var user in guild.Users)
                 {
-                    if (user.IsBot)  // bot check
+                    // Skip bots only for username/nickname matching
+                    if (user.IsBot)
                     {
                         LoggerUtil.LogDebug("[DISCORD_BOT] Skipping bot account: " + user.Username);
                         continue;
                     }
+
                     // Method 1: Exact match on Username (Discord username)
                     if (!string.IsNullOrEmpty(user.Username))
                     {
@@ -669,27 +690,18 @@ namespace mamba.TorchDiscordSync.Services
                 LoggerUtil.LogDebug("[DISCORD_BOT] No exact match found, trying partial matches...");
                 foreach (var user in guild.Users)
                 {
-                    if (user.IsBot)  // bot check
+                    // Skip bots only for username/nickname matching
+                    if (user.IsBot)
                     {
-                        LoggerUtil.LogDebug("[DISCORD_BOT] Skipping bot account: " + user.Username);
                         continue;
                     }
+
                     // Method 3: Partial match on Username
                     if (!string.IsNullOrEmpty(user.Username))
                     {
                         if (user.Username.ToLower().Contains(search))
                         {
                             LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by partial Username: " + user.Username);
-                            return user;
-                        }
-                    }
-
-                    // Method 4: Discord ID match (if search term is numeric)
-                    if (ulong.TryParse(search, out ulong userId))
-                    {
-                        if (user.Id == userId)
-                        {
-                            LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by Discord ID: " + userId);
                             return user;
                         }
                     }
