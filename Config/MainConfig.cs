@@ -93,6 +93,10 @@ namespace mamba.TorchDiscordSync.Config
         [XmlElement]
         public FactionConfig Faction { get; set; }
 
+        // ========== VERIFICATION SETTINGS ==========
+        [XmlElement]
+        public int VerificationCodeExpirationMinutes { get; set; } = 15;
+
         public MainConfig()
         {
             Enabled = true;

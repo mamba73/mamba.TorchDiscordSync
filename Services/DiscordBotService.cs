@@ -615,8 +615,6 @@ namespace mamba.TorchDiscordSync.Services
         /// <summary>
         /// Find user by username or nickname in the guild
         /// </summary>
-
-
         private SocketUser FindUserByUsername(string searchTerm)
         {
             try
@@ -641,7 +639,9 @@ namespace mamba.TorchDiscordSync.Services
                 // FIRST: Try Discord ID match DIRECTLY (if search term is numeric)
                 if (ulong.TryParse(search, out ulong userId))
                 {
-                    LoggerUtil.LogDebug("[DISCORD_BOT] Search term is numeric, trying Discord ID: " + userId);
+                    LoggerUtil.LogDebug(
+                        "[DISCORD_BOT] Search term is numeric, trying Discord ID: " + userId
+                    );
                     var userById = guild.GetUser(userId);
                     if (userById != null)
                     {
@@ -650,7 +650,9 @@ namespace mamba.TorchDiscordSync.Services
                     }
                     else
                     {
-                        LoggerUtil.LogWarning("[DISCORD_BOT] User not found by ID: " + userId + " - not in guild");
+                        LoggerUtil.LogWarning(
+                            "[DISCORD_BOT] User not found by ID: " + userId + " - not in guild"
+                        );
                         return null;
                     }
                 }
@@ -670,7 +672,9 @@ namespace mamba.TorchDiscordSync.Services
                     {
                         if (user.Username.Equals(search, StringComparison.OrdinalIgnoreCase))
                         {
-                            LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by Username: " + user.Username);
+                            LoggerUtil.LogSuccess(
+                                "[DISCORD_BOT] Found user by Username: " + user.Username
+                            );
                             return user;
                         }
                     }
@@ -680,14 +684,18 @@ namespace mamba.TorchDiscordSync.Services
                     {
                         if (user.Nickname.Equals(search, StringComparison.OrdinalIgnoreCase))
                         {
-                            LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by Nickname: " + user.Nickname);
+                            LoggerUtil.LogSuccess(
+                                "[DISCORD_BOT] Found user by Nickname: " + user.Nickname
+                            );
                             return user;
                         }
                     }
                 }
 
                 // Try partial matches if no exact match found
-                LoggerUtil.LogDebug("[DISCORD_BOT] No exact match found, trying partial matches...");
+                LoggerUtil.LogDebug(
+                    "[DISCORD_BOT] No exact match found, trying partial matches..."
+                );
                 foreach (var user in guild.Users)
                 {
                     // Skip bots only for username/nickname matching
@@ -701,7 +709,9 @@ namespace mamba.TorchDiscordSync.Services
                     {
                         if (user.Username.ToLower().Contains(search))
                         {
-                            LoggerUtil.LogSuccess("[DISCORD_BOT] Found user by partial Username: " + user.Username);
+                            LoggerUtil.LogSuccess(
+                                "[DISCORD_BOT] Found user by partial Username: " + user.Username
+                            );
                             return user;
                         }
                     }

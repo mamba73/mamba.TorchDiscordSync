@@ -15,7 +15,17 @@ namespace mamba.TorchDiscordSync.Services
         private RootDataModel _data;
         private readonly object _lock = new object();
 
-        public DatabaseService()
+        // ============================================================
+        // VERIFICATIONPLAYERS.XML FIELDS
+        // ============================================================
+        private readonly string _verificationPlayersPath;
+        private VerificationPlayersData _verificationPlayersData;
+
+        /// <summary>
+        /// Init database service, load data from XML or create new if not exists
+        /// </summary>
+        /// <param name="configPath"></param>
+        public DatabaseService(string configPath = null)
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
             var instanceDir = Path.Combine(baseDir, "Instance");
@@ -32,8 +42,21 @@ namespace mamba.TorchDiscordSync.Services
                 LoadFromXml();
             else
                 _data = new RootDataModel();
+
+            // ============================================================
+            // INIT VERIFICATIONPLAYERS.XML PATH
+            // ============================================================
+            _verificationPlayersPath = Path.Combine(folder, "VerificationPlayers.xml");
+            LoadVerificationPlayersFromXml();
         }
 
+        // ============================================================
+        // MAIN DATABASE METHODS
+        // ============================================================
+
+        /// <summary>
+        /// Loads data from XML file into memory. If file is missing or corrupted, initializes empty data model.
+        /// </summary>
         private void LoadFromXml()
         {
             try
@@ -53,6 +76,9 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        /// <summary>
+        /// Saves current in-memory data to XML file. This should be called after any changes to ensure persistence.
+        /// </summary>
         public void SaveToXml()
         {
             lock (_lock)
@@ -72,6 +98,10 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        /// <summary>
+        /// Saves or updates a faction in the database. If the faction already exists (based on FactionID), it will be updated. Otherwise, a new faction will be added.
+        /// </summary>
+        /// <param name="faction"></param>
         public void SaveFaction(FactionModel faction)
         {
             lock (_lock)
@@ -96,6 +126,11 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        /// <summary>
+        /// Retrieves a faction by its ID. Returns null if not found.
+        /// </summary>
+        /// <param name="factionID"></param>
+        /// <returns></returns>
         public FactionModel GetFaction(int factionID)
         {
             return _data.Factions.FirstOrDefault(f => f.FactionID == factionID);
@@ -106,23 +141,22 @@ namespace mamba.TorchDiscordSync.Services
             return new List<FactionModel>(_data.Factions);
         }
 
+        /// <summary>
+        /// Saves or updates a player in the database. If the player already exists (based on SteamID), it will be updated. Otherwise, a new player will be added.
+        /// </summary>
+        /// <param name="player"></param>
         public void SavePlayer(PlayerModel player)
         {
             lock (_lock)
             {
-                // FIX: Changed search to SteamID for consistency with SE tracking
                 var existing = _data.Players.FirstOrDefault(p => p.SteamID == player.SteamID);
                 if (existing != null)
                 {
-                    // existing.PlayerName = player.PlayerName;
                     existing.OriginalNick = player.OriginalNick;
                     existing.SyncedNick = player.SyncedNick;
                     existing.SteamID = player.SteamID;
-                    existing.OriginalNick = player.OriginalNick;
-                    existing.SyncedNick = player.SyncedNick;
                     existing.FactionID = player.FactionID;
                     existing.DiscordUserID = player.DiscordUserID;
-                    // existing.LastSeen = player.LastSeen; // Keep the connection timestamp
                     existing.UpdatedAt = DateTime.UtcNow;
                 }
                 else
@@ -135,7 +169,12 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        // FIX: Added missing method for PlayerTrackingService
+        /// <summary>
+        /// Retrieves a player by their SteamID. Returns null if not found.
+        /// </summary>
+        /// <param name="steamID"></param>
+        /// <returns></returns>
+
         public PlayerModel GetPlayerBySteamID(long steamID)
         {
             return _data.Players.FirstOrDefault(p => p.SteamID == steamID);
@@ -150,8 +189,21 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        // FIX: Updated signature to match DeathLogService calls (added weapon/location)
-        public void LogDeath(long killerSteamID, long victimSteamID, string deathType, string weapon = null, string location = null)
+        /// <summary>
+        /// Logs a player death event to the database
+        /// </summary>
+        /// <param name="killerSteamID"></param>
+        /// <param name="victimSteamID"></param>
+        /// <param name="deathType"></param>
+        /// <param name="weapon"></param>
+        /// <param name="location"></param>
+        public void LogDeath(
+            long killerSteamID,
+            long victimSteamID,
+            string deathType,
+            string weapon = null,
+            string location = null
+        )
         {
             lock (_lock)
             {
@@ -162,7 +214,7 @@ namespace mamba.TorchDiscordSync.Services
                     DeathTime = DateTime.UtcNow,
                     DeathType = deathType,
                     Weapon = weapon,
-                    Location = location
+                    Location = location,
                 };
                 _data.DeathHistory.Add(entry);
                 SaveToXml();
@@ -171,8 +223,10 @@ namespace mamba.TorchDiscordSync.Services
 
         public DeathHistoryModel GetLastKill(long killerSteamID, long victimSteamID)
         {
-            return _data.DeathHistory
-                .Where(d => d.KillerSteamID == killerSteamID && d.VictimSteamID == victimSteamID)
+            return _data
+                .DeathHistory.Where(d =>
+                    d.KillerSteamID == killerSteamID && d.VictimSteamID == victimSteamID
+                )
                 .OrderByDescending(d => d.DeathTime)
                 .FirstOrDefault();
         }
@@ -186,12 +240,16 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        // Verification methods (Saved as per original)
+        // ============================================================
+        // VERIFICATION METHODS - U GLAVNOJ BAZI (LEGACY)
+        // ============================================================
         public void SaveVerification(VerificationModel verification)
         {
             lock (_lock)
             {
-                var existing = _data.Verifications.FirstOrDefault(v => v.SteamID == verification.SteamID);
+                var existing = _data.Verifications.FirstOrDefault(v =>
+                    v.SteamID == verification.SteamID
+                );
                 if (existing != null)
                 {
                     existing.VerificationCode = verification.VerificationCode;
@@ -209,9 +267,14 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        public VerificationModel GetVerification(long steamID) => _data.Verifications.FirstOrDefault(v => v.SteamID == steamID);
-        public VerificationModel GetVerificationByCode(string code) => _data.Verifications.FirstOrDefault(v => v.VerificationCode == code);
-        public List<VerificationModel> GetAllVerifications() => new List<VerificationModel>(_data.Verifications);
+        public VerificationModel GetVerification(long steamID) =>
+            _data.Verifications.FirstOrDefault(v => v.SteamID == steamID);
+
+        public VerificationModel GetVerificationByCode(string code) =>
+            _data.Verifications.FirstOrDefault(v => v.VerificationCode == code);
+
+        public List<VerificationModel> GetAllVerifications() =>
+            new List<VerificationModel>(_data.Verifications);
 
         public void DeleteVerification(long steamID)
         {
@@ -233,10 +296,244 @@ namespace mamba.TorchDiscordSync.Services
 
         public List<VerificationHistoryModel> GetVerificationHistory(long steamID)
         {
-            return _data.VerificationHistory
-                .Where(v => v.SteamID == steamID)
+            return _data
+                .VerificationHistory.Where(v => v.SteamID == steamID)
                 .OrderByDescending(v => v.VerifiedAt)
                 .ToList();
         }
+
+        // ============================================================
+        // JAVNE METODE ZA VERIFICATIONPLAYERS.XML
+        // ============================================================
+
+        private void LoadVerificationPlayersFromXml()
+        {
+            lock (_lock)
+            {
+                try
+                {
+                    if (File.Exists(_verificationPlayersPath))
+                    {
+                        var serializer = new XmlSerializer(typeof(VerificationPlayersData));
+                        using (var stream = new FileStream(_verificationPlayersPath, FileMode.Open))
+                        {
+                            _verificationPlayersData = (VerificationPlayersData)
+                                serializer.Deserialize(stream);
+                        }
+                        LoggerUtil.LogSuccess(
+                            $"[DB] Loaded VerificationPlayers.xml - {_verificationPlayersData.PendingVerifications.Count} pending, {_verificationPlayersData.VerifiedPlayers.Count} verified"
+                        );
+                    }
+                    else
+                    {
+                        _verificationPlayersData = new VerificationPlayersData();
+                        SaveVerificationPlayersToXml();
+                        LoggerUtil.LogInfo("[DB] Created new VerificationPlayers.xml");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError(
+                        $"[DB] Error loading VerificationPlayers.xml: {ex.Message}"
+                    );
+                    _verificationPlayersData = new VerificationPlayersData();
+                }
+            }
+        }
+
+        private void SaveVerificationPlayersToXml()
+        {
+            lock (_lock)
+            {
+                try
+                {
+                    var serializer = new XmlSerializer(typeof(VerificationPlayersData));
+                    using (var stream = new FileStream(_verificationPlayersPath, FileMode.Create))
+                    {
+                        serializer.Serialize(stream, _verificationPlayersData);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"[DB] Error saving VerificationPlayers.xml: {ex.Message}");
+                }
+            }
+        }
+
+        public void AddPendingVerification(
+            long steamID,
+            string discordUsername,
+            string verificationCode,
+            int expirationMinutes = 15
+        )
+        {
+            lock (_lock)
+            {
+                // Ukloni ako već postoji
+                _verificationPlayersData.PendingVerifications.RemoveAll(p => p.SteamID == steamID);
+
+                var pending = new PendingVerification
+                {
+                    SteamID = steamID,
+                    DiscordUsername = discordUsername,
+                    VerificationCode = verificationCode,
+                    CodeGeneratedAt = DateTime.UtcNow,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes),
+                };
+
+                _verificationPlayersData.PendingVerifications.Add(pending);
+                SaveVerificationPlayersToXml();
+                LoggerUtil.LogDebug($"[DB] Added pending verification for SteamID {steamID}");
+            }
+        }
+
+        public void MarkAsVerified(long steamID, string discordUsername, ulong discordUserID)
+        {
+            lock (_lock)
+            {
+                // Ukloni sa pending liste
+                _verificationPlayersData.PendingVerifications.RemoveAll(p => p.SteamID == steamID);
+
+                // Ukloni ako postoji na verified listi
+                _verificationPlayersData.VerifiedPlayers.RemoveAll(v => v.SteamID == steamID);
+
+                // Dodaj na verified listu
+                var verified = new VerifiedPlayer
+                {
+                    SteamID = steamID,
+                    DiscordUsername = discordUsername,
+                    DiscordUserID = discordUserID,
+                    VerifiedAt = DateTime.UtcNow,
+                };
+
+                _verificationPlayersData.VerifiedPlayers.Add(verified);
+                SaveVerificationPlayersToXml();
+                LoggerUtil.LogDebug($"[DB] Marked SteamID {steamID} as verified");
+            }
+        }
+
+        public PendingVerification GetPendingVerification(long steamID)
+        {
+            lock (_lock)
+            {
+                var pending = _verificationPlayersData.PendingVerifications.Find(p =>
+                    p.SteamID == steamID
+                );
+
+                // Ako je expired, obriši
+                if (pending != null && pending.ExpiresAt < DateTime.UtcNow)
+                {
+                    _verificationPlayersData.PendingVerifications.Remove(pending);
+                    SaveVerificationPlayersToXml();
+                    return null;
+                }
+
+                return pending;
+            }
+        }
+
+        public VerifiedPlayer GetVerifiedPlayer(long steamID)
+        {
+            lock (_lock)
+            {
+                return _verificationPlayersData.VerifiedPlayers.Find(v => v.SteamID == steamID);
+            }
+        }
+
+        public VerifiedPlayer GetVerifiedPlayerByDiscordID(ulong discordUserID)
+        {
+            lock (_lock)
+            {
+                return _verificationPlayersData.VerifiedPlayers.Find(v =>
+                    v.DiscordUserID == discordUserID
+                );
+            }
+        }
+
+        public List<PendingVerification> GetAllPendingVerifications()
+        {
+            lock (_lock)
+            {
+                return new List<PendingVerification>(_verificationPlayersData.PendingVerifications);
+            }
+        }
+
+        public List<VerifiedPlayer> GetAllVerifiedPlayers()
+        {
+            lock (_lock)
+            {
+                return new List<VerifiedPlayer>(_verificationPlayersData.VerifiedPlayers);
+            }
+        }
+
+        public void DeletePendingVerification(long steamID)
+        {
+            lock (_lock)
+            {
+                _verificationPlayersData.PendingVerifications.RemoveAll(p => p.SteamID == steamID);
+                SaveVerificationPlayersToXml();
+                LoggerUtil.LogDebug($"[DB] Deleted pending verification for SteamID {steamID}");
+            }
+        }
+
+        public void DeleteVerifiedPlayer(long steamID)
+        {
+            lock (_lock)
+            {
+                _verificationPlayersData.VerifiedPlayers.RemoveAll(v => v.SteamID == steamID);
+                SaveVerificationPlayersToXml();
+                LoggerUtil.LogDebug($"[DB] Deleted verified player SteamID {steamID}");
+            }
+        }
+    }
+
+    // ============================================================
+    // XML KLASE ZA VERIFICATIONPLAYERS.XML
+    // ============================================================
+
+    [XmlRoot("VerificationPlayers")]
+    public class VerificationPlayersData
+    {
+        [XmlArray("PendingVerifications")]
+        [XmlArrayItem("Pending")]
+        public List<PendingVerification> PendingVerifications { get; set; } =
+            new List<PendingVerification>();
+
+        [XmlArray("VerifiedPlayers")]
+        [XmlArrayItem("Verified")]
+        public List<VerifiedPlayer> VerifiedPlayers { get; set; } = new List<VerifiedPlayer>();
+    }
+
+    public class PendingVerification
+    {
+        [XmlElement]
+        public long SteamID { get; set; }
+
+        [XmlElement]
+        public string DiscordUsername { get; set; }
+
+        [XmlElement]
+        public string VerificationCode { get; set; }
+
+        [XmlElement]
+        public DateTime CodeGeneratedAt { get; set; }
+
+        [XmlElement]
+        public DateTime ExpiresAt { get; set; }
+    }
+
+    public class VerifiedPlayer
+    {
+        [XmlElement]
+        public long SteamID { get; set; }
+
+        [XmlElement]
+        public string DiscordUsername { get; set; }
+
+        [XmlElement]
+        public ulong DiscordUserID { get; set; }
+
+        [XmlElement]
+        public DateTime VerifiedAt { get; set; }
     }
 }
