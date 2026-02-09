@@ -1,21 +1,19 @@
-// Services/MonitoringService.cs
+// Services/MonitoringService.cs - FIXED
+// Dodano: SimSpeed alert cooldown (ne spammira više)
+
 using System;
 using System.Threading.Tasks;
 using System.Timers;
 using Discord;
 using Discord.WebSocket;
 using mamba.TorchDiscordSync.Config;
-using mamba.TorchDiscordSync.Utils;
 using mamba.TorchDiscordSync.Services;
+using mamba.TorchDiscordSync.Utils;
 using Sandbox.Game.World;
 using VRage.Game.ModAPI;
 
 namespace mamba.TorchDiscordSync.Services
 {
-    /// <summary>
-    /// Monitors server performance and updates Discord channel names
-    /// Handles SimSpeed monitoring and Player count tracking
-    /// </summary>
     public class MonitoringService : IDisposable
     {
         private readonly MainConfig _config;
@@ -27,6 +25,9 @@ namespace mamba.TorchDiscordSync.Services
         private float _lastSimSpeed = -1f;
         private int _lastPlayerCount = -1;
 
+        // NOVO: Cooldown za SimSpeed alert - ne spam-uje više
+        private DateTime _lastSimSpeedAlertTime = DateTime.MinValue;
+
         public MonitoringService(MainConfig config, DiscordBotService discordBot)
         {
             _config = config;
@@ -35,10 +36,6 @@ namespace mamba.TorchDiscordSync.Services
             LoggerUtil.LogDebug("[MONITORING] MonitoringService instance created");
         }
 
-        /// <summary>
-        /// Initialize and start monitoring timer
-        /// Called when server session is loaded
-        /// </summary>
         public void Initialize()
         {
             try
@@ -52,7 +49,9 @@ namespace mamba.TorchDiscordSync.Services
                 int intervalSeconds = _config.Monitoring.StatusUpdateIntervalSeconds;
                 if (intervalSeconds <= 0)
                 {
-                    LoggerUtil.LogWarning("[MONITORING] Invalid monitoring interval, using default 30s");
+                    LoggerUtil.LogWarning(
+                        "[MONITORING] Invalid monitoring interval, using default 30s"
+                    );
                     intervalSeconds = 30;
                 }
 
@@ -63,7 +62,9 @@ namespace mamba.TorchDiscordSync.Services
                 _monitoringTimer.AutoReset = true;
                 _monitoringTimer.Start();
 
-                LoggerUtil.LogSuccess($"[MONITORING] Monitoring service started (interval: {intervalSeconds}s)");
+                LoggerUtil.LogSuccess(
+                    $"[MONITORING] Monitoring service started (interval: {intervalSeconds}s)"
+                );
 
                 // Do initial update immediately
                 Task.Run(async () => await UpdateChannelNamesAsync());
@@ -74,9 +75,6 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Timer callback - updates channel names periodically
-        /// </summary>
         private void OnMonitoringTimerElapsed(object sender, ElapsedEventArgs e)
         {
             try
@@ -90,48 +88,51 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Updates Discord channel names with current server stats
-        /// </summary>
         private async Task UpdateChannelNamesAsync()
         {
             try
             {
                 LoggerUtil.LogDebug("[MONITORING_UPDATE] Starting channel name update...");
 
-                // Step 1: Get current SimSpeed using existing PluginUtils method
                 float currentSimSpeed = PluginUtils.GetCurrentSimSpeed();
                 LoggerUtil.LogDebug($"[MONITORING_UPDATE] Current SimSpeed: {currentSimSpeed:F2}");
 
-                // Step 2: Get current player count
                 int currentPlayerCount = GetOnlinePlayerCount();
-                LoggerUtil.LogDebug($"[MONITORING_UPDATE] Current player count: {currentPlayerCount}");
+                LoggerUtil.LogDebug(
+                    $"[MONITORING_UPDATE] Current player count: {currentPlayerCount}"
+                );
 
-                // Step 3: Update SimSpeed channel if changed
                 if (_config.Monitoring.EnableSimSpeedMonitoring)
                 {
-                    if (Math.Abs(currentSimSpeed - _lastSimSpeed) > 0.01f) // Only update if changed by >1%
+                    if (Math.Abs(currentSimSpeed - _lastSimSpeed) > 0.01f)
                     {
-                        LoggerUtil.LogDebug($"[MONITORING_UPDATE] SimSpeed changed: {_lastSimSpeed:F2} → {currentSimSpeed:F2}");
+                        LoggerUtil.LogDebug(
+                            $"[MONITORING_UPDATE] SimSpeed changed: {_lastSimSpeed:F2} → {currentSimSpeed:F2}"
+                        );
                         await UpdateSimSpeedChannelAsync(currentSimSpeed);
                         _lastSimSpeed = currentSimSpeed;
                     }
                     else
                     {
-                        LoggerUtil.LogDebug("[MONITORING_UPDATE] SimSpeed unchanged, skipping update");
+                        LoggerUtil.LogDebug(
+                            "[MONITORING_UPDATE] SimSpeed unchanged, skipping update"
+                        );
                     }
                 }
 
-                // Step 4: Update player count channel if changed
                 if (currentPlayerCount != _lastPlayerCount)
                 {
-                    LoggerUtil.LogDebug($"[MONITORING_UPDATE] Player count changed: {_lastPlayerCount} → {currentPlayerCount}");
+                    LoggerUtil.LogDebug(
+                        $"[MONITORING_UPDATE] Player count changed: {_lastPlayerCount} → {currentPlayerCount}"
+                    );
                     await UpdatePlayerCountChannelAsync(currentPlayerCount);
                     _lastPlayerCount = currentPlayerCount;
                 }
                 else
                 {
-                    LoggerUtil.LogDebug("[MONITORING_UPDATE] Player count unchanged, skipping update");
+                    LoggerUtil.LogDebug(
+                        "[MONITORING_UPDATE] Player count unchanged, skipping update"
+                    );
                 }
 
                 LoggerUtil.LogDebug("[MONITORING_UPDATE] Channel name update complete");
@@ -142,15 +143,13 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Update SimSpeed monitoring channel name
-        /// Format: "🔧 SimSpeed: 0.95"
-        /// </summary>
         private async Task UpdateSimSpeedChannelAsync(float simSpeed)
         {
             try
             {
-                LoggerUtil.LogDebug("[MONITORING_SIMSPEED] Updating SimSpeed channel to " + simSpeed.ToString("F2"));
+                LoggerUtil.LogDebug(
+                    "[MONITORING_SIMSPEED] Updating SimSpeed channel to " + simSpeed.ToString("F2")
+                );
 
                 ulong channelId = _config.Discord.SimSpeedChannelId;
                 if (channelId == 0)
@@ -170,57 +169,94 @@ namespace mamba.TorchDiscordSync.Services
 
                 if (channel == null)
                 {
-                    LoggerUtil.LogError("[MONITORING_SIMSPEED] Channel " + channelId + " not found or not a voice channel");
+                    LoggerUtil.LogError(
+                        "[MONITORING_SIMSPEED] Channel "
+                            + channelId
+                            + " not found or not a voice channel"
+                    );
                     return;
                 }
 
-                // Use configured emoji based on threshold
-                string emoji = simSpeed >= _config.Monitoring.SimSpeedThreshold
-                    ? _config.Monitoring.SimSpeedNormalEmoji
-                    : _config.Monitoring.SimSpeedWarningEmoji;
+                string emoji =
+                    simSpeed >= _config.Monitoring.SimSpeedThreshold
+                        ? _config.Monitoring.SimSpeedNormalEmoji
+                        : _config.Monitoring.SimSpeedWarningEmoji;
 
-                // Format using configured template
-                string newName = _config.Monitoring.SimSpeedChannelNameFormat
-                    .Replace("{emoji}", emoji)
+                string newName = _config
+                    .Monitoring.SimSpeedChannelNameFormat.Replace("{emoji}", emoji)
                     .Replace("{ss}", simSpeed.ToString("F2"));
 
                 LoggerUtil.LogDebug("[MONITORING_SIMSPEED] Setting channel name to: " + newName);
 
-                await channel.ModifyAsync(props => { props.Name = newName; });
+                await channel.ModifyAsync(props =>
+                {
+                    props.Name = newName;
+                });
 
                 LoggerUtil.LogSuccess("[MONITORING_SIMSPEED] Channel updated: " + newName);
 
-                // Send alert if below threshold
-                if (simSpeed < _config.Monitoring.SimSpeedThreshold &&
-                    _config.Monitoring.EnableSimSpeedAlerts)
+                // ============================================================
+                // NOVO: Send alert sa COOLDOWN check-om!
+                // ============================================================
+                if (
+                    simSpeed < _config.Monitoring.SimSpeedThreshold
+                    && _config.Monitoring.EnableSimSpeedAlerts
+                )
                 {
-                    await SendAdminAlertAsync(
-                        _config.Monitoring.SimSpeedAlertMessage
-                            .Replace("{ss}", simSpeed.ToString("F2"))
-                            .Replace("{threshold}", _config.Monitoring.SimSpeedThreshold.ToString("F2"))
-                    );
+                    // Check cooldown - ne spam-uj
+                    TimeSpan timeSinceLastAlert = DateTime.UtcNow - _lastSimSpeedAlertTime;
+                    int cooldownSeconds = _config.Monitoring.SimSpeedAlertCooldownSeconds;
+
+                    if (timeSinceLastAlert.TotalSeconds >= cooldownSeconds)
+                    {
+                        // Cooldown je prošao - šalji alert!
+                        await SendAdminAlertAsync(
+                            _config
+                                .Monitoring.SimSpeedAlertMessage.Replace(
+                                    "{ss}",
+                                    simSpeed.ToString("F2")
+                                )
+                                .Replace(
+                                    "{threshold}",
+                                    _config.Monitoring.SimSpeedThreshold.ToString("F2")
+                                )
+                        );
+
+                        _lastSimSpeedAlertTime = DateTime.UtcNow; // Update timestamp
+                        LoggerUtil.LogInfo("[MONITORING] SimSpeed alert sent (cooldown reset)");
+                    }
+                    else
+                    {
+                        // Cooldown nije prošao - skip alert
+                        double remainingSeconds = cooldownSeconds - timeSinceLastAlert.TotalSeconds;
+                        LoggerUtil.LogDebug(
+                            $"[MONITORING] SimSpeed alert on cooldown ({remainingSeconds:F0}s remaining)"
+                        );
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[MONITORING_SIMSPEED] Failed to update channel: " + ex.Message);
+                LoggerUtil.LogError(
+                    "[MONITORING_SIMSPEED] Failed to update channel: " + ex.Message
+                );
             }
         }
 
-        /// <summary>
-        /// Update player count monitoring channel name
-        /// Format: "👥 Players: 5/20"
-        /// </summary>
         private async Task UpdatePlayerCountChannelAsync(int playerCount)
         {
             try
             {
-                LoggerUtil.LogDebug("[MONITORING_PLAYERS] Updating player count channel to " + playerCount);
+                LoggerUtil.LogDebug(
+                    "[MONITORING_PLAYERS] Updating player count channel to " + playerCount
+                );
 
                 ulong channelId = _config.Discord.PlayerCountChannelId;
                 if (channelId == 0)
                 {
-                    LoggerUtil.LogWarning("[MONITORING_PLAYERS] PlayerCountChannelId not configured");
+                    LoggerUtil.LogWarning(
+                        "[MONITORING_PLAYERS] PlayerCountChannelId not configured"
+                    );
                     return;
                 }
 
@@ -241,14 +277,16 @@ namespace mamba.TorchDiscordSync.Services
 
                 int maxPlayers = GetMaxPlayerCount();
 
-                // Format using configured template
-                string newName = _config.Monitoring.PlayerCountChannelNameFormat
-                    .Replace("{p}", playerCount.ToString())
+                string newName = _config
+                    .Monitoring.PlayerCountChannelNameFormat.Replace("{p}", playerCount.ToString())
                     .Replace("{pp}", maxPlayers.ToString());
 
                 LoggerUtil.LogDebug("[MONITORING_PLAYERS] Setting channel name to: " + newName);
 
-                await channel.ModifyAsync(props => { props.Name = newName; });
+                await channel.ModifyAsync(props =>
+                {
+                    props.Name = newName;
+                });
 
                 LoggerUtil.LogSuccess("[MONITORING_PLAYERS] Channel updated: " + newName);
             }
@@ -258,12 +296,6 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Send alert to admin/staff channel if SimSpeed drops below threshold
-        /// </summary>
-        /// 
-        /// <param name="message"></param>
-        /// 
         private async Task SendAdminAlertAsync(string message)
         {
             try
@@ -277,7 +309,7 @@ namespace mamba.TorchDiscordSync.Services
                 ulong channelId = _config.Discord.AdminAlertChannelId;
                 if (channelId == 0)
                 {
-                    channelId = _config.Discord.StaffLog; // Fallback na StaffLog ako AdminAlertChannelId nije postavljen
+                    channelId = _config.Discord.StaffLog;
                 }
 
                 if (channelId == 0)
@@ -296,7 +328,9 @@ namespace mamba.TorchDiscordSync.Services
                 var channel = client.GetChannel(channelId) as IMessageChannel;
                 if (channel == null)
                 {
-                    LoggerUtil.LogWarning("[MONITORING] Admin alert channel not found: " + channelId);
+                    LoggerUtil.LogWarning(
+                        "[MONITORING] Admin alert channel not found: " + channelId
+                    );
                     return;
                 }
 
@@ -309,9 +343,6 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Get current number of online players
-        /// </summary>
         private int GetOnlinePlayerCount()
         {
             try
@@ -335,35 +366,31 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Get maximum player count from server settings
-        /// </summary>
         private int GetMaxPlayerCount()
         {
             try
             {
-                // Default to 20 if we can't get the actual value
                 int maxPlayers = 20;
 
-                // Try to get from session settings
                 if (MySession.Static != null && MySession.Static.Settings != null)
                 {
                     maxPlayers = MySession.Static.Settings.MaxPlayers;
-                    LoggerUtil.LogDebug($"[MONITORING_MAX] Max players from settings: {maxPlayers}");
+                    LoggerUtil.LogDebug(
+                        $"[MONITORING_MAX] Max players from settings: {maxPlayers}"
+                    );
                 }
 
                 return maxPlayers;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[MONITORING_MAX] Error getting max player count: {ex.Message}");
-                return 20; // Safe default
+                LoggerUtil.LogError(
+                    $"[MONITORING_MAX] Error getting max player count: {ex.Message}"
+                );
+                return 20;
             }
         }
 
-        /// <summary>
-        /// Stop monitoring and cleanup
-        /// </summary>
         public void Stop()
         {
             try
@@ -382,9 +409,6 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
-        /// <summary>
-        /// Dispose pattern implementation
-        /// </summary>
         public void Dispose()
         {
             if (!_isDisposed)
