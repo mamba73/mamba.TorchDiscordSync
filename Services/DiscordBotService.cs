@@ -2,6 +2,7 @@
 using System;
 using System.Threading.Tasks;
 using Discord;
+using Discord.Rest;
 using Discord.WebSocket;
 using mamba.TorchDiscordSync.Config;
 using mamba.TorchDiscordSync.Utils;
@@ -299,14 +300,21 @@ namespace mamba.TorchDiscordSync.Services
         }
 
 
-        /// <summary>
-        /// Create a text channel in the guild
+
+/// <summary>
+        /// Create text channel in Discord
+        /// FIXED: Creates with categoryID from the beginning + sets permissions
         /// </summary>
-        public async Task<ulong> CreateChannelAsync(string channelName, ulong? categoryID = null)
+        public async Task<ulong> CreateChannelAsync(
+            string channelName,
+            ulong? categoryID = null,
+            ulong? roleID = null
+        ) // ← NEW! For setting permissions
         {
             try
             {
-                if (!_isReady) return 0;
+                if (!_isReady)
+                    return 0;
 
                 var guild = _client.GetGuild(_config.GuildID);
                 if (guild == null)
@@ -315,37 +323,99 @@ namespace mamba.TorchDiscordSync.Services
                     return 0;
                 }
 
-                // Create the text channel with category if provided
-                var channel = await guild.CreateTextChannelAsync(channelName);
+                // ============================================================
+                // NEW: Create channel with categoryID from the start (not after!)
+                // ============================================================
+                RestTextChannel channel = null;
+
+                if (categoryID.HasValue && categoryID.Value > 0)
+                {
+                    var category = guild.GetCategoryChannel(categoryID.Value);
+                    if (category != null)
+                    {
+                        // Kreiraj sa categoryID-om
+                        channel = await guild.CreateTextChannelAsync(
+                            channelName,
+                            x => x.CategoryId = categoryID.Value
+                        );
+                        LoggerUtil.LogDebug(
+                            "[DISCORD_BOT] Channel "
+                                + channelName
+                                + " created in category: "
+                                + categoryID
+                        );
+                    }
+                    else
+                    {
+                        LoggerUtil.LogWarning(
+                            "[DISCORD_BOT] Category not found: "
+                                + categoryID
+                                + " - creating without category"
+                        );
+                        channel = await guild.CreateTextChannelAsync(channelName);
+                    }
+                }
+                else
+                {
+                    // Create without category
+                    channel = await guild.CreateTextChannelAsync(channelName);
+                }
+
                 if (channel == null)
                 {
                     LoggerUtil.LogError("[DISCORD_BOT] Failed to create channel: " + channelName);
                     return 0;
                 }
 
-                // IF categoryID is provided, move channel to that category
-                if (categoryID.HasValue && categoryID > 0)
+                // ============================================================
+                // NEW: Set permissions if roleID is provided
+                // ============================================================
+                if (roleID.HasValue && roleID.Value > 0)
                 {
                     try
                     {
-                        var category = guild.GetCategoryChannel(categoryID.Value);
-                        if (category != null)
+                        var role = guild.GetRole(roleID.Value);
+                        if (role != null)
                         {
-                            await channel.ModifyAsync(x => x.CategoryId = categoryID.Value);
-                            LoggerUtil.LogDebug("[DISCORD_BOT] Channel " + channelName + " moved to category: " + categoryID);
-                        }
-                        else
-                        {
-                            LoggerUtil.LogWarning("[DISCORD_BOT] Category not found: " + categoryID + " - channel created without category");
+                            // Deny @everyone
+                            await channel.AddPermissionOverwriteAsync(
+                                guild.EveryoneRole,
+                                new OverwritePermissions(viewChannel: PermValue.Deny)
+                            );
+
+                            // Allow faction role
+                            await channel.AddPermissionOverwriteAsync(
+                                role,
+                                new OverwritePermissions(
+                                    viewChannel: PermValue.Allow,
+                                    sendMessages: PermValue.Allow
+                                )
+                            );
+
+                            LoggerUtil.LogDebug(
+                                "[DISCORD_BOT] Set permissions for channel "
+                                    + channelName
+                                    + " (Role: "
+                                    + role.Name
+                                    + ")"
+                            );
                         }
                     }
                     catch (Exception ex)
                     {
-                        LoggerUtil.LogWarning("[DISCORD_BOT] Failed to move channel to category: " + ex.Message);
+                        LoggerUtil.LogWarning(
+                            "[DISCORD_BOT] Failed to set channel permissions: " + ex.Message
+                        );
                     }
                 }
 
-                LoggerUtil.LogSuccess("[DISCORD_BOT] Created text channel: " + channelName + " (ID: " + channel.Id + ")");
+                LoggerUtil.LogSuccess(
+                    "[DISCORD_BOT] Created text channel: "
+                        + channelName
+                        + " (ID: "
+                        + channel.Id
+                        + ")"
+                );
                 return channel.Id;
             }
             catch (Exception ex)
@@ -590,6 +660,11 @@ namespace mamba.TorchDiscordSync.Services
             }
         }
 
+        /// <summary>
+        /// Welcome new users with a DM and instructions on how to verify
+        /// </summary>
+        /// <param name="user"></param>
+        /// <returns></returns>
         private async Task OnUserJoined(SocketGuildUser user)
         {
             try
@@ -726,6 +801,111 @@ namespace mamba.TorchDiscordSync.Services
                 return null;
             }
         }
+
+        /// <summary>
+        /// Send verification result DM to user after they verify
+        /// </summary>
+        public async Task<bool> SendVerificationResultDMAsync(
+            string discordUsername,
+            ulong discordUserID,
+            string resultMessage,
+            bool success
+        )
+        {
+            try
+            {
+                if (!_isReady)
+                {
+                    LoggerUtil.LogError(
+                        "[DISCORD_BOT] Bot not ready, cannot send verification result"
+                    );
+                    return false;
+                }
+
+                var user = _client.GetUser(discordUserID);
+                if (user == null)
+                {
+                    LoggerUtil.LogWarning("[DISCORD_BOT] User not found by ID: " + discordUserID);
+                    return false;
+                }
+
+                var dmChannel = await user.CreateDMChannelAsync();
+                if (dmChannel == null)
+                {
+                    LoggerUtil.LogWarning(
+                        "[DISCORD_BOT] Could not open DM with " + discordUsername
+                    );
+                    return false;
+                }
+
+                var embed = new EmbedBuilder()
+                    .WithColor(success ? Color.Green : Color.Red)
+                    .WithTitle(success ? "✅ Verification Successful!" : "❌ Verification Failed")
+                    .WithDescription(resultMessage)
+                    .WithTimestamp(DateTime.UtcNow)
+                    .Build();
+
+                await dmChannel.SendMessageAsync(embed: embed);
+                LoggerUtil.LogSuccess(
+                    "[DISCORD_BOT] Sent verification result to " + discordUsername
+                );
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError(
+                    "[DISCORD_BOT] Send verification result DM error: " + ex.Message
+                );
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Get role by ID (for checking if role already exists)
+        /// </summary>
+        public IRole GetRoleAsync(ulong roleId)
+        {
+            try
+            {
+                if (!_isReady)
+                    return null;
+
+                var guild = _client.GetGuild(_config.GuildID);
+                if (guild == null)
+                    return null;
+
+                return guild.GetRole(roleId);
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD_BOT] Get role error: " + ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Get channel by ID (for checking if channel already exists)
+        /// </summary>
+        public IChannel GetChannelAsync(ulong channelId)
+        {
+            try
+            {
+                if (!_isReady)
+                    return null;
+
+                var guild = _client.GetGuild(_config.GuildID);
+                if (guild == null)
+                    return null;
+
+                return guild.GetChannel(channelId);
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD_BOT] Get channel error: " + ex.Message);
+                return null;
+            }
+        }
+
 
         // ============================================================
         // PUBLIC EVENTS
