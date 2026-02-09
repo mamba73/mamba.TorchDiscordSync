@@ -85,6 +85,21 @@ namespace mamba.TorchDiscordSync.Handlers
                     HandleVerifyStatusCommand(playerSteamID, playerName);
                     return;
                 }
+                if (subcommand == "verify:delete")
+                {
+                    LoggerUtil.LogInfo(
+                        $"[VERIFY_DELETE_CMD] Verify delete command from {playerName}"
+                    );
+                    HandleVerifyDeleteCommand(playerSteamID, playerName);
+                    return;
+                }
+
+                if (subcommand == "verify:help")
+                {
+                    LoggerUtil.LogInfo($"[VERIFY_HELP_CMD] Verify help command from {playerName}");
+                    HandleVerifyHelpCommand(playerName);
+                    return;
+                }
 
                 // User commands - verify
                 if (subcommand == "verify")
@@ -212,6 +227,8 @@ namespace mamba.TorchDiscordSync.Handlers
                 helpText += "/tds verify @DiscordName - Link your Discord account\n";
                 helpText += "/tds verify <DiscordUserID> - Link using Discord User ID\n";
                 helpText += "/tds verify:status - Check your verification status\n";
+                helpText += "/tds verify:delete - Delete pending verification\n";
+                helpText += "/tds verify:help - Detailed verification guide\n";
                 helpText += "/tds status - Show plugin status\n";
                 helpText += "/tds help - Show this help\n";
                 helpText += "===================";
@@ -633,6 +650,124 @@ namespace mamba.TorchDiscordSync.Handlers
                 ChatUtils.SendError("Delete error: " + ex.Message);
             }
         }
+
+
+        /// <summary>
+        /// Handle /tds verify:delete command
+        /// Deletes pending verification for current player
+        /// </summary>
+        private void HandleVerifyDeleteCommand(long playerSteamID, string playerName)
+        {
+            try
+            {
+                LoggerUtil.LogDebug(
+                    $"[VERIFY_DELETE_CMD] Checking verification status for {playerName} (SteamID: {playerSteamID})"
+                );
+
+                // Check if player is already verified
+                var verified = _db?.GetVerifiedPlayer(playerSteamID);
+                if (verified != null)
+                {
+                    ChatUtils.SendWarning("[FAIL] You are already verified!");
+                    ChatUtils.SendInfo(
+                        "Only administrators can remove your verification.\nContact an admin if needed."
+                    );
+                    LoggerUtil.LogWarning(
+                        $"[VERIFY_DELETE_CMD] {playerName} tried to delete verified status"
+                    );
+                    return;
+                }
+
+                // Check for pending verification
+                var pending = _db?.GetPendingVerification(playerSteamID);
+                if (pending == null)
+                {
+                    ChatUtils.SendInfo("[I] You don't have any pending verification.");
+                    return;
+                }
+
+                // Delete pending verification
+                _db?.DeletePendingVerification(playerSteamID);
+
+                ChatUtils.SendSuccess("[OK] Pending verification deleted!");
+                ChatUtils.SendInfo(
+                    "You can start a new verification with /tds verify [DiscordID/Name]"
+                );
+
+                LoggerUtil.LogInfo(
+                    $"[VERIFY_DELETE_CMD] {playerName} deleted pending verification"
+                );
+                _ = _eventLog.LogAsync(
+                    "VerificationDeleted",
+                    $"Player: {playerName} | SteamID: {playerSteamID} | Deleted pending verification"
+                );
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[VERIFY_DELETE_CMD] Error: {ex.Message}");
+                ChatUtils.SendError($"Error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handle /tds verify:help command
+        /// Show detailed verification instructions
+        /// </summary>
+        private void HandleVerifyHelpCommand(string playerName)
+        {
+            try
+            {
+                LoggerUtil.LogDebug($"[VERIFY_HELP_CMD] Help requested by {playerName}");
+
+                string helpText =
+                    @"
+=== VERIFICATION GUIDE ===
+
+[STEP 1] IN-GAME
+  Type: /tds verify [DiscordID or DiscordName]
+  
+  Example 1: /tds verify mamba73 (username)
+  Example 2: /tds verify 765540993667563541 (Discord ID)
+
+[STEP 2] CHECK DISCORD DM
+  You should receive a private message from the bot
+  Look for message with verification code
+  Code format: 8 random letters/numbers
+  Example: SYIXFN6E
+
+[STEP 3] REPLY ON DISCORD
+  In the bot's DM, type:
+  !verify [CODE]
+  
+  Example: !verify SYIXFN6E
+
+[STEP 4] WAIT FOR CONFIRMATION
+  Bot will respond with verification status
+  If successful: You are now linked!
+  If failed: Check code and try again
+
+[COMMANDS]
+  /tds verify:status  - Check current verification status
+  /tds verify:delete  - Delete pending verification
+  /tds verify:help    - Show this help
+
+[TROUBLESHOOTING]
+  - Username is incorrect: Make sure Discord username is correct
+  - Bot cannot find you: You must be in the Discord server
+  - Code expired: Verification codes expire after 15 minutes
+  - Still not working: Contact an administrator
+
+=========================";
+
+                ChatUtils.SendHelpText(helpText);
+                LoggerUtil.LogInfo($"[VERIFY_HELP_CMD] Help sent to {playerName}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[VERIFY_HELP_CMD] Error: {ex.Message}");
+                ChatUtils.SendError($"Error: {ex.Message}");
+            }
+}        
 
         /// <summary>
         /// Handle /tds status command

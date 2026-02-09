@@ -1,9 +1,9 @@
-// Services/VerificationService.cs
+// Services/VerificationService.cs - KOMPLETNA DATOTEKA
+// KORISTI VerificationPlayers.xml UMJESTO STARE BAZE!
+
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
-using mamba.TorchDiscordSync.Models;
 using mamba.TorchDiscordSync.Utils;
 
 namespace mamba.TorchDiscordSync.Services
@@ -11,273 +11,172 @@ namespace mamba.TorchDiscordSync.Services
     public class VerificationService
     {
         private readonly DatabaseService _db;
-        private const int VerificationCodeExpirationMinutes = 15;
+        private readonly int _verificationCodeExpirationMinutes;
         private const int CodeLength = 8;
         private static readonly Random _random = new Random();
 
-        public VerificationService(DatabaseService db)
+        public VerificationService(DatabaseService db, int verificationCodeExpirationMinutes = 15)
         {
             _db = db;
-        }
-
-        public Task<string> VerifyAsync(string code, ulong discordId, string discordUsername)
-        {
-            bool result = VerifyCode(code, discordId, discordUsername);
-            string message = result ? "Verification successful!" : "Verification failed!";
-            return Task.FromResult(message);
+            _verificationCodeExpirationMinutes = verificationCodeExpirationMinutes;
+            LoggerUtil.LogInfo(
+                $"[VERIFY_SERVICE] Initialized with {verificationCodeExpirationMinutes} minute expiration"
+            );
         }
 
         /// <summary>
         /// Generate a new verification code for a player
-        /// Returns the code to display to player
+        /// KORISTI: _db.AddPendingVerification() → VerificationPlayers.xml
         /// </summary>
-        public string GenerateVerificationCode(long steamID, string playerName, string discordUsername)
+        public string GenerateVerificationCode(
+            long steamID,
+            string playerName,
+            string discordUsername
+        )
         {
             try
             {
+                LoggerUtil.LogDebug(
+                    $"[VERIFY_SERVICE] GenerateVerificationCode for {playerName} (SteamID: {steamID})"
+                );
+
                 // Check if player already has pending verification
-                var existing = _db.GetVerification(steamID);
-                if (existing != null && !existing.IsVerified && !IsCodeExpired(existing))
+                var existing = _db.GetPendingVerification(steamID);
+                if (existing != null && existing.ExpiresAt > DateTime.UtcNow)
                 {
-                    LoggerUtil.LogWarning("[VERIFY] " + playerName + ": Already has pending code");
+                    LoggerUtil.LogWarning($"[VERIFY] {playerName}: Already has pending code");
                     return null; // Code still valid, don't generate new one
                 }
 
                 // Generate random code
                 string code = GenerateRandomCode(CodeLength);
 
-                // Create verification model
-                var verification = new VerificationModel
-                {
-                    SteamID = steamID,
-                    VerificationCode = code,
-                    CodeGeneratedAt = DateTime.UtcNow,
-                    DiscordUsername = discordUsername,
-                    IsVerified = false
-                };
+                // NOVO: Save to VerificationPlayers.xml (NE u staru bazu!)
+                _db.AddPendingVerification(
+                    steamID,
+                    discordUsername,
+                    code,
+                    _verificationCodeExpirationMinutes
+                );
 
-                // Save to database
-                _db.SaveVerification(verification);
+                LoggerUtil.LogSuccess($"[VERIFY] Generated code for {playerName}: {code}");
+                LoggerUtil.LogDebug(
+                    $"[VERIFY] Saved to VerificationPlayers.xml (expires in {_verificationCodeExpirationMinutes} min)"
+                );
 
-                LoggerUtil.LogInfo("[VERIFY] Generated code for " + playerName + ": " + code);
                 return code;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[VERIFY] Code generation failed: " + ex.Message);
+                LoggerUtil.LogError($"[VERIFY] Code generation failed: {ex.Message}");
                 return null;
             }
         }
 
         /// <summary>
         /// Verify the code from Discord bot
-        /// Should be called when Discord bot receives !verify code command
+        /// KORISTI: _db.MarkAsVerified() → VerificationPlayers.xml
         /// </summary>
-        public bool VerifyCode(string code, ulong discordUserID, string discordUsername)
+        public Task<string> VerifyAsync(string code, ulong discordId, string discordUsername)
         {
             try
             {
+                LoggerUtil.LogDebug($"[VERIFY_SERVICE] VerifyAsync called with code: {code}");
+
                 if (string.IsNullOrEmpty(code))
                 {
                     LoggerUtil.LogWarning("[VERIFY] Empty verification code");
-                    return false;
+                    return Task.FromResult("Invalid verification code");
                 }
 
-                // Find verification by code
-                var verification = _db.GetVerificationByCode(code);
+                // Find verification by code iz VerificationPlayers.xml
+                var allPending = _db.GetAllPendingVerifications();
+                var verification = allPending.Find(p => p.VerificationCode == code);
+
                 if (verification == null)
                 {
-                    LoggerUtil.LogWarning("[VERIFY] Code not found: " + code);
-                    return false;
+                    LoggerUtil.LogWarning($"[VERIFY] Code not found: {code}");
+                    return Task.FromResult("Verification code not found!");
                 }
 
                 // Check if code is expired
-                if (IsCodeExpired(verification))
+                if (verification.ExpiresAt < DateTime.UtcNow)
                 {
-                    LoggerUtil.LogWarning("[VERIFY] Code expired: " + code);
-                    _db.DeleteVerification(verification.SteamID);
-                    return false;
+                    LoggerUtil.LogWarning($"[VERIFY] Code expired: {code}");
+                    _db.DeletePendingVerification(verification.SteamID);
+                    return Task.FromResult("Verification code has expired!");
                 }
 
-                // Check if already verified
-                if (verification.IsVerified)
-                {
-                    LoggerUtil.LogWarning("[VERIFY] Code already used: " + code);
-                    return false;
-                }
+                // NOVO: Mark as verified u VerificationPlayers.xml
+                _db.MarkAsVerified(verification.SteamID, discordUsername, discordId);
 
-                // Mark as verified
-                verification.IsVerified = true;
-                verification.VerifiedAt = DateTime.UtcNow;
-                verification.DiscordUserID = discordUserID;
-                verification.DiscordUsername = discordUsername;
+                LoggerUtil.LogSuccess(
+                    $"[VERIFY] Verified: SteamID {verification.SteamID} → Discord {discordUsername} (ID: {discordId})"
+                );
+                LoggerUtil.LogDebug(
+                    $"[VERIFY] Saved to VerificationPlayers.xml as verified player"
+                );
 
-                _db.SaveVerification(verification);
+                return Task.FromResult("Verification successful!");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[VERIFY] Verification failed: {ex.Message}");
+                return Task.FromResult($"Verification error: {ex.Message}");
+            }
+        }
 
-                // Log to history
-                var historyEntry = new VerificationHistoryModel
-                {
-                    SteamID = verification.SteamID,
-                    DiscordUsername = discordUsername,
-                    DiscordUserID = discordUserID,
-                    VerifiedAt = DateTime.UtcNow,
-                    Status = "Success"
-                };
-                _db.SaveVerificationHistory(historyEntry);
+        /// <summary>
+        /// Check if player je već verificiran
+        /// </summary>
+        public bool IsPlayerVerified(long steamID)
+        {
+            try
+            {
+                var verified = _db.GetVerifiedPlayer(steamID);
+                return verified != null;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[VERIFY] Error checking verification status: {ex.Message}");
+                return false;
+            }
+        }
 
-                LoggerUtil.LogSuccess("[VERIFY] Verified: SteamID " + verification.SteamID + " -> Discord " + discordUsername + " (" + discordUserID + ")");
+        /// <summary>
+        /// Remove verification (admin command)
+        /// </summary>
+        public bool RemoveVerification(long steamID, string reason = "Admin removal")
+        {
+            try
+            {
+                _db.DeletePendingVerification(steamID);
+                _db.DeleteVerifiedPlayer(steamID);
+                LoggerUtil.LogInfo(
+                    $"[VERIFY] Removed verification for SteamID {steamID}: {reason}"
+                );
                 return true;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[VERIFY] Verification failed: " + ex.Message);
+                LoggerUtil.LogError($"[VERIFY] Remove verification failed: {ex.Message}");
                 return false;
             }
         }
 
         /// <summary>
-        /// Get Discord User ID for a given Steam ID
-        /// Returns 0 if not verified
-        /// </summary>
-        public ulong GetDiscordUserID(long steamID)
-        {
-            try
-            {
-                var verification = _db.GetVerification(steamID);
-                if (verification != null && verification.IsVerified)
-                    return verification.DiscordUserID;
-
-                return 0;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[VERIFY] Get Discord ID failed: " + ex.Message);
-                return 0;
-            }
-        }
-
-        /// <summary>
-        /// Get Discord username for a given Steam ID
-        /// </summary>
-        public string GetDiscordUsername(long steamID)
-        {
-            try
-            {
-                var verification = _db.GetVerification(steamID);
-                if (verification != null && verification.IsVerified)
-                    return verification.DiscordUsername;
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[VERIFY] Get Discord username failed: " + ex.Message);
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Check if a Steam ID is verified
-        /// </summary>
-        public bool IsVerified(long steamID)
-        {
-            try
-            {
-                var verification = _db.GetVerification(steamID);
-                return verification != null && verification.IsVerified;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[VERIFY] IsVerified check failed: " + ex.Message);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Remove verification for a player (admin command)
-        /// </summary>
-        public bool RemoveVerification(long steamID, string reason)
-        {
-            if (string.IsNullOrEmpty(reason))
-                reason = "Admin removal";
-
-            try
-            {
-                var verification = _db.GetVerification(steamID);
-                if (verification == null)
-                    return false;
-
-                var historyEntry = new VerificationHistoryModel
-                {
-                    SteamID = steamID,
-                    DiscordUsername = verification.DiscordUsername,
-                    DiscordUserID = verification.DiscordUserID,
-                    VerifiedAt = DateTime.UtcNow,
-                    Status = "Removed"
-                };
-                _db.SaveVerificationHistory(historyEntry);
-
-                _db.DeleteVerification(steamID);
-                LoggerUtil.LogInfo("[VERIFY] Removed verification for SteamID " + steamID + ": " + reason);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[VERIFY] Remove verification failed: " + ex.Message);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Clean up expired verification codes
-        /// Should be called periodically
-        /// </summary>
-        public void CleanupExpiredCodes()
-        {
-            try
-            {
-                var verifications = _db.GetAllVerifications();
-                int removedCount = 0;
-
-                for (int i = 0; i < verifications.Count; i++)
-                {
-                    if (!verifications[i].IsVerified && IsCodeExpired(verifications[i]))
-                    {
-                        _db.DeleteVerification(verifications[i].SteamID);
-                        removedCount++;
-                    }
-                }
-
-                if (removedCount > 0)
-                    LoggerUtil.LogInfo("[VERIFY] Cleaned up " + removedCount + " expired verification codes");
-            }
-            catch (Exception ex)
-            {
-                LoggerUtil.LogError("[VERIFY] Cleanup failed: " + ex.Message);
-            }
-        }
-
-        /// <summary>
-        /// Private helper: Check if verification code is expired
-        /// </summary>
-        private bool IsCodeExpired(VerificationModel verification)
-        {
-            var age = DateTime.UtcNow - verification.CodeGeneratedAt;
-            return age.TotalMinutes > VerificationCodeExpirationMinutes;
-        }
-
-        /// <summary>
-        /// Private helper: Generate random alphanumeric code
+        /// Generate random code sa slučajnim znakovima
         /// </summary>
         private string GenerateRandomCode(int length)
         {
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            char[] result = new char[length];
+            // const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            var result = "";
             for (int i = 0; i < length; i++)
             {
-                result[i] = chars[_random.Next(chars.Length)];
+                result += chars[_random.Next(chars.Length)];
             }
-            return new string(result);
+            return result;
         }
     }
 }

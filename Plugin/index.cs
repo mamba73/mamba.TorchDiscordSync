@@ -124,7 +124,10 @@ namespace mamba.TorchDiscordSync.Plugin
                 _discordWrapper = new DiscordService(_discordBot);
 
                 // Initialize verification service
-                _verification = new VerificationService(_db);
+                _verification = new VerificationService(
+                    _db,
+                    _config.VerificationCodeExpirationMinutes
+                );
 
                 // Initialize event logging service
                 _eventLog = new EventLoggingService(_db, _discordWrapper, _config);
