@@ -1,4 +1,4 @@
-# mamba.TorchDiscordSync - README & TODO
+# mamba.TorchDiscordSync.Plugin - README & TODO
 
 ## 📋 PROJECT OVERVIEW
 Advanced Space Engineers Torch plugin for Discord synchronization with death logging, chat sync, server monitoring, and admin commands.

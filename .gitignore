@@ -42,12 +42,14 @@ build_staging/
 # Documentation files
 .inspect/
 .inspect/*
+logs/
+logs/*
 tmp/
 tmp/*
-# doc/
-# *.py
+doc/
+*.py
 # *.md
-# *.txt
+*.txt
 # LICENSE
 # README.md
 # TODO.md

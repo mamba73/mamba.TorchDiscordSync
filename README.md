@@ -1,10 +1,10 @@
-# mamba.TorchDiscordSync v2.0
+# mamba.TorchDiscordSync.Plugin v2.0
 
 ---
 **NOTE: This project is still in active development.** Many features are partially working or require fixes.  
 Not everything listed below is fully stable yet – ongoing work.
 
-**mamba.TorchDiscordSync** is a Torch plugin for Space Engineers that bridges the gap between your game server and your Discord community.
+**mamba.TorchDiscordSync.Plugin** is a Torch plugin for Space Engineers that bridges the gap between your game server and your Discord community.
 
 Unlike simple chat relays, this plugin focuses on **deep game integration**—tracking accurate kill data, analyzing damage sources in real-time, synchronizing player factions, and monitoring server health.
 

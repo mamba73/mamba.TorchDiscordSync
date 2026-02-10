@@ -5,8 +5,8 @@
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>mamba.TorchDiscordSync</AssemblyName>
-    <RootNamespace>mamba.TorchDiscordSync</RootNamespace>
+    <AssemblyName>mamba.TorchDiscordSync.Plugin</AssemblyName>
+    <RootNamespace>mamba.TorchDiscordSync.Plugin</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <PlatformTarget>x64</PlatformTarget>

@@ -1,4 +1,4 @@
-# Project Idea: mamba.TorchDiscordSync
+# Project Idea: mamba.TorchDiscordSync.Plugin
 
 ## 1) Torch / Space Engineers module
 **Purpose:** interact with SE server via Torch API.

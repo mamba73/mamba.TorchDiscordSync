@@ -1,6 +1,6 @@
 # idejni_projekt_HRV.md
 
-# Idejni koncept plugina mamba.TorchDiscordSync
+# Idejni koncept plugina mamba.TorchDiscordSync.Plugin
 
 ## 1) Torch / Space Engineers modul
 **Svrha:** Komunicira sa SE serverom preko Torch API.
