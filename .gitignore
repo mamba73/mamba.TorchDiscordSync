@@ -46,8 +46,8 @@ logs/
 logs/*
 tmp/
 tmp/*
-doc/
-*.py
+# doc/
+# *.py
 # *.md
 *.txt
 # LICENSE
