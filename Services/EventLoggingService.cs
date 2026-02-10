@@ -60,6 +60,12 @@ namespace mamba.TorchDiscordSync.Services
             return Task.FromResult(0);
         }
 
+        /// <summary>
+        /// Log server status changes (started, stopped, sim speed) to Discord and database
+        /// </summary>
+        /// <param name="status"></param>
+        /// <param name="simSpeed"></param>
+        /// <returns></returns>
         public Task LogServerStatusAsync(string status, float simSpeed)
         {
             try
@@ -117,6 +123,7 @@ namespace mamba.TorchDiscordSync.Services
             return Task.FromResult(0);
         }
 
+        /// Log SimSpeed warnings to Discord and database
         public Task LogSimSpeedWarningAsync(float simSpeed)
         {
             try
@@ -157,6 +164,7 @@ namespace mamba.TorchDiscordSync.Services
             return Task.FromResult(0);
         }
 
+        /// Log player deaths to Discord and database
         public Task LogDeathAsync(string deathMessage)
         {
             try

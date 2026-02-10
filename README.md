@@ -1,129 +1,72 @@
-# # mamba.TorchDiscordSync v2.0
+# mamba.TorchDiscordSync v2.0
 
+---
 **NOTE: This project is still in active development.** Many features are partially working or require fixes.  
 Not everything listed below is fully stable yet – ongoing work.
 
-**Space Engineers Torch Server Plugin** Faction sync + death logging + chat bridge + server monitoring
+**mamba.TorchDiscordSync** is a Torch plugin for Space Engineers that bridges the gap between your game server and your Discord community.
+
+Unlike simple chat relays, this plugin focuses on **deep game integration**—tracking accurate kill data, analyzing damage sources in real-time, synchronizing player factions, and monitoring server health.
 
 **Author**: mamba  
-**Version**: 2.0.0  
+**Version**: 2.x.x  
 **Torch**: 1.3.1+  
 **Space Engineers**: 1.208+  
 **C#**: 4.6+ / .NET Framework 4.8  
 
 ---
-
-## Features (Current Status)
+## 🚀 Project Status
 
 | Feature | Status | Notes |
-| :--- | :--- | :--- |
-| XML Database | Completed | Uses MainConfig.xml, DeathMessages.xml – auto-creates directories |
-| Chat Synchronization | Completed | Bidirectional global chat works; faction/private chat skipped |
-| Death Logging | Partially Working | Basic detection works; multiple deaths sometimes missed; killer/weapon "Unknown" |
-| In-Game Death Announcements | In Progress | Basic message sent to global chat; location/zone not working correctly; still being fixed |
-| Discord Death Notifications | In Progress | One message per death (duplication fixed); location/zone not working correctly; uses templates |
-| Server Monitoring (SimSpeed) | Partially Working | Always shows 1.00 (fallback) – real value not fetched |
-| Faction Sync | Disabled | Timer off by default; enable in config to test |
-| Admin Commands (/tds) | Not Working | None of the commands (/tds help, status, verify, sync, reset) are working yet |
-| Security (SteamID whitelist) | Completed | Admin commands restricted to whitelisted IDs (when they work) |
+| :--- | :---: | :--- |
+| **Core Plugin Structure** | ✅ Done | Service injection, Logging, Config handling. |
+| **Smart Chat Relay** | ✅ Done | Bi-directional. Ignores private/faction messages. Loop protection. |
+| **SimSpeed Monitor** | ✅ Done | Configurable watchdog (def. 30s) alerting admins on lag spikes. |
+| **Advanced Killer Detection** | ✅ Done | Identifies weapons, turret owners, collisions, and environmental deaths. |
+| **Damage Tracking Buffer** | ✅ Done | Real-time hooking into damage events. |
+| **Discord Bot Connection** | ✅ Done | Basic bot connectivity and intent handling. |
+| **Data Storage (XML)** | ✅ Done | Current storage solution. |
+| **User Verification** | 🚧 In Progress | Securely linking SteamID to Discord UserID. |
+| **Faction Synchronization** | 🚧 In Progress | Syncing SE Factions to Discord Roles. |
+| **Secure Faction Chat** | ⏳ Planned | Private channels for faction comms (Game ↔ Discord). |
+| **SQLite Migration** | ⏳ Planned | Critical for high-volume features (Raid Alerts). |
+
+## 🌟 Key Features (Implemented)
+
+### 💬 Smart Chat Relay
+A robust bi-directional chat system that connects your server to a Discord channel.
+- **Loop Protection:** Prevents bot messages from echoing back endlessly.
+- **Privacy Filters:** Automatically ignores private DMs and internal Faction chat to protect sensitive gameplay info.
+- **Bi-Directional:** Discord users can chat with in-game players seamlessly.
+
+### 🛡️ Server Health Monitoring
+- **SimSpeed Watchdog:** Automatically monitors server simulation speed. If SimSpeed drops below the threshold for a configurable time (default: 30s), it alerts administrators immediately.
+
+### 🎯 Advanced Death Analysis
+The plugin uses a sophisticated damage tracking system to analyze the exact cause of death:
+- **PvP Detection:** Identifies the killer, weapon used, and grids involved.
+- **Turret Tracking:** Traces automated turret fire back to the owner (even if offline).
+- **Environmental Awareness:** Distinguishes between Collisions, Asphyxiation (LowPressure), and Gravity falls.
+
+## 🗺️ Roadmap & Future Plans
+
+### 1. SQLite Migration (High Priority)
+To support high-frequency data logging (such as bullet impacts during heavy PvP) without causing server lag, the storage system will be migrated from XML to SQLite. This is a prerequisite for the Raid Alert system.
+
+### 2. Raid Alerts (Offline Protection)
+*Dependency: SQLite Migration*
+A system to notify Faction members via Discord DM/Ping when their base is taking damage while they are offline. Requires the performance of SQLite to handle rapid damage events without impacting SimSpeed.
+
+### 3. Secure Faction Chat
+Once Faction Sync is complete, the plugin will create private Discord channels restricted to faction members, allowing secure communication between the game faction chat and Discord.
+
+### 4. Leaderboards & Statistics
+Weekly or monthly PvP rankings (K/D ratios, Most Active Faction, Top Ace Pilot) generated from the gathered kill data.
+
+### 5. Bounty / Retaliation System
+Building on the existing retaliation logic, this feature will allow players to place bounties on others, tracked and announced via Discord.
 
 ---
-
-## Known Issues
-
-- In-Game & Discord death messages: location/zone not working correctly (still in progress)
-- Multiple deaths sometimes not logged or announced (only first one triggers)
-- SimSpeed always 1.00 (default fallback) – needs real API check
-- Faction sync timer disabled – enable in config if needed
-- Killer/weapon detection missing (shows "Unknown") – needs system chat parsing
-- Join/leave messages sometimes show SteamID instead of name (fixed in latest version)
-- Discord bot occasional disconnects (WebSocket closed)
-- **Admin commands completely non-functional** (/tds help, status, verify, sync, reset)
-
----
-
-## Installation
-
-1. Download the latest release or clone the repo.
-2. Extract the .zip into the `Torch/Plugins/` folder.
-3. Start the server (this auto-creates the config in `Instance/mambaTorchDiscordSync/`).
-4. Edit `Instance/mambaTorchDiscordSync/MambaTorchDiscordSync.cfg`.
-5. Restart the server.
-
----
-
-## Configuration
-
-### MambaTorchDiscordSync.cfg
-Main settings (XML format):
-
-[code]xml
-<Discord>
-  <BotToken>YOUR_BOT_TOKEN</BotToken>
-  <GuildID>000000000000</GuildID>
-  <ChatChannelId>000000000000</ChatChannelId>
-  <StaffLog>000000000000</StaffLog>
-  <StatusChannelId>000000000000</StatusChannelId>
-</Discord>
-
-<Chat>
-  <ServerToDiscord>true</ServerToDiscord>
-  <GameToDiscordFormat>{p}: {msg}</GameToDiscordFormat>
-</Chat>
-
-<Death>
-  <Enabled>true</Enabled>
-  <AnnounceInGame>true</AnnounceInGame>
-  <LogToDiscord>true</LogToDiscord>
-</Death>
-[code]
-
-### DeathMessages.xml
-Customize death messages with templates (placeholders: {0}=killer, {1}=victim, {2}=weapon, {3}=location):
-
-[code]xml
-<FirstKill>
-  <Message>🩸 FIRST BLOOD! {0} took their first victim - {1}</Message>
-</FirstKill>
-[code]
-
----
-
-## Commands (Currently Not Working)
-
-**In-game chat** (Admin only – planned, but none work yet):
-
-[code]text
-/tds sync     # Force faction sync  
-/tds reset    # Clear Discord objects  
-/tds status   # Show status  
-/tds help     # Show help  
-/tds verify   # Verification command  
-[code]
-
----
-
-## Troubleshooting
-
-**Plugin not loading?**
-- Check `manifest.xml` GUID.
-- Verify `Discord.Net` packages.
-- Check Torch logs.
-
-**Death messages missing or incomplete?**
-- Verify `DeathMessages.xml` syntax.
-- Enable Debug mode.
-- Check `EventChannelDeathJoinLeave` ID.
-
-**Discord bot disconnects?**
-- Verify bot token.
-- Check bot permissions (Manage Roles, Send Messages, etc.).
-
----
-
-## License
-MIT - See LICENSE file.
-
 ## Contributing
 Pull requests are welcome! Please use C# 4.6+ compatibility.
 
@@ -131,6 +74,7 @@ Pull requests are welcome! Please use C# 4.6+ compatibility.
 No support yet!
 
 ---
+*Project is currently under active development.*
 *Developed by [mamba73](https://github.com/mamba73). Feel free to submit issues or pull requests!*
 
 [Buy Me a Coffee ☕](https://buymeacoffee.com/mamba73)
