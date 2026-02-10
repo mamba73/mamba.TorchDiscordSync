@@ -4,12 +4,12 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Timers;
 using Discord.WebSocket;
-using mamba.TorchDiscordSync.Config;
-using mamba.TorchDiscordSync.Core;
-using mamba.TorchDiscordSync.Handlers;
-using mamba.TorchDiscordSync.Models;
-using mamba.TorchDiscordSync.Services;
-using mamba.TorchDiscordSync.Utils;
+using mamba.TorchDiscordSync.Plugin.Config;
+using mamba.TorchDiscordSync.Plugin.Core;
+using mamba.TorchDiscordSync.Plugin.Handlers;
+using mamba.TorchDiscordSync.Plugin.Models;
+using mamba.TorchDiscordSync.Plugin.Services;
+using mamba.TorchDiscordSync.Plugin.Utils;
 using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using Torch;
@@ -20,10 +20,10 @@ using Torch.API.Session;
 using Torch.Commands;
 using Torch.Managers.ChatManager;
 
-namespace mamba.TorchDiscordSync.Plugin
+namespace mamba.TorchDiscordSync
 {
     /// <summary>
-    /// mamba.TorchDiscordSync - Advanced Space Engineers faction/Discord sync plugin
+    /// mamba.TorchDiscordSync.Plugin - Advanced Space Engineers faction/Discord sync plugin
     /// with death logging, chat sync, server monitoring, and admin commands.
     /// NEW: Integrated with Death Location Zones system.
     /// </summary>
@@ -451,17 +451,51 @@ namespace mamba.TorchDiscordSync.Plugin
             return Task.FromResult(0);
         }
 
+        // Handles verification attempts from Discord users
         private Task HandleVerificationAsync(string code, ulong discordID, string discordUsername)
         {
             if (_verificationCommandHandler != null)
             {
                 return _verificationCommandHandler
                     .VerifyFromDiscordAsync(code, discordID, discordUsername)
-                    .ContinueWith(t =>
+                    .ContinueWith(async t =>
                     {
-                        LoggerUtil.LogInfo("[VERIFY] Verification result: " + t.Result);
+                        try
+                        {
+                            // Get the verification result message
+                            string resultMessage = t.Result;
+                            LoggerUtil.LogInfo("[VERIFY] Verification result: " + resultMessage);
+
+                            // Send result back to Discord user
+                            if (_discordBot != null)
+                            {
+                                // Check if verification was successful
+                                bool isSuccess =
+                                    resultMessage.Contains("successful")
+                                    || resultMessage.Contains("Successful");
+
+                                // Send result DM to user
+                                await _discordBot.SendVerificationResultDMAsync(
+                                    discordUsername,
+                                    discordID,
+                                    resultMessage,
+                                    isSuccess
+                                );
+
+                                LoggerUtil.LogDebug(
+                                    "[VERIFY] Sent verification result DM to " + discordUsername
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError(
+                                "[VERIFY] Error sending verification result DM: " + ex.Message
+                            );
+                        }
                     });
             }
+
             return Task.FromResult(0);
         }
 

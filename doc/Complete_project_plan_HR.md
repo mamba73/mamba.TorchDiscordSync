@@ -1,4 +1,4 @@
-# mamba.TorchDiscordSync - KOMPLETAN IDEJNI PLAN
+# mamba.TorchDiscordSync.Plugin - KOMPLETAN IDEJNI PLAN
 
 ## 📋 SAŽETAK PROJEKTA
 
@@ -419,7 +419,7 @@
 ## 🔗 DATOTEKE NA GITHUB-u
 
 **Branch:** `dev3`
-**Link:** https://github.com/mamba73/mamba.TorchDiscordSync/tree/dev3
+**Link:** https://github.com/mamba73/mamba.TorchDiscordSync.Plugin/tree/dev3
 
 **Ključne datoteke za fix:**
 1. `/Plugin/MambaTorchDiscordSyncPlugin.cs` - DeathMessageHandler init

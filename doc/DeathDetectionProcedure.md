@@ -477,7 +477,7 @@ IMyCharacter
 └─ OnClosing → Event when character dies
 ```
 
-REPORT: G:\dev\SE\csharp\mamba.TorchDiscordSync\Dependencies
+REPORT: G:\dev\SE\csharp\mamba.TorchDiscordSync.Plugin\Dependencies
 SEARCH: MyDamageType | FILTER: None
 ========================================
 
