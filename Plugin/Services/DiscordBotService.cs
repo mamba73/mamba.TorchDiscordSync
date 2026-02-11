@@ -57,7 +57,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                         GatewayIntents.DirectMessages
                         | GatewayIntents.Guilds
                         | GatewayIntents.GuildMessages
-                        | GatewayIntents.MessageContent,
+                        | GatewayIntents.MessageContent
+                        | GatewayIntents.GuildMembers,
                 };
 
                 _client = new DiscordSocketClient(config);
@@ -761,29 +762,74 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 if (message.Author.IsBot)
                     return;
 
-                // Forward all messages to chat sync (if in monitored channel)
+                LoggerUtil.LogDebug(
+                    "[DISCORD_BOT] Message received from "
+                        + message.Author.Username
+                        + " in channel: "
+                        + message.Channel.Name
+                );
+
+                // Check if this is a DM (direct message)
+                if (message.Channel is IDMChannel dmChannel)
+                {
+                    LoggerUtil.LogDebug("[DISCORD_BOT] DM message detected - processing command");
+
+                    // Command handling for DM messages
+                    if (!message.Content.StartsWith(_config.BotPrefix))
+                    {
+                        LoggerUtil.LogDebug(
+                            "[DISCORD_BOT] DM message does not start with bot prefix '"
+                                + _config.BotPrefix
+                                + "'"
+                        );
+                        return;
+                    }
+
+                    var args = message
+                        .Content.Substring(_config.BotPrefix.Length)
+                        .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    if (args.Length == 0)
+                        return;
+
+                    var command = args[0].ToLower();
+                    LoggerUtil.LogDebug("[DISCORD_BOT] DM command: " + command);
+
+                    if (command == "verify")
+                    {
+                        await HandleVerifyCommand(message, args);
+                    }
+                    else if (command == "help")
+                    {
+                        await HandleHelpCommand(message);
+                    }
+                    return; // Don't forward DM to chat sync
+                }
+
+                // If not DM, forward to chat sync (guild messages)
                 if (OnMessageReceivedEvent != null)
                 {
                     await OnMessageReceivedEvent.Invoke(message);
                 }
 
-                // Command handling only if message starts with prefix
+                // Command handling for guild messages only if message starts with prefix
                 if (!message.Content.StartsWith(_config.BotPrefix))
                     return;
 
-                var args = message
+                var guildArgs = message
                     .Content.Substring(_config.BotPrefix.Length)
                     .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (args.Length == 0)
+
+                if (guildArgs.Length == 0)
                     return;
 
-                var command = args[0].ToLower();
+                var guildCommand = guildArgs[0].ToLower();
 
-                if (command == "verify")
+                if (guildCommand == "verify")
                 {
-                    await HandleVerifyCommand(message, args);
+                    await HandleVerifyCommand(message, guildArgs);
                 }
-                else if (command == "help")
+                else if (guildCommand == "help")
                 {
                     await HandleHelpCommand(message);
                 }
@@ -798,6 +844,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
+                LoggerUtil.LogDebug("[DISCORD_BOT] Handling verify command for user: " + message.Author.Username);
                 if (args.Length < 2)
                 {
                     await message.Author.SendMessageAsync(

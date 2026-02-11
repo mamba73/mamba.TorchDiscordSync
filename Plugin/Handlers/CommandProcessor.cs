@@ -721,44 +721,38 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 LoggerUtil.LogDebug($"[VERIFY_HELP_CMD] Help requested by {playerName}");
 
                 string helpText =
-                    @"
-=== VERIFICATION GUIDE ===
-
-[STEP 1] IN-GAME
-  Type: /tds verify [DiscordID or DiscordName]
-  
-  Example 1: /tds verify mamba73 (username)
-  Example 2: /tds verify 765540000000001234 (Discord ID)
-
-[STEP 2] CHECK DISCORD DM
-  You should receive a private message from the bot
-  Look for message with verification code
-  Code format: 8 random letters
-  Example: SYIXFNCE
-
-[STEP 3] REPLY ON DISCORD
-  In the bot's DM, type:
-  !verify [CODE]
-  
-  Example: !verify SYIXFNCE
-
-[STEP 4] WAIT FOR CONFIRMATION
-  Bot will respond with verification status
-  If successful: You are now linked!
-  If failed: Check code and try again
-
-[COMMANDS]
-  /tds verify:status  - Check current verification status
-  /tds verify:delete  - Delete pending verification
-  /tds verify:help    - Show this help
-
-[TROUBLESHOOTING]
-  - Username is incorrect: Make sure Discord username is correct
-  - Bot cannot find you: You must be in the Discord server
-  - Code expired: Verification codes expire after 15 minutes
-  - Still not working: Contact an administrator
-
-=========================";
+                    "=== VERIFICATION GUIDE ===\n"
+                    + "[STEP 1] IN-GAME\n"
+                    + "  Type: /tds verify [DiscordID or DiscordName]\n"
+                    + "  \n"
+                    + "  Example 1: /tds verify mamba73 (username)\n"
+                    + "  Example 2: /tds verify 765540000000001234 (Discord ID)\n"
+                    + "[STEP 2] CHECK DISCORD DM\n"
+                    + "  You should receive a private message from the bot\n"
+                    + "  Look for message with verification code\n"
+                    + "  Code format: 8 random letters\n"
+                    + "  Example: SYIXFNCE\n"
+                    + "[STEP 3] REPLY ON DISCORD\n"
+                    + "  In the bot's DM, type:\n"
+                    + "  !verify [CODE]\n"
+                    + "  \n"
+                    + "  Example: !verify SYIXFNCE\n"
+                    + "[STEP 4] WAIT FOR CONFIRMATION\n"
+                    + "  Bot will respond with verification status\n"
+                    + "  If successful: You are now linked!\n"
+                    + "  If failed: Check code and try again\n"
+                    + "[COMMANDS]\n"
+                    + "  /tds verify:status  - Check current verification status\n"
+                    + "  /tds verify:delete  - Delete pending verification\n"
+                    + "  /tds verify:help    - Show this help\n"
+                    + "[TROUBLESHOOTING]\n"
+                    + "  - Username is incorrect: Make sure Discord username is correct\n"
+                    + "  - Bot cannot find you: You must be in the Discord server\n"
+                    + "  - Code expired: Verification codes expire after "
+                    + _config.VerificationCodeExpirationMinutes
+                    + " minutes\n"
+                    + "  - Still not working: Contact an administrator\n"
+                    + "=========================";
 
                 ChatUtils.SendHelpText(helpText);
                 LoggerUtil.LogInfo($"[VERIFY_HELP_CMD] Help sent to {playerName}");
