@@ -1,7 +1,4 @@
 // Plugin/Core/SyncOrchestrator.cs
-// Core/SyncOrchestrator.cs - UPDATED
-// Removed FactionReaderService dependency (merged into FactionSyncService)
-
 using System;
 using System.Collections.Generic;
 using System.Linq;

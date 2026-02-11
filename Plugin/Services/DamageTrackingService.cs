@@ -1,10 +1,4 @@
 // Plugin/Services/DamageTrackingService.cs
-// ============================================================================
-// File: Services/DamageTrackingService.cs
-// Purpose: Real-time damage tracking service
-// Status: COMPLETE - Ready to copy-paste
-// ============================================================================
-
 using System;
 using System.Collections.Generic;
 using System.IO;

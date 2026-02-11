@@ -1,10 +1,4 @@
 // Plugin/Services/KillerDetectionService.cs
-// ============================================================================
-// File: Services/KillerDetectionService.cs
-// FINAL VERSION: Integrated oxygen/fall/collision detection with DamageTracking
-// Date: 2026-02-07
-// ============================================================================
-
 using System;
 using System.Collections.Generic;
 using System.Linq;

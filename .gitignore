@@ -46,11 +46,11 @@ logs/
 logs/*
 tmp/
 tmp/*
-# doc/
-# *.py
-# *.md
+doc/
+*.py
+*.md
 *.txt
 # LICENSE
-# README.md
+README.md
 # TODO.md
 # CHANGELOG.md

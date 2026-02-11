@@ -1,10 +1,4 @@
 // Plugin/Handlers/DeathMessageHandler.cs
-// ============================================================================
-// File: Handlers/DeathMessageHandler.cs
-// Purpose: Generate and send death messages to game and Discord
-// Status: COMPLETE with DamageTracking integration and KillerDetectionService
-// ============================================================================
-
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;

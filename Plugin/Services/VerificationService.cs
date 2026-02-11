@@ -1,7 +1,4 @@
 // Plugin/Services/VerificationService.cs
-// Services/VerificationService.cs - KOMPLETNA DATOTEKA
-// KORISTI VerificationPlayers.xml UMJESTO STARE BAZE!
-
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;

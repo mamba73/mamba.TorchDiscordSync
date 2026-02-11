@@ -1,5 +1,4 @@
 // Plugin/Handlers/CommandProcessor.cs
-// Handlers\CommandProcessor.cs - FULLY CORRECTED
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;

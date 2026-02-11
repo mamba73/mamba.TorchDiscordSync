@@ -1,7 +1,4 @@
 // Plugin/Services/MonitoringService.cs
-// Services/MonitoringService.cs - FIXED
-// Dodano: SimSpeed alert cooldown (ne spammira više)
-
 using System;
 using System.Threading.Tasks;
 using System.Timers;

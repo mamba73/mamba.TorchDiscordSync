@@ -1,6 +1,4 @@
 // Plugin/Utils/ChatUtils.cs
-// Utils/ChatUtils.cs - UPDATED WITH ASCII CHARACTERS FOR GAME CHAT
-
 using System;
 using mamba.TorchDiscordSync.Plugin.Config;
 using mamba.TorchDiscordSync.Plugin.Services;
