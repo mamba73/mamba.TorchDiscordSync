@@ -29,7 +29,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         public string GenerateVerificationCode(
             long steamID,
             string playerName,
-            string discordUsername
+            string discordUsername,
+            string gamePlayerName = null
         )
         {
             try
@@ -49,12 +50,18 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 // Generate random code
                 string code = GenerateRandomCode(CodeLength);
 
+                // Use provided gamePlayerName or fallback to playerName
+                string nameToStore = !string.IsNullOrEmpty(gamePlayerName)
+                    ? gamePlayerName
+                    : playerName;
+
                 // NOVO: Save to VerificationPlayers.xml (NE u staru bazu!)
                 _db.AddPendingVerification(
                     steamID,
                     discordUsername,
                     code,
-                    _verificationCodeExpirationMinutes
+                    _verificationCodeExpirationMinutes,
+                    nameToStore
                 );
 
                 LoggerUtil.LogSuccess($"[VERIFY] Generated code for {playerName}: {code}");

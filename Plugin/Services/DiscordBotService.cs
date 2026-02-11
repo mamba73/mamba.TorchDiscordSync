@@ -1,11 +1,10 @@
 // Plugin/Services/DiscordBotService.cs
 using System;
+using System.Linq;
 using System.Threading.Tasks;
-
 using Discord;
 using Discord.Rest;
 using Discord.WebSocket;
-
 using mamba.TorchDiscordSync.Plugin.Config;
 using mamba.TorchDiscordSync.Plugin.Utils;
 
@@ -31,7 +30,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             _config = config;
         }
-        
+
         /// <summary>
         /// Get the underlying Discord client (for advanced operations if needed)
         /// </summary>
@@ -54,10 +53,11 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
                 var config = new DiscordSocketConfig
                 {
-                    GatewayIntents = GatewayIntents.DirectMessages |
-                                     GatewayIntents.Guilds |
-                                     GatewayIntents.GuildMessages |
-                                     GatewayIntents.MessageContent
+                    GatewayIntents =
+                        GatewayIntents.DirectMessages
+                        | GatewayIntents.Guilds
+                        | GatewayIntents.GuildMessages
+                        | GatewayIntents.MessageContent,
                 };
 
                 _client = new DiscordSocketClient(config);
@@ -148,7 +148,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         /// <summary>
         /// Send direct message to a user (e.g. verification code)
         /// </summary>
-        public async Task<bool> SendVerificationDMAsync(string discordUsername, string verificationCode)
+        public async Task<bool> SendVerificationDMAsync(
+            string discordUsername,
+            string verificationCode
+        )
         {
             try
             {
@@ -168,17 +171,31 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 var dmChannel = await user.CreateDMChannelAsync();
                 if (dmChannel == null)
                 {
-                    LoggerUtil.LogWarning("[DISCORD_BOT] Could not open DM with " + discordUsername);
+                    LoggerUtil.LogWarning(
+                        "[DISCORD_BOT] Could not open DM with " + discordUsername
+                    );
                     return false;
                 }
 
                 var embed = new EmbedBuilder()
                     .WithColor(Color.Green)
                     .WithTitle("🔐 Space Engineers Verification Request")
-                    .WithDescription("Someone has requested to link your Discord account to a Space Engineers account.")
+                    .WithDescription(
+                        "Someone has requested to link your Discord account to a Space Engineers account."
+                    )
                     .AddField("Verification Code", "```" + verificationCode + "```", false)
-                    .AddField("How to Complete", "Type: " + _config.BotPrefix + "verify " + verificationCode, false)
-                    .AddField("⏱️ Expires", "This code will expire in " + _config.VerificationCodeExpirationMinutes + " minutes", false)
+                    .AddField(
+                        "How to Complete",
+                        "Type: " + _config.BotPrefix + "verify " + verificationCode,
+                        false
+                    )
+                    .AddField(
+                        "⏱️ Expires",
+                        "This code will expire in "
+                            + _config.VerificationCodeExpirationMinutes
+                            + " minutes",
+                        false
+                    )
                     .WithFooter("If you didn't request this, ignore this message")
                     .WithTimestamp(DateTime.UtcNow)
                     .Build();
@@ -197,17 +214,24 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         /// <summary>
         /// Send success notification DM after verification
         /// </summary>
-        public async Task<bool> SendVerificationSuccessDMAsync(string discordUsername, string playerName, long steamID)
+        public async Task<bool> SendVerificationSuccessDMAsync(
+            string discordUsername,
+            string playerName,
+            long steamID
+        )
         {
             try
             {
-                if (!_isReady) return false;
+                if (!_isReady)
+                    return false;
 
                 var user = FindUserByUsername(discordUsername);
-                if (user == null) return false;
+                if (user == null)
+                    return false;
 
                 var dmChannel = await user.CreateDMChannelAsync();
-                if (dmChannel == null) return false;
+                if (dmChannel == null)
+                    return false;
 
                 var embed = new EmbedBuilder()
                     .WithColor(Color.Green)
@@ -215,7 +239,11 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     .WithDescription("Your Discord account has been linked to Space Engineers.")
                     .AddField("Game Player", playerName, true)
                     .AddField("Steam ID", steamID.ToString(), true)
-                    .AddField("✨ Features unlocked", "Faction channels, death notifications, chat sync", false)
+                    .AddField(
+                        "✨ Features unlocked",
+                        "Faction channels, death notifications, chat sync",
+                        false
+                    )
                     .WithFooter("Welcome to the server!")
                     .WithTimestamp(DateTime.UtcNow)
                     .Build();
@@ -231,7 +259,6 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             }
         }
 
-        
         /// <summary>
         /// Send verification result DM to user after they complete verification
         /// Called by Plugin.HandleVerificationAsync() after VerifyFromDiscordAsync() completes
@@ -311,7 +338,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (!_isReady) return false;
+                if (!_isReady)
+                    return false;
 
                 var channel = _client.GetChannel(channelID) as IMessageChannel;
                 if (channel == null)
@@ -337,10 +365,12 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (!_isReady) return false;
+                if (!_isReady)
+                    return false;
 
                 var channel = _client.GetChannel(channelID) as IMessageChannel;
-                if (channel == null) return false;
+                if (channel == null)
+                    return false;
 
                 await channel.SendMessageAsync(embed: embed);
                 return true;
@@ -359,7 +389,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (!_isReady) return 0;
+                if (!_isReady)
+                    return 0;
 
                 var guild = _client.GetGuild(_config.GuildID);
                 if (guild == null)
@@ -386,13 +417,16 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (!_isReady) return false;
+                if (!_isReady)
+                    return false;
 
                 var guild = _client.GetGuild(_config.GuildID);
-                if (guild == null) return false;
+                if (guild == null)
+                    return false;
 
                 var role = guild.GetRole(roleID);
-                if (role == null) return false;
+                if (role == null)
+                    return false;
 
                 await role.DeleteAsync();
                 LoggerUtil.LogSuccess("[DISCORD_BOT] Deleted role: " + roleID);
@@ -404,8 +438,6 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 return false;
             }
         }
-
-
 
         /// <summary>
         /// Create text channel in Discord with optional category and role permissions
@@ -560,15 +592,19 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (!_isReady) return false;
+                if (!_isReady)
+                    return false;
 
                 var guild = _client.GetGuild(_config.GuildID);
-                if (guild == null) return false;
+                if (guild == null)
+                    return false;
 
                 var channel = guild.GetChannel(channelID);
                 if (channel == null)
                 {
-                    LoggerUtil.LogWarning("[DISCORD_BOT] Channel not found for deletion: " + channelID);
+                    LoggerUtil.LogWarning(
+                        "[DISCORD_BOT] Channel not found for deletion: " + channelID
+                    );
                     return false;
                 }
 
@@ -576,7 +612,9 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 var guildChannel = channel as IGuildChannel;
                 if (guildChannel == null)
                 {
-                    LoggerUtil.LogWarning("[DISCORD_BOT] Channel is not a guild channel: " + channelID);
+                    LoggerUtil.LogWarning(
+                        "[DISCORD_BOT] Channel is not a guild channel: " + channelID
+                    );
                     return false;
                 }
 
@@ -598,19 +636,25 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (!_isReady) return false;
+                if (!_isReady)
+                    return false;
 
                 var guild = _client.GetGuild(_config.GuildID);
-                if (guild == null) return false;
+                if (guild == null)
+                    return false;
 
                 var user = guild.GetUser(userID);
-                if (user == null) return false;
+                if (user == null)
+                    return false;
 
                 var role = guild.GetRole(roleID);
-                if (role == null) return false;
+                if (role == null)
+                    return false;
 
                 await user.AddRoleAsync(role);
-                LoggerUtil.LogSuccess("[DISCORD_BOT] Assigned role " + roleID + " to user " + userID);
+                LoggerUtil.LogSuccess(
+                    "[DISCORD_BOT] Assigned role " + roleID + " to user " + userID
+                );
                 return true;
             }
             catch (Exception ex)
@@ -627,19 +671,25 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (!_isReady) return false;
+                if (!_isReady)
+                    return false;
 
                 var guild = _client.GetGuild(_config.GuildID);
-                if (guild == null) return false;
+                if (guild == null)
+                    return false;
 
                 var user = guild.GetUser(userID);
-                if (user == null) return false;
+                if (user == null)
+                    return false;
 
                 var role = guild.GetRole(roleID);
-                if (role == null) return false;
+                if (role == null)
+                    return false;
 
                 await user.RemoveRoleAsync(role);
-                LoggerUtil.LogSuccess("[DISCORD_BOT] Removed role " + roleID + " from user " + userID);
+                LoggerUtil.LogSuccess(
+                    "[DISCORD_BOT] Removed role " + roleID + " from user " + userID
+                );
                 return true;
             }
             catch (Exception ex)
@@ -708,7 +758,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (message.Author.IsBot) return;
+                if (message.Author.IsBot)
+                    return;
 
                 // Forward all messages to chat sync (if in monitored channel)
                 if (OnMessageReceivedEvent != null)
@@ -717,10 +768,14 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 }
 
                 // Command handling only if message starts with prefix
-                if (!message.Content.StartsWith(_config.BotPrefix)) return;
+                if (!message.Content.StartsWith(_config.BotPrefix))
+                    return;
 
-                var args = message.Content.Substring(_config.BotPrefix.Length).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (args.Length == 0) return;
+                var args = message
+                    .Content.Substring(_config.BotPrefix.Length)
+                    .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (args.Length == 0)
+                    return;
 
                 var command = args[0].ToLower();
 
@@ -745,7 +800,9 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             {
                 if (args.Length < 2)
                 {
-                    await message.Author.SendMessageAsync("❌ Usage: !verify CODE\n\nExample: !verify ABC12345");
+                    await message.Author.SendMessageAsync(
+                        "❌ Usage: !verify CODE\n\nExample: !verify ABC12345"
+                    );
                     return;
                 }
 
@@ -774,7 +831,11 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 var embed = new EmbedBuilder()
                     .WithColor(Color.Blue)
                     .WithTitle("🤖 mamba.TorchDiscordSync.Plugin Bot Help")
-                    .AddField("Verification", _config.BotPrefix + "verify CODE - Verify your Space Engineers account", false)
+                    .AddField(
+                        "Verification",
+                        _config.BotPrefix + "verify CODE - Verify your Space Engineers account",
+                        false
+                    )
                     .AddField("Help", _config.BotPrefix + "help - Show this message", false)
                     .WithFooter("Bot will respond via DM")
                     .Build();
@@ -802,7 +863,11 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     .WithColor(Color.Gold)
                     .WithTitle("👋 Welcome!")
                     .WithDescription("Welcome to the Space Engineers community!")
-                    .AddField("Link Your Account", "Use `/tds verify @YourDiscordName` in-game", false)
+                    .AddField(
+                        "Link Your Account",
+                        "Use `/tds verify @YourDiscordName` in-game",
+                        false
+                    )
                     .AddField("Need Help?", "Type `!help` for commands", false)
                     .Build();
 
@@ -1076,6 +1141,99 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     "[DISCORD_BOT] Error checking for existing channel: " + ex.Message
                 );
                 return null;
+            }
+        }
+
+        // ============================================================
+        // NEW: VERIFIED ROLE MANAGEMENT
+        // ============================================================
+
+        /// <summary>
+        /// Get or create the "Verified" role on the Discord server
+        /// Returns the role ID or 0 if failed
+        /// </summary>
+        public async Task<ulong> GetOrCreateVerifiedRoleAsync()
+        {
+            try
+            {
+                if (!_isReady)
+                    return 0;
+
+                var guild = _client.GetGuild(_config.GuildID);
+                if (guild == null)
+                    return 0;
+
+                var existingRole = guild.Roles.FirstOrDefault(r => r.Name == "Verified");
+                if (existingRole != null)
+                    return existingRole.Id;
+
+                var newRole = await guild.CreateRoleAsync(
+                    "Verified",
+                    color: new Color(0, 176, 240)
+                );
+                LoggerUtil.LogSuccess($"[DISCORD_BOT] Created Verified role");
+                return newRole.Id;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DISCORD_BOT] Create role error: {ex.Message}");
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Assign the Verified role to a Discord user
+        /// </summary>
+        public async Task<bool> AssignVerifiedRoleAsync(IUser user, ulong roleId)
+        {
+            try
+            {
+                if (!_isReady || roleId == 0)
+                    return false;
+
+                var guild = _client.GetGuild(_config.GuildID);
+                var role = guild.GetRole(roleId);
+                var guildUser = guild.GetUser(user.Id);
+
+                if (guildUser == null || role == null)
+                    return false;
+
+                await guildUser.AddRoleAsync(role);
+                LoggerUtil.LogSuccess($"[DISCORD_BOT] Assigned Verified role");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DISCORD_BOT] Assign role error: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Assign a faction role to a Discord user
+        /// </summary>
+        public async Task<bool> AssignFactionRoleAsync(IUser user, string factionTag)
+        {
+            try
+            {
+                if (!_isReady)
+                    return false;
+
+                var guild = _client.GetGuild(_config.GuildID);
+                var role = guild.Roles.FirstOrDefault(r => r.Name == factionTag);
+                var guildUser = guild.GetUser(user.Id);
+
+                if (guildUser == null || role == null)
+                    return false;
+
+                await guildUser.AddRoleAsync(role);
+                LoggerUtil.LogSuccess($"[DISCORD_BOT] Assigned faction role");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DISCORD_BOT] Faction role error: {ex.Message}");
+                return false;
             }
         }
 

@@ -174,7 +174,6 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         /// </summary>
         /// <param name="steamID"></param>
         /// <returns></returns>
-
         public PlayerModel GetPlayerBySteamID(long steamID)
         {
             return _data.Players.FirstOrDefault(p => p.SteamID == steamID);
@@ -364,7 +363,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             long steamID,
             string discordUsername,
             string verificationCode,
-            int expirationMinutes = 15
+            int expirationMinutes = 15,
+            string gamePlayerName = null
         )
         {
             lock (_lock)
@@ -379,18 +379,39 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     VerificationCode = verificationCode,
                     CodeGeneratedAt = DateTime.UtcNow,
                     ExpiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes),
+                    GamePlayerName = gamePlayerName,
                 };
 
                 _verificationPlayersData.PendingVerifications.Add(pending);
                 SaveVerificationPlayersToXml();
-                LoggerUtil.LogDebug($"[DB] Added pending verification for SteamID {steamID}");
+                LoggerUtil.LogDebug(
+                    $"[DB] Added pending verification for SteamID {steamID} (PlayerName: {gamePlayerName})"
+                );
             }
         }
 
-        public void MarkAsVerified(long steamID, string discordUsername, ulong discordUserID)
+        public void MarkAsVerified(
+            long steamID,
+            string discordUsername,
+            ulong discordUserID,
+            string gamePlayerName = null
+        )
         {
             lock (_lock)
             {
+                // Get player name from pending verification if not provided
+                string playerNameToSave = gamePlayerName;
+                if (string.IsNullOrEmpty(playerNameToSave))
+                {
+                    var pending = _verificationPlayersData.PendingVerifications.Find(p =>
+                        p.SteamID == steamID
+                    );
+                    if (pending != null && !string.IsNullOrEmpty(pending.GamePlayerName))
+                    {
+                        playerNameToSave = pending.GamePlayerName;
+                    }
+                }
+
                 // Ukloni sa pending liste
                 _verificationPlayersData.PendingVerifications.RemoveAll(p => p.SteamID == steamID);
 
@@ -404,11 +425,14 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     DiscordUsername = discordUsername,
                     DiscordUserID = discordUserID,
                     VerifiedAt = DateTime.UtcNow,
+                    GamePlayerName = playerNameToSave,
                 };
 
                 _verificationPlayersData.VerifiedPlayers.Add(verified);
                 SaveVerificationPlayersToXml();
-                LoggerUtil.LogDebug($"[DB] Marked SteamID {steamID} as verified");
+                LoggerUtil.LogDebug(
+                    $"[DB] Marked SteamID {steamID} as verified (PlayerName: {playerNameToSave})"
+                );
             }
         }
 
@@ -520,6 +544,9 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
         [XmlElement]
         public DateTime ExpiresAt { get; set; }
+
+        [XmlElement]
+        public string GamePlayerName { get; set; } // NEW: For in-game notifications
     }
 
     public class VerifiedPlayer
@@ -535,5 +562,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
         [XmlElement]
         public DateTime VerifiedAt { get; set; }
+
+        [XmlElement]
+        public string GamePlayerName { get; set; } // NEW: For in-game notifications
     }
 }

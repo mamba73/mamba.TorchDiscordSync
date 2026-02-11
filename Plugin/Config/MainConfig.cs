@@ -71,7 +71,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
 
         [XmlArray("AdminSteamIDs")]
         [XmlArrayItem("SteamID")]
-        public long[] AdminSteamIDs { get; set; }
+        public long[] AdminSteamIDs { get; set; } // Example: 76561198020205461 (replace with actual SteamID)
 
         // ========== DISCORD BOT SETTINGS ==========
         [XmlElement]
@@ -102,7 +102,11 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             Enabled = true;
             Debug = false;
             SyncIntervalSeconds = 30;
-            AdminSteamIDs = new long[0];
+            // AdminSteamIDs = new long[0];
+            AdminSteamIDs = new long[] { 
+                76561198020205461, // mamba's SteamID - replace with actual admin SteamIDs
+                76561198000000001  // Add actual admin SteamIDs here
+                };
             Discord = new DiscordConfig();
             Chat = new ChatConfig();
             Death = new DeathConfig();
@@ -203,6 +207,9 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public ulong AdminAlertChannelId { get; set; }
 
+        [XmlElement]
+        public ulong VerifiedRoleId { get; set; } // NEW: For storing the Verified role ID
+
         public DiscordConfig()
         {
             BotToken = "YOUR_BOT_TOKEN";
@@ -217,6 +224,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             PlayerCountChannelId = 0;
             FactionCategoryId = 0;
             AdminAlertChannelId = 0;
+            VerifiedRoleId = 0;
         }
     }
 
@@ -478,7 +486,8 @@ namespace mamba.TorchDiscordSync.Plugin.Config
 
             // SimSpeed Alerts
             EnableSimSpeedAlerts = true;
-            SimSpeedAlertMessage = "🚨 **SIMSPEED WARNING** 🚨\nCurrent: **{ss}**\nThreshold: **{threshold}**";
+            SimSpeedAlertMessage =
+                "🚨 **SIMSPEED WARNING** 🚨\nCurrent: **{ss}**\nThreshold: **{threshold}**";
             SimSpeedAlertCooldownSeconds = 1200;
 
             // Player Count
@@ -512,15 +521,15 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public bool AutoCreateVoice { get; set; }
 
-        [XmlElement]
-        public ulong CategoryId { get; set; }
+        // [XmlElement]
+        // public ulong CategoryId { get; set; }
 
         public FactionConfig()
         {
             Enabled = false;
             AutoCreateChannels = false;
             AutoCreateVoice = false;
-            CategoryId = 0;
+            // CategoryId = 0;
         }
     }
 }

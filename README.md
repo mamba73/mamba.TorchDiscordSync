@@ -9,7 +9,7 @@ Not everything listed below is fully stable yet – ongoing work.
 Unlike simple chat relays, this plugin focuses on **deep game integration**—tracking accurate kill data, analyzing damage sources in real-time, synchronizing player factions, and monitoring server health.
 
 **Author**: mamba  
-**Version**: 2.x.x  
+**Version**: 2.2.x  
 **Torch**: 1.3.1+  
 **Space Engineers**: 1.208+  
 **C#**: 4.6+ / .NET Framework 4.8  

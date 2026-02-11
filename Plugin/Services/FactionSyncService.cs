@@ -392,6 +392,128 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
+        /// NEW: Resync a specific faction by deleting and recreating its Discord channel and role
+        /// </summary>
+        public async Task ResyncFactionAsync(string factionTag)
+        {
+            try
+            {
+                LoggerUtil.LogInfo($"[FACTION_SYNC] Starting resync for faction: {factionTag}");
+
+                // Find faction by tag
+                var faction = _db?.GetAllFactions()?.FirstOrDefault(f => f.Tag == factionTag);
+                if (faction == null)
+                {
+                    LoggerUtil.LogError($"[FACTION_SYNC] Faction not found: {factionTag}");
+                    throw new Exception($"Faction not found: {factionTag}");
+                }
+
+                // Delete existing Discord channel and role
+                if (faction.DiscordChannelID != 0 && _discord != null)
+                {
+                    try
+                    {
+                        await _discord.DeleteChannelAsync(faction.DiscordChannelID);
+                        LoggerUtil.LogSuccess(
+                            $"[FACTION_SYNC] Deleted old channel for {factionTag}"
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogWarning(
+                            $"[FACTION_SYNC] Error deleting old channel: {ex.Message}"
+                        );
+                    }
+                }
+
+                if (faction.DiscordRoleID != 0 && _discord != null)
+                {
+                    try
+                    {
+                        await _discord.DeleteRoleAsync(faction.DiscordRoleID);
+                        LoggerUtil.LogSuccess($"[FACTION_SYNC] Deleted old role for {factionTag}");
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogWarning(
+                            $"[FACTION_SYNC] Error deleting old role: {ex.Message}"
+                        );
+                    }
+                }
+
+                // Recreate faction role
+                var newRoleId = await _discord.CreateRoleAsync(factionTag);
+                if (newRoleId == 0)
+                {
+                    LoggerUtil.LogError(
+                        $"[FACTION_SYNC] Failed to create new role for {factionTag}"
+                    );
+                    throw new Exception("Failed to create new role");
+                }
+
+                // Update faction with new role ID
+                faction.DiscordRoleID = newRoleId;
+
+                // Recreate faction channel
+                var newChannelId = await _discord.CreateChannelAsync(
+                    faction.Name.ToLower().Replace(" ", "-"),
+                    _config.Discord.FactionCategoryId
+                );
+
+                if (newChannelId == 0)
+                {
+                    LoggerUtil.LogError(
+                        $"[FACTION_SYNC] Failed to create new channel for {factionTag}"
+                    );
+                    throw new Exception("Failed to create new channel");
+                }
+
+                // Update faction with new channel ID
+                faction.DiscordChannelID = newChannelId;
+
+                // Assign role to faction players
+                if (faction.Players != null && faction.Players.Count > 0)
+                {
+                    foreach (var player in faction.Players)
+                    {
+                        try
+                        {
+                            var verifiedPlayer = _db?.GetVerifiedPlayer(player.SteamID);
+                            if (verifiedPlayer != null)
+                            {
+                                await _discord.AssignRoleToUserAsync(
+                                    verifiedPlayer.DiscordUserID,
+                                    newRoleId
+                                );
+                                LoggerUtil.LogDebug(
+                                    $"[FACTION_SYNC] Assigned new role to {verifiedPlayer.DiscordUsername}"
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogWarning(
+                                $"[FACTION_SYNC] Error assigning role to player {player.SteamID}: {ex.Message}"
+                            );
+                        }
+                    }
+                }
+
+                // Save updated faction to database
+                _db?.SaveFaction(faction);
+
+                LoggerUtil.LogSuccess(
+                    $"[FACTION_SYNC] Resync complete for {factionTag} (Channel: {newChannelId}, Role: {newRoleId})"
+                );
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[FACTION_SYNC] Resync failed for {factionTag}: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
         /// Retrieves the display name for a player by their identity ID.
         /// </summary>
         private string GetPlayerName(long playerId)

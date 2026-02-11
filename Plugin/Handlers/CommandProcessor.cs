@@ -112,9 +112,9 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 // Admin-only commands
                 List<string> adminOnlyCommands = new List<string>
                 {
-                    "sync",
-                    "reset",
-                    "cleanup",
+                    "admin:faction:sync",
+                    "admin:faction:reset",
+                    "admin:faction:cleanup",
                     "reload",
                     "unverify",
                     "admin:verify:list",
@@ -273,7 +273,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 {
                     // Calculate time remaining
                     var codeAge = DateTime.UtcNow - verification.CodeGeneratedAt;
-                    var timeRemaining = TimeSpan.FromMinutes(15) - codeAge;
+                    int ConfigVerifyExpiration = _config.VerificationCodeExpirationMinutes;
+                    var timeRemaining = TimeSpan.FromMinutes(ConfigVerifyExpiration) - codeAge;
 
                     if (timeRemaining.TotalSeconds <= 0)
                     {
@@ -727,19 +728,19 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
   Type: /tds verify [DiscordID or DiscordName]
   
   Example 1: /tds verify mamba73 (username)
-  Example 2: /tds verify 765540993667563541 (Discord ID)
+  Example 2: /tds verify 765540000000001234 (Discord ID)
 
 [STEP 2] CHECK DISCORD DM
   You should receive a private message from the bot
   Look for message with verification code
-  Code format: 8 random letters/numbers
-  Example: SYIXFN6E
+  Code format: 8 random letters
+  Example: SYIXFNCE
 
 [STEP 3] REPLY ON DISCORD
   In the bot's DM, type:
   !verify [CODE]
   
-  Example: !verify SYIXFN6E
+  Example: !verify SYIXFNCE
 
 [STEP 4] WAIT FOR CONFIRMATION
   Bot will respond with verification status
