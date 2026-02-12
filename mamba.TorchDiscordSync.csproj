@@ -21,6 +21,10 @@
     <PackageReference Include="NLog" Version="4.7.15" />
     <!-- Microsoft.Bcl.AsyncInterfaces is required for Discord.Net in .NET 4.8 -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="1.1.1" />
+    <!-- SQLite packages for damage logging -->
+    <PackageReference Include="System.Data.SQLite" Version="1.0.118" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.118" />
+    <PackageReference Include="System.Data.SQLite.Linq" Version="1.0.118" />
   </ItemGroup>
 
   <!-- Torch and Space Engineers Assembly References -->

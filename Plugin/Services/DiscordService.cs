@@ -341,5 +341,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 return false;
             }
         }
+
+        internal object SendDirectMessage(long playerSteamID, string v)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

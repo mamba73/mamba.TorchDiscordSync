@@ -7,6 +7,7 @@ using mamba.TorchDiscordSync.Plugin.Services;
 using mamba.TorchDiscordSync.Plugin.Utils;
 using mamba.TorchDiscordSync.Plugin.Models;
 using mamba.TorchDiscordSync.Plugin.Core;
+using mamba.TorchDiscordSync.Plugin.Handlers;
 
 namespace mamba.TorchDiscordSync.Plugin.Handlers
 {
@@ -20,6 +21,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         private readonly SyncOrchestrator _orchestrator;
         private readonly VerificationService _verification;
         private readonly VerificationCommandHandler _verificationCommandHandler;
+        private readonly SignalCommandHandler _signalHandler;
 
         public CommandProcessor(
             MainConfig config,
@@ -40,6 +42,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             _orchestrator = orchestrator;
             _verification = verification;
             _verificationCommandHandler = verificationCommandHandler;
+            _signalHandler = new SignalCommandHandler(_discordService);
 
             if (_verificationCommandHandler != null)
             {
@@ -109,6 +112,20 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     return;
                 }
 
+                // === SIGNAL COMMANDS ===
+                if (subcommand.StartsWith("signal:"))
+                {
+                    LoggerUtil.LogInfo(
+                        $"[SIGNAL_CMD] Signal command from {playerName}: {subcommand}"
+                    );
+                    _signalHandler.HandleSignalCommand(
+                        subcommand,
+                        playerSteamID,
+                        playerName,
+                        isAdmin
+                    );
+                    return;
+                }
                 // Admin-only commands
                 List<string> adminOnlyCommands = new List<string>
                 {
@@ -762,7 +779,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 LoggerUtil.LogError($"[VERIFY_HELP_CMD] Error: {ex.Message}");
                 ChatUtils.SendError($"Error: {ex.Message}");
             }
-}        
+        }
 
         /// <summary>
         /// Handle /tds status command
