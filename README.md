@@ -88,19 +88,21 @@ Death messages support exactly four parameters:
 
 *Example templates:*
 
-```
-<PlayerKill>
-  <Message>{0} eliminated {1} using {2} at {3}</Message>
-</PlayerKill>
 
-<FirstBlood>
-  <Message>FIRST BLOOD! {0} took down {1}!</Message>
-</FirstBlood>
+*PvP Message:*
+"{killer} showed {victim} no mercy with {weapon}"
+*Result in game:*
+💀 mamba showed orko no mercy with Flare Gun
 
-<DeepSpaceDeath>
-  <Message>{1} was lost forever in {3}</Message>
-</DeepSpaceDeath>
-```
+*Environment Oxygen Message:*
+  "{victim} discovered that space has no oxygen"
+Result in game:
+⚡ mamba discovered that space has no oxygen on Moon's surface
+
+*Turret Message*
+"{killer} used {weapon} to send {victim} to eternal hunting grounds"
+Result in game:
+⚔️ Space Pirates used Gatling Turret to send mamba to eternal hunting grounds lost in the void
 
 
 ---
