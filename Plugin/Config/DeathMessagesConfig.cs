@@ -267,7 +267,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
 
         public static DeathMessagesConfig Load()
         {
-            string path = Path.Combine("Instance", "mambaTorchDiscordSync", "DeathMessages.xml");
+            string path = Path.Combine(MainConfig.GetConfigDirectory(), "DeathMessages.xml");
             try
             {
                 if (File.Exists(path))
@@ -294,7 +294,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
 
         public void Save()
         {
-            string path = Path.Combine("Instance", "mambaTorchDiscordSync", "DeathMessages.xml");
+            string path = Path.Combine(MainConfig.GetConfigDirectory(), "DeathMessages.xml");
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path));

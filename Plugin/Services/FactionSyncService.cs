@@ -190,6 +190,22 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                         continue;
                     }
 
+                    // ============================================================
+                    // KORAK 1: Check if faction already exists in database
+                    // If yes, skip entire sync process for this faction
+                    // ============================================================
+                    if (_db.FactionExists(faction.FactionID))
+                    {
+                        LoggerUtil.LogDebug(
+                            $"[FACTION_SYNC] Faction {faction.Tag} (ID: {faction.FactionID}) already in database - SKIPPING SYNC"
+                        );
+                        continue;
+                    }
+
+                    LoggerUtil.LogDebug(
+                        $"[FACTION_SYNC] Faction {faction.Tag} (ID: {faction.FactionID}) not in database - STARTING SYNC"
+                    );
+
                     // Get existing faction data from database
                     var existing = _db.GetFaction(faction.FactionID);
 

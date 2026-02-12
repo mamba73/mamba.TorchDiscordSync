@@ -10,46 +10,26 @@ namespace mamba.TorchDiscordSync.Plugin.Config
     public class MainConfig
     {
         // Static field for instance-specific config directory name
-        private static readonly string CONFIG_DIR_NAME = "mambaTorchDiscordSync";
+        // ============================================================
+        // CENTRAL PATH MANAGEMENT - Single Point of Control
+        // ============================================================
 
-        // Property to get correct config path based on Torch instance directory
-        private static string ConfigPath
+        /// <summary>
+        /// Plugin directory name - used for all plugin files and configs
+        /// Change this one constant to change plugin directory name everywhere!
+        /// </summary>
+        public static readonly string PLUGIN_DIR_NAME = "mambaSaveData";
+
+        /// <summary>
+        /// Get the base instance directory (where Torch stores data)
+        /// Tries environment variable first, falls back to default
+        /// </summary>
+        public static string GetInstancePath()
         {
-            get
-            {
-                // Get instance directory from environment or use default
-                string instancePath = GetInstancePath();
-                string pluginConfigDir = Path.Combine(instancePath, CONFIG_DIR_NAME);
-
-                // Ensure directory exists
-                if (!Directory.Exists(pluginConfigDir))
-                {
-                    try
-                    {
-                        Directory.CreateDirectory(pluginConfigDir);
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerUtil.LogError(
-                            "Failed to create config directory "
-                                + pluginConfigDir
-                                + ": "
-                                + ex.Message
-                        );
-                    }
-                }
-
-                return Path.Combine(pluginConfigDir, "MainConfig.xml");
-            }
-        }
-
-        // Method to determine correct instance path
-        private static string GetInstancePath()
-        {
-            // Try to get from environment variable (set by Torch)
+            // Try to get from environment variable set by Torch
             string instancePath = Environment.GetEnvironmentVariable("TORCH_INSTANCE_PATH");
 
-            // Fallback to current directory structure
+            // Fallback to default location if not set
             if (string.IsNullOrEmpty(instancePath))
             {
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -57,6 +37,111 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             }
 
             return instancePath;
+        }
+
+        /// <summary>
+        /// Get the plugin directory (for configs, data, logs)
+        /// Example: C:\Path\To\Torch\Instance\mambaTorchDiscordSync
+        /// </summary>
+        public static string GetPluginDirectory()
+        {
+            string pluginDir = Path.Combine(GetInstancePath(), PLUGIN_DIR_NAME);
+
+            // Ensure directory exists
+            if (!Directory.Exists(pluginDir))
+            {
+                try
+                {
+                    Directory.CreateDirectory(pluginDir);
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError(
+                        $"Failed to create plugin directory {pluginDir}: {ex.Message}"
+                    );
+                }
+            }
+
+            return pluginDir;
+        }
+
+        /// <summary>
+        /// Get the config directory (for XML configs)
+        /// Returns: [PluginDirectory]/configs
+        /// </summary>
+        public static string GetConfigDirectory()
+        {
+            string configDir = Path.Combine(GetPluginDirectory(), "configs");
+
+            if (!Directory.Exists(configDir))
+            {
+                try
+                {
+                    Directory.CreateDirectory(configDir);
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError(
+                        $"Failed to create config directory {configDir}: {ex.Message}"
+                    );
+                }
+            }
+
+            return configDir;
+        }
+
+        /// <summary>
+        /// Get the data directory (for database files, sync data)
+        /// Returns: [PluginDirectory]/data
+        /// </summary>
+        public static string GetDataDirectory()
+        {
+            string dataDir = Path.Combine(GetPluginDirectory(), "data");
+
+            if (!Directory.Exists(dataDir))
+            {
+                try
+                {
+                    Directory.CreateDirectory(dataDir);
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"Failed to create data directory {dataDir}: {ex.Message}");
+                }
+            }
+
+            return dataDir;
+        }
+
+        /// <summary>
+        /// Get the log directory (for plugin logs)
+        /// Returns: [PluginDirectory]/logs
+        /// </summary>
+        public static string GetLogDirectory()
+        {
+            string logDir = Path.Combine(GetPluginDirectory(), "logs");
+
+            if (!Directory.Exists(logDir))
+            {
+                try
+                {
+                    Directory.CreateDirectory(logDir);
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"Failed to create log directory {logDir}: {ex.Message}");
+                }
+            }
+
+            return logDir;
+        }
+
+        /// <summary>
+        /// Get correct config path (for backward compatibility)
+        /// </summary>
+        private static string ConfigPath
+        {
+            get { return Path.Combine(GetConfigDirectory(), "MainConfig.xml"); }
         }
 
         // ========== CORE SETTINGS ==========

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml.Serialization;
+using mamba.TorchDiscordSync.Plugin.Config;
 using mamba.TorchDiscordSync.Plugin.Utils;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
@@ -126,12 +127,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             _enableLogging = enableLogging;
 
             // Setup logging path
-            string instancePath = Environment.GetEnvironmentVariable("TORCH_INSTANCE_PATH")
-                ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Instance");
-            string pluginDir = Path.Combine(instancePath, "mambaTorchDiscordSync");
-            if (!Directory.Exists(pluginDir))
-                Directory.CreateDirectory(pluginDir);
-            _damageLogPath = Path.Combine(pluginDir, "DamageHistory.xml");
+            string dataDir = MainConfig.GetDataDirectory();
+            _damageLogPath = Path.Combine(dataDir, "DamageHistory.xml");
         }
 
         // ════════════════════════════════════════════════════════════════════════

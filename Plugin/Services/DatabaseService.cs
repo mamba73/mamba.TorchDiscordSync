@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml.Serialization;
+using mamba.TorchDiscordSync.Plugin.Config;
 using mamba.TorchDiscordSync.Plugin.Models;
 using mamba.TorchDiscordSync.Plugin.Utils;
 
@@ -27,16 +28,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         /// <param name="configPath"></param>
         public DatabaseService(string configPath = null)
         {
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var instanceDir = Path.Combine(baseDir, "Instance");
-            if (!Directory.Exists(instanceDir))
-                Directory.CreateDirectory(instanceDir);
+            // Use centralized path management from MainConfig
+            string dataDir = MainConfig.GetDataDirectory();
 
-            var folder = Path.Combine(instanceDir, "mambaTorchDiscordSync");
-            if (!Directory.Exists(folder))
-                Directory.CreateDirectory(folder);
-
-            _xmlPath = Path.Combine(folder, "MambaTorchDiscordSyncData.xml");
+            _xmlPath = Path.Combine(dataDir, "MambaTorchDiscordSyncData.xml");
 
             if (File.Exists(_xmlPath))
                 LoadFromXml();
@@ -46,7 +41,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             // ============================================================
             // INIT VERIFICATIONPLAYERS.XML PATH
             // ============================================================
-            _verificationPlayersPath = Path.Combine(folder, "VerificationPlayers.xml");
+            _verificationPlayersPath = Path.Combine(dataDir, "VerificationPlayers.xml");
             LoadVerificationPlayersFromXml();
         }
 
@@ -134,6 +129,20 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         public FactionModel GetFaction(int factionID)
         {
             return _data.Factions.FirstOrDefault(f => f.FactionID == factionID);
+        }
+
+        /// <summary>
+        /// Check if faction exists in database by FactionID
+        /// Used to prevent duplicate role/channel creation
+        /// </summary>
+        /// <param name="factionID"></param>
+        /// <returns>True if faction exists, false otherwise</returns>
+        public bool FactionExists(int factionID)
+        {
+            lock (_lock)
+            {
+                return _data.Factions.Any(f => f.FactionID == factionID);
+            }
         }
 
         public List<FactionModel> GetAllFactions()

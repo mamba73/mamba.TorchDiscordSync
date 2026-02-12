@@ -32,7 +32,8 @@ namespace mamba.TorchDiscordSync.Plugin.Core
 
         /// <summary>
         /// Handle in-game /tds verify @DiscordUsername command
-        /// Generates verification code and sends DM to Discord user
+        /// Creates pending verification and sends DM to Discord user
+        /// KORAK 2: Create pending verification without marking as verified immediately
         /// </summary>
         public async Task<string> HandleVerifyCommandAsync(
             long playerSteamID,
@@ -50,21 +51,39 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                 if (discordUsername.Length < 2 || discordUsername.Length > 32)
                     return "Error: Invalid Discord username length (2-32 characters)";
 
-                // Pass gamePlayerName to GenerateVerificationCode
-                string code = _verification.GenerateVerificationCode(
+                LoggerUtil.LogDebug(
+                    $"[VERIFY_CMD] HandleVerifyCommandAsync: SteamID={playerSteamID}, Player={playerName}, Discord={discordUsername}"
+                );
+
+                // KORAK 2.1: Create pending verification (generates code and stores in XML)
+                bool pendingCreated = _verification.CreatePendingVerification(
                     playerSteamID,
-                    playerName,
                     discordUsername,
                     playerName
                 );
 
-                if (code == null)
-                    return "Error: You already have a pending verification code. It expires in 15 minutes.";
+                if (!pendingCreated)
+                    return "Error: Could not create pending verification. Please try again.";
 
+                // KORAK 2.2: Get the generated code from pending verification
+                var pending = _verification.GetPendingVerificationByDiscord(
+                    discordUsername,
+                    playerSteamID
+                );
+                if (pending == null)
+                    return "Error: Verification code not found. Please try again.";
+
+                string code = pending.VerificationCode;
+
+                // KORAK 2.3: Send verification code via Discord DM
+                LoggerUtil.LogDebug(
+                    $"[VERIFY_CMD] Sending DM to {discordUsername} with code: {code}"
+                );
                 bool dmSent = await _discordBot.SendVerificationDMAsync(discordUsername, code);
 
                 if (!dmSent)
                 {
+                    LoggerUtil.LogWarning($"[VERIFY_CMD] Failed to send DM to {discordUsername}");
                     return "Error: Could not find Discord user '"
                         + discordUsername
                         + "' or send DM.\n"
@@ -81,7 +100,18 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                         + playerSteamID
                         + ") requested verification as "
                         + discordUsername
-                        + ". DM sent."
+                        + ". DM sent with code: "
+                        + code
+                );
+
+                LoggerUtil.LogSuccess(
+                    "[VERIFY_CMD] "
+                        + playerName
+                        + ": "
+                        + discordUsername
+                        + " - Code: "
+                        + code
+                        + " - DM sent successfully"
                 );
 
                 string message =
@@ -93,20 +123,11 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                     + _discordBotConfig.VerificationCodeExpirationMinutes
                     + " minutes";
 
-                LoggerUtil.LogInfo(
-                    "[VERIFY] "
-                        + playerName
-                        + ": "
-                        + discordUsername
-                        + " - Code: "
-                        + code
-                        + " - DM sent"
-                );
                 return message;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[VERIFY] Command error: " + ex.Message);
+                LoggerUtil.LogError("[VERIFY_CMD] Command error: " + ex.Message);
                 return "Error: " + ex.Message;
             }
         }
