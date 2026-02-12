@@ -1,10 +1,10 @@
-# mamba.TorchDiscordSync.Plugin v2.0
+# mamba.TorchDiscordSync.Plugin
 
 ---
 **NOTE: This project is still in active development.** Many features are partially working or require fixes.  
 Not everything listed below is fully stable yet – ongoing work.
 
-**mamba.TorchDiscordSync.Plugin** is a Torch plugin for Space Engineers that bridges the gap between your game server and your Discord community.
+An advanced Space Engineers Torch server plugin providing deep Discord integration, server automation and administrative tooling.
 
 Unlike simple chat relays, this plugin focuses on **deep game integration**—tracking accurate kill data, analyzing damage sources in real-time, synchronizing player factions, and monitoring server health.
 
@@ -15,7 +15,7 @@ Unlike simple chat relays, this plugin focuses on **deep game integration**—tr
 **C#**: 4.6+ / .NET Framework 4.8  
 
 ---
-## 🚀 Project Status
+## 🚀 Project Status: Active development
 
 | Feature | Status | Notes |
 | :--- | :---: | :--- |
@@ -26,28 +26,84 @@ Unlike simple chat relays, this plugin focuses on **deep game integration**—tr
 | **Damage Tracking Buffer** | ✅ Done | Real-time hooking into damage events. |
 | **Discord Bot Connection** | ✅ Done | Basic bot connectivity and intent handling. |
 | **Data Storage (XML)** | ✅ Done | Current storage solution. |
+| **Death Location Classification** | ✅ Done | Planet, orbit & inner, outer, deep space detection. |
 | **User Verification** | 🚧 In Progress | Securely linking SteamID to Discord UserID. |
 | **Faction Synchronization** | 🚧 In Progress | Syncing SE Factions to Discord Roles. |
 | **Secure Faction Chat** | ⏳ Planned | Private channels for faction comms (Game ↔ Discord). |
-| **SQLite Migration** | ⏳ Planned | Critical for high-volume features (Raid Alerts). |
+| **SQLite Migration** | ⏳ Planned | First major upcoming milestone!  Critical for high-volume features (Raid Alerts). |
 
+---
 ## 🌟 Key Features (Implemented)
 
+---
 ### 💬 Smart Chat Relay
 A robust bi-directional chat system that connects your server to a Discord channel.
 - **Loop Protection:** Prevents bot messages from echoing back endlessly.
 - **Privacy Filters:** Automatically ignores private DMs and internal Faction chat to protect sensitive gameplay info.
 - **Bi-Directional:** Discord users can chat with in-game players seamlessly.
 
+---
 ### 🛡️ Server Health Monitoring
 - **SimSpeed Watchdog:** Automatically monitors server simulation speed. If SimSpeed drops below the threshold for a configurable time (default: 30s), it alerts administrators immediately.
 
+---
 ### 🎯 Advanced Death Analysis
 The plugin uses a sophisticated damage tracking system to analyze the exact cause of death:
 - **PvP Detection:** Identifies the killer, weapon used, and grids involved.
 - **Turret Tracking:** Traces automated turret fire back to the owner (even if offline).
-- **Environmental Awareness:** Distinguishes between Collisions, Asphyxiation (LowPressure), and Gravity falls.
+- **Environmental Awareness:** Distinguishes between all enviroment deaths, sample: Collisions, Asphyxiation (LowPressure), and Gravity falls...
 
+#### 🌍 Dynamic Location Classification
+
+The system works as follows:
+
+1. All planets in the world are detected dynamically
+   - Supports vanilla and custom planets
+   - Planet positions are calculated at runtime
+
+2. Player death position is captured
+   - Distance to all planets is calculated
+   - Nearest planet is selected
+
+3. Based on planet radius, the system determines:
+   - Surface
+   - Low Orbit
+   - High Orbit
+
+4. If no planet is within range:
+   - Config-defined inner and outer space thresholds are used
+   - Beyond outer space → Deep Space
+
+This allows accurate classification without hardcoded zones.
+
+
+### 📝 Death Message Templates
+
+Death messages support exactly four parameters:
+
+- **killer**
+- **victim**
+- **weapon**
+- **location**
+
+*Example templates:*
+
+```
+<PlayerKill>
+  <Message>{0} eliminated {1} using {2} at {3}</Message>
+</PlayerKill>
+
+<FirstBlood>
+  <Message>FIRST BLOOD! {0} took down {1}!</Message>
+</FirstBlood>
+
+<DeepSpaceDeath>
+  <Message>{1} was lost forever in {3}</Message>
+</DeepSpaceDeath>
+```
+
+
+---
 ## 🗺️ Roadmap & Future Plans
 
 ### 1. SQLite Migration (High Priority)
@@ -66,16 +122,26 @@ Weekly or monthly PvP rankings (K/D ratios, Most Active Faction, Top Ace Pilot) 
 ### 5. Bounty / Retaliation System
 Building on the existing retaliation logic, this feature will allow players to place bounties on others, tracked and announced via Discord.
 
+### . Discord Admin Commands
+Administrative commands will be accessible directly from Discord, allowing server management from mobile devices without logging into the game.
+Planned capabilities:
+- Trigger faction sync
+- View server status & SimSpeed
+- Execute verification actions
+- Emergency admin operations
+
+Discord will effectively become a remote admin console.
+
+
 ---
-## Contributing
-Pull requests are welcome! Please use C# 4.6+ compatibility.
-
-## Support
-No support yet!
+## 🤝 Contributing
+Pull requests are welcome.
+Please maintain compatibility with C# 4.6+.
 
 ---
-*Project is currently under active development.*
-*Developed by [mamba73](https://github.com/mamba73). Feel free to submit issues or pull requests!*
-
+## ☕ Support
+If you like this project and want to support development:
 [Buy Me a Coffee ☕](https://buymeacoffee.com/mamba73)
 
+*Project is currently under active development.*
+*Developed by [mamba73](https://github.com/mamba73). Feel free to submit issues or pull requests!*
