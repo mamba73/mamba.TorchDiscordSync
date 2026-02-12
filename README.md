@@ -88,21 +88,21 @@ Death messages support exactly four parameters:
 
 **Example templates:**
 
-- *PvP Message:*
+*PvP Message:*
 ```"{killer} showed {victim} no mercy with {weapon}"```
 - *Result in game:*
 💀 mamba showed orko no mercy with Flare Gun in the vicinity of Titan
 
 
-- *Environment Oxygen Message:*
+*Environment Oxygen Message:*
 ```"{victim} discovered that space has no oxygen"```
-- Result in game:
+- *Result in game:*
 ⚡ mamba discovered that space has no oxygen on Moon's surface
 
 
-- *Turret Message*
+*Turret Message*
 ```"{killer} used {weapon} to send {victim} to eternal hunting grounds"```
-- Result in game:
+- *Result in game:*
 ⚔️ Space Pirates used Gatling Turret to send mamba to eternal hunting grounds lost in the void
 
 
