@@ -91,7 +91,7 @@ Death messages support exactly four parameters:
 - *PvP Message:*
 ```"{killer} showed {victim} no mercy with {weapon}"```
 - *Result in game:*
-💀 mamba showed orko no mercy with Flare Gun
+💀 mamba showed orko no mercy with Flare Gun in the vicinity of Titan
 
 
 - *Environment Oxygen Message:*
