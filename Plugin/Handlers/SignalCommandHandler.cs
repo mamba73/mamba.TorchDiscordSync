@@ -1,11 +1,16 @@
 // Plugin/Handlers/SignalCommandHandler.cs
 
 using System;
+using System.Reflection;
 using mamba.TorchDiscordSync.Plugin.Services;
 using mamba.TorchDiscordSync.Plugin.Utils;
+using Sandbox;
+using Sandbox.Game;
+using Sandbox.Game.Entities;
 using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using VRage.Game.ModAPI;
+using VRageMath;
 
 namespace mamba.TorchDiscordSync.Plugin.Handlers
 {
@@ -63,6 +68,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         );
                         return;
                     }
+
                     HandleSignalSpawn(isStrong, playerSteamID, playerName);
                 }
                 else
@@ -75,7 +81,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[SIGNAL] Exception in HandleSignalCommand: {ex.Message}");
+                LoggerUtil.LogError($"[SIGNAL] Exception in HandleSignalCommand: {ex}");
             }
         }
 
@@ -84,59 +90,142 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             string helpText =
                 "=== Signal Commands ===\n"
                 + "signal:help                  → this help\n"
-                + "signal:strong:button         → simulate Strong signal button click\n"
-                + "signal:normal:button         → simulate Normal signal button click\n"
-                + "signal:strong:spawn (Admin)  → spawn Strong signal 10m in front\n"
-                + "signal:normal:spawn (Admin)  → spawn Normal signal 10m in front";
+                + "signal:strong:button         → trigger Strong signal button (server event)\n"
+                + "signal:normal:button         → trigger Normal signal button (server event)\n"
+                + "signal:strong:spawn (Admin)  → trigger Strong signal spawn (server event)\n"
+                + "signal:normal:spawn (Admin)  → trigger Normal signal spawn (server event)";
 
             MyAPIGateway.Utilities.ShowNotification(helpText, 10000, "White");
 
-            LoggerUtil.LogInfo($"User {playerName} requested Signal help");
+            LoggerUtil.LogInfo($"[SIGNAL] Help requested by {playerName}");
         }
 
         private void HandleSignalButton(bool isStrong, long playerSteamID, string playerName)
         {
-            string strength = isStrong ? "Strong" : "Normal";
-            string color = isStrong ? "Red" : "Yellow";
+            string eventSubtype = isStrong
+                ? "SpawnCargoShipSignal_Button_Strong"
+                : "SpawnCargoShipSignal_Button_Normal";
 
-            MyAPIGateway.Utilities.ShowNotification(
-                $"{strength} Signal Button clicked!",
-                3000,
-                color
+            LoggerUtil.LogInfo(
+                $"[SIGNAL] Button requested by {playerName} ({playerSteamID}) → {eventSubtype}"
             );
 
-            LoggerUtil.LogInfo($"User {playerName} triggered Signal Button: {strength}");
+            TriggerGlobalEvent(eventSubtype);
+
+            MyAPIGateway.Utilities.ShowNotification(
+                $"Signal Button triggered ({(isStrong ? "Strong" : "Normal")})",
+                4000,
+                "Yellow"
+            );
         }
 
         private void HandleSignalSpawn(bool isStrong, long playerSteamID, string playerName)
         {
-            MyPlayer player = null;
-            MySession.Static.Players.TryGetPlayerBySteamId((ulong)playerSteamID, out player);
-
-            if (player == null || player.Identity == null)
+            try
             {
-                _discordService.SendDirectMessage(
-                    playerSteamID,
-                    "ERROR: Player not found or no character."
+                LoggerUtil.LogInfo(
+                    $"[SIGNAL] Spawn requested by {playerName} ({playerSteamID}) - Strong: {isStrong}"
                 );
-                return;
-            }
 
-            if (player.Controller.ControlledEntity is IMyShipController)
+                MyPlayer player = null;
+                MySession.Static.Players.TryGetPlayerBySteamId((ulong)playerSteamID, out player);
+
+                if (player == null || player.Identity == null)
+                {
+                    LoggerUtil.LogError("[SIGNAL] Spawn failed - player not found.");
+                    _discordService.SendDirectMessage(playerSteamID, "ERROR: Player not found.");
+                    return;
+                }
+
+                string eventSubtype = isStrong
+                    ? "SpawnCargoShipSignal_Strong"
+                    : "SpawnCargoShipSignal_Normal";
+
+                LoggerUtil.LogInfo($"[SIGNAL] Triggering spawn event: {eventSubtype}");
+
+                TriggerGlobalEvent(eventSubtype);
+
+                MyAPIGateway.Utilities.ShowNotification(
+                    $"Signal Spawn Event triggered ({(isStrong ? "Strong" : "Normal")})",
+                    5000,
+                    "Blue"
+                );
+            }
+            catch (Exception ex)
             {
-                _discordService.SendDirectMessage(playerSteamID, "ERROR: Exit cockpit first!");
-                return;
+                LoggerUtil.LogError($"[SIGNAL] Exception in HandleSignalSpawn: {ex}");
             }
+        }
 
-            MyAPIGateway.Utilities.ShowNotification(
-                $"Spawned {(isStrong ? "Strong" : "Normal")} Signal 10m ahead.",
-                5000,
-                "Blue"
-            );
+        /// <summary>
+        /// Triggers a Global Event using reflection (Torch-safe).
+        /// </summary>
+        private void TriggerGlobalEvent(string eventSubtype)
+        {
+            MySandboxGame.Static.Invoke(() =>
+            {
+                try
+                {
+                    var gameAssembly = typeof(MySandboxGame).Assembly;
 
-            LoggerUtil.LogInfo(
-                $"Admin {playerName} spawned {(isStrong ? "Strong" : "Normal")} Signal (10m ahead)"
-            );
+                    // Internal type: Sandbox.Game.World.MyGlobalEventSystem
+                    var eventSystemType = gameAssembly.GetType(
+                        "Sandbox.Game.World.MyGlobalEventSystem"
+                    );
+
+                    if (eventSystemType == null)
+                    {
+                        LoggerUtil.LogError("[SIGNAL] MyGlobalEventSystem type not found.");
+                        return;
+                    }
+
+                    // Static instance
+                    var staticProp = eventSystemType.GetProperty(
+                        "Static",
+                        BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic
+                    );
+
+                    var eventSystemInstance = staticProp?.GetValue(null);
+                    if (eventSystemInstance == null)
+                    {
+                        LoggerUtil.LogError("[SIGNAL] MyGlobalEventSystem.Static is null.");
+                        return;
+                    }
+
+                    // Method: AddEvent(string, enum, long, object)
+                    var addEventMethod = eventSystemType.GetMethod(
+                        "AddEvent",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                    );
+
+                    if (addEventMethod == null)
+                    {
+                        LoggerUtil.LogError("[SIGNAL] AddEvent method not found.");
+                        return;
+                    }
+
+                    // Internal enum: MyGlobalEventTypeEnum.Normal
+                    var enumType = gameAssembly.GetType("Sandbox.Game.World.MyGlobalEventTypeEnum");
+
+                    if (enumType == null)
+                    {
+                        LoggerUtil.LogError("[SIGNAL] MyGlobalEventTypeEnum not found.");
+                        return;
+                    }
+
+                    var normalEnumValue = Enum.Parse(enumType, "Normal");
+
+                    object[] parameters = { eventSubtype, normalEnumValue, 0L, null };
+
+                    addEventMethod.Invoke(eventSystemInstance, parameters);
+
+                    LoggerUtil.LogInfo($"[SIGNAL] Global Event triggered: {eventSubtype}");
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"[SIGNAL] Reflection event trigger failed: {ex}");
+                }
+            }, "SignalCommandHandler.TriggerGlobalEvent");
         }
     }
 }
