@@ -12,8 +12,6 @@ namespace mamba.TorchDiscordSync.Plugin.Utils
     public static class LoggerUtil
     {
         private const string PREFIX = "[mamba.TorchDiscordSync.Plugin]";
-        private static readonly string LOG_DIR_NAME = "mambaSaveData";
-        private static readonly string LOG_SUBDIR_NAME = "log";
         private static readonly object _lock = new object();
         private static bool _debugMode = false;
         private static string _currentLogFile = null;
