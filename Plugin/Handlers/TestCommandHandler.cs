@@ -1,4 +1,4 @@
-// Plugin/Handlers/SignalCommandHandler.cs
+// Plugin/Handlers/TestCommandHandler.cs
 
 using System;
 using System.Reflection;
@@ -14,16 +14,16 @@ using VRageMath;
 
 namespace mamba.TorchDiscordSync.Plugin.Handlers
 {
-    public class SignalCommandHandler
+    public class TestCommandHandler
     {
         private readonly DiscordService _discordService;
 
-        public SignalCommandHandler(DiscordService discordService)
+        public TestCommandHandler(DiscordService discordService)
         {
             _discordService = discordService;
         }
 
-        public void HandleSignalCommand(
+        public void HandleTestCommand(
             string subcommand,
             long playerSteamID,
             string playerName,
@@ -69,7 +69,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         return;
                     }
 
-                    HandleSignalSpawn(isStrong, playerSteamID, playerName);
+                    HandleTestSpawn(isStrong, playerSteamID, playerName);
                 }
                 else
                 {
@@ -81,50 +81,50 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[SIGNAL] Exception in HandleSignalCommand: {ex}");
+                LoggerUtil.LogError($"[TEST] Exception in HandleTestCommand: {ex}");
             }
         }
 
-        private void HandleSignalHelp(string playerName)
+        private void HandleTestHelp(string playerName)
         {
             string helpText =
-                "=== Signal Commands ===\n"
-                + "signal:help                  → this help\n"
-                + "signal:strong:button         → trigger Strong signal button (server event)\n"
-                + "signal:normal:button         → trigger Normal signal button (server event)\n"
-                + "signal:strong:spawn (Admin)  → trigger Strong signal spawn (server event)\n"
-                + "signal:normal:spawn (Admin)  → trigger Normal signal spawn (server event)";
+                "=== Test Commands ===\n"
+                + "test:help                  → this help\n"
+                + "test:strong:button         → trigger Strong test button (server event)\n"
+                + "test:normal:button         → trigger Normal test button (server event)\n"
+                + "test:strong:spawn (Admin)  → trigger Strong test spawn (server event)\n"
+                + "test:normal:spawn (Admin)  → trigger Normal test spawn (server event)";
 
             MyAPIGateway.Utilities.ShowNotification(helpText, 10000, "White");
 
-            LoggerUtil.LogInfo($"[SIGNAL] Help requested by {playerName}");
+            LoggerUtil.LogInfo($"[TEST] Help requested by {playerName}");
         }
 
-        private void HandleSignalButton(bool isStrong, long playerSteamID, string playerName)
+        private void HandleTestButton(bool isStrong, long playerSteamID, string playerName)
         {
             string eventSubtype = isStrong
                 ? "SpawnCargoShipSignal_Button_Strong"
                 : "SpawnCargoShipSignal_Button_Normal";
 
             LoggerUtil.LogInfo(
-                $"[SIGNAL] Button requested by {playerName} ({playerSteamID}) → {eventSubtype}"
+                $"[TEST] Button requested by {playerName} ({playerSteamID}) → {eventSubtype}"
             );
 
             TriggerGlobalEvent(eventSubtype);
 
             MyAPIGateway.Utilities.ShowNotification(
-                $"Signal Button triggered ({(isStrong ? "Strong" : "Normal")})",
+                $"Test Button triggered ({(isStrong ? "Strong" : "Normal")})",
                 4000,
                 "Yellow"
             );
         }
 
-        private void HandleSignalSpawn(bool isStrong, long playerSteamID, string playerName)
+        private void HandleTestSpawn(bool isStrong, long playerSteamID, string playerName)
         {
             try
             {
                 LoggerUtil.LogInfo(
-                    $"[SIGNAL] Spawn requested by {playerName} ({playerSteamID}) - Strong: {isStrong}"
+                    $"[TEST] Spawn requested by {playerName} ({playerSteamID}) - Strong: {isStrong}"
                 );
 
                 MyPlayer player = null;
@@ -132,7 +132,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                 if (player == null || player.Identity == null)
                 {
-                    LoggerUtil.LogError("[SIGNAL] Spawn failed - player not found.");
+                    LoggerUtil.LogError("[TEST] Spawn failed - player not found.");
                     _discordService.SendDirectMessage(playerSteamID, "ERROR: Player not found.");
                     return;
                 }
@@ -141,19 +141,18 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     ? "SpawnCargoShipSignal_Strong"
                     : "SpawnCargoShipSignal_Normal";
 
-                LoggerUtil.LogInfo($"[SIGNAL] Triggering spawn event: {eventSubtype}");
-
+                LoggerUtil.LogInfo($"[TEST] Triggering spawn event: {eventSubtype}");
                 TriggerGlobalEvent(eventSubtype);
 
                 MyAPIGateway.Utilities.ShowNotification(
-                    $"Signal Spawn Event triggered ({(isStrong ? "Strong" : "Normal")})",
+                    $"Test Spawn Event triggered ({(isStrong ? "Strong" : "Normal")})",
                     5000,
                     "Blue"
                 );
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[SIGNAL] Exception in HandleSignalSpawn: {ex}");
+                LoggerUtil.LogError($"[TEST] Exception in HandleTestSpawn: {ex}");
             }
         }
 
@@ -168,7 +167,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     try
                     {
                         LoggerUtil.LogInfo(
-                            $"[SIGNAL] Triggering Global Event via reflection: {eventSubtype}"
+                            $"[TEST] Triggering Global Event via reflection: {eventSubtype}"
                         );
 
                         var gameAssembly = typeof(MySandboxGame).Assembly;
@@ -180,7 +179,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                         if (eventSystemType == null)
                         {
-                            LoggerUtil.LogError("[SIGNAL] MyGlobalEventSystem type not found.");
+                            LoggerUtil.LogError("[TEST] MyGlobalEventSystem type not found.");
                             return;
                         }
 
@@ -195,7 +194,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         var eventSystemInstance = staticProp?.GetValue(null);
                         if (eventSystemInstance == null)
                         {
-                            LoggerUtil.LogError("[SIGNAL] MyGlobalEventSystem.Static is null.");
+                            LoggerUtil.LogError("[TEST] MyGlobalEventSystem.Static is null.");
                             return;
                         }
 
@@ -209,7 +208,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                         if (addEventMethod == null)
                         {
-                            LoggerUtil.LogError("[SIGNAL] AddEvent method not found.");
+                            LoggerUtil.LogError("[TEST] AddEvent method not found.");
                             return;
                         }
 
@@ -220,7 +219,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                         if (enumType == null)
                         {
-                            LoggerUtil.LogError("[SIGNAL] MyGlobalEventTypeEnum not found.");
+                            LoggerUtil.LogError("[TEST] MyGlobalEventTypeEnum not found.");
                             return;
                         }
 
@@ -231,17 +230,17 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         addEventMethod.Invoke(eventSystemInstance, parameters);
 
                         LoggerUtil.LogInfo(
-                            $"[SIGNAL] Global Event triggered successfully: {eventSubtype}"
+                            $"[TEST] Global Event triggered successfully: {eventSubtype}"
                         );
                     }
                     catch (Exception ex)
                     {
                         LoggerUtil.LogError(
-                            $"[SIGNAL] Reflection Global Event trigger failed: {ex}"
+                            $"[TEST] Reflection Global Event trigger failed: {ex}"
                         );
                     }
                 },
-                "SignalCommandHandler.TriggerGlobalEvent");
+                "TestCommandHandler.TriggerGlobalEvent");
         }
     }
 }

@@ -112,6 +112,20 @@ namespace mamba.TorchDiscordSync
                 _db = new DatabaseService();
                 LoggerUtil.LogSuccess("Database service initialized (XML-based)");
 
+                /*
+                // Initialize SQLite database (optional, for future use)
+                var sqliteDb = new SQLiteDatabaseService();
+                if (sqliteDb.Initialize())
+                {
+                    LoggerUtil.LogSuccess("[INIT] SQLite database initialized");
+                }
+                else
+                {
+                    LoggerUtil.LogWarning("[INIT] SQLite database initialization failed (non-critical)");
+                }
+                //*/
+
+
                 // Initialize Discord bot service
                 _discordBot = new DiscordBotService(_discordBotConfig);
                 Task.Run(
