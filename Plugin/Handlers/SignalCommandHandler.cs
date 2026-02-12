@@ -47,6 +47,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         playerSteamID,
                         "Invalid format. Use: signal:help or signal:strong:button"
                     );
+                    ChatUtils.SendError("Invalid format. Use: signal:help or signal:strong:button");
                     return;
                 }
 
@@ -66,6 +67,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                             playerSteamID,
                             "Access Denied: Admin only."
                         );
+                        ChatUtils.SendError("Access Denied: Admin only.");
                         return;
                     }
 
@@ -77,6 +79,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         playerSteamID,
                         $"Unknown action '{action}'. Use 'button' or 'spawn'."
                     );
+                    ChatUtils.SendError($"Unknown action '{action}'. Use 'button' or 'spawn'.");
                 }
             }
             catch (Exception ex)
@@ -95,8 +98,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 + "signal:strong:spawn (Admin)  → trigger Strong signal spawn (server event)\n"
                 + "signal:normal:spawn (Admin)  → trigger Normal signal spawn (server event)";
 
-            MyAPIGateway.Utilities.ShowNotification(helpText, 10000, "White");
-
+            ChatUtils.SendHelpText(helpText);
             LoggerUtil.LogInfo($"[SIGNAL] Help requested by {playerName}");
         }
 
@@ -110,6 +112,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 $"[SIGNAL] Button requested by {playerName} ({playerSteamID}) → {eventSubtype}"
             );
 
+            ChatUtils.SendInfo($"Signal Button {(isStrong ? "Strong" : "Normal")} triggered.");
+
             TriggerGlobalEvent(eventSubtype);
 
             MyAPIGateway.Utilities.ShowNotification(
@@ -117,6 +121,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 4000,
                 "Yellow"
             );
+
+            LoggerUtil.LogInfo($"[SIGNAL] Global Event triggered for button: {eventSubtype}");
         }
 
         private void HandleSignalSpawn(bool isStrong, long playerSteamID, string playerName)
@@ -134,6 +140,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 {
                     LoggerUtil.LogError("[SIGNAL] Spawn failed - player not found.");
                     _discordService.SendDirectMessage(playerSteamID, "ERROR: Player not found.");
+                    ChatUtils.SendError("Player not found or no character.");
                     return;
                 }
 
@@ -143,6 +150,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                 LoggerUtil.LogInfo($"[SIGNAL] Triggering spawn event: {eventSubtype}");
 
+                ChatUtils.SendInfo($"Triggering Signal Spawn {(isStrong ? "Strong" : "Normal")}.");
+
                 TriggerGlobalEvent(eventSubtype);
 
                 MyAPIGateway.Utilities.ShowNotification(
@@ -150,6 +159,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     5000,
                     "Blue"
                 );
+
+                LoggerUtil.LogInfo($"[SIGNAL] Global Event triggered for spawn: {eventSubtype}");
             }
             catch (Exception ex)
             {
@@ -187,9 +198,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         // Static instance
                         var staticProp = eventSystemType.GetProperty(
                             "Static",
-                            System.Reflection.BindingFlags.Static
-                                | System.Reflection.BindingFlags.Public
-                                | System.Reflection.BindingFlags.NonPublic
+                            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic
                         );
 
                         var eventSystemInstance = staticProp?.GetValue(null);
@@ -202,9 +211,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         // AddEvent method
                         var addEventMethod = eventSystemType.GetMethod(
                             "AddEvent",
-                            System.Reflection.BindingFlags.Instance
-                                | System.Reflection.BindingFlags.Public
-                                | System.Reflection.BindingFlags.NonPublic
+                            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
                         );
 
                         if (addEventMethod == null)
@@ -241,7 +248,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         );
                     }
                 },
-                "SignalCommandHandler.TriggerGlobalEvent");
+                "SignalCommandHandler.TriggerGlobalEvent"
+            );
         }
     }
 }
