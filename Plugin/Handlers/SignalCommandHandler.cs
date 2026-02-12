@@ -162,70 +162,86 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         /// </summary>
         private void TriggerGlobalEvent(string eventSubtype)
         {
-            MySandboxGame.Static.Invoke(() =>
-            {
-                try
+            MySandboxGame.Static.Invoke(
+                () =>
                 {
-                    var gameAssembly = typeof(MySandboxGame).Assembly;
-
-                    // Internal type: Sandbox.Game.World.MyGlobalEventSystem
-                    var eventSystemType = gameAssembly.GetType(
-                        "Sandbox.Game.World.MyGlobalEventSystem"
-                    );
-
-                    if (eventSystemType == null)
+                    try
                     {
-                        LoggerUtil.LogError("[SIGNAL] MyGlobalEventSystem type not found.");
-                        return;
+                        LoggerUtil.LogInfo(
+                            $"[SIGNAL] Triggering Global Event via reflection: {eventSubtype}"
+                        );
+
+                        var gameAssembly = typeof(MySandboxGame).Assembly;
+
+                        // Internal type
+                        var eventSystemType = gameAssembly.GetType(
+                            "Sandbox.Game.World.MyGlobalEventSystem"
+                        );
+
+                        if (eventSystemType == null)
+                        {
+                            LoggerUtil.LogError("[SIGNAL] MyGlobalEventSystem type not found.");
+                            return;
+                        }
+
+                        // Static instance
+                        var staticProp = eventSystemType.GetProperty(
+                            "Static",
+                            System.Reflection.BindingFlags.Static
+                                | System.Reflection.BindingFlags.Public
+                                | System.Reflection.BindingFlags.NonPublic
+                        );
+
+                        var eventSystemInstance = staticProp?.GetValue(null);
+                        if (eventSystemInstance == null)
+                        {
+                            LoggerUtil.LogError("[SIGNAL] MyGlobalEventSystem.Static is null.");
+                            return;
+                        }
+
+                        // AddEvent method
+                        var addEventMethod = eventSystemType.GetMethod(
+                            "AddEvent",
+                            System.Reflection.BindingFlags.Instance
+                                | System.Reflection.BindingFlags.Public
+                                | System.Reflection.BindingFlags.NonPublic
+                        );
+
+                        if (addEventMethod == null)
+                        {
+                            LoggerUtil.LogError("[SIGNAL] AddEvent method not found.");
+                            return;
+                        }
+
+                        // Internal enum
+                        var enumType = gameAssembly.GetType(
+                            "Sandbox.Game.World.MyGlobalEventTypeEnum"
+                        );
+
+                        if (enumType == null)
+                        {
+                            LoggerUtil.LogError("[SIGNAL] MyGlobalEventTypeEnum not found.");
+                            return;
+                        }
+
+                        var normalEnumValue = Enum.Parse(enumType, "Normal");
+
+                        object[] parameters = { eventSubtype, normalEnumValue, 0L, null };
+
+                        addEventMethod.Invoke(eventSystemInstance, parameters);
+
+                        LoggerUtil.LogInfo(
+                            $"[SIGNAL] Global Event triggered successfully: {eventSubtype}"
+                        );
                     }
-
-                    // Static instance
-                    var staticProp = eventSystemType.GetProperty(
-                        "Static",
-                        BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic
-                    );
-
-                    var eventSystemInstance = staticProp?.GetValue(null);
-                    if (eventSystemInstance == null)
+                    catch (Exception ex)
                     {
-                        LoggerUtil.LogError("[SIGNAL] MyGlobalEventSystem.Static is null.");
-                        return;
+                        LoggerUtil.LogError(
+                            $"[SIGNAL] Reflection Global Event trigger failed: {ex}"
+                        );
                     }
-
-                    // Method: AddEvent(string, enum, long, object)
-                    var addEventMethod = eventSystemType.GetMethod(
-                        "AddEvent",
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                    );
-
-                    if (addEventMethod == null)
-                    {
-                        LoggerUtil.LogError("[SIGNAL] AddEvent method not found.");
-                        return;
-                    }
-
-                    // Internal enum: MyGlobalEventTypeEnum.Normal
-                    var enumType = gameAssembly.GetType("Sandbox.Game.World.MyGlobalEventTypeEnum");
-
-                    if (enumType == null)
-                    {
-                        LoggerUtil.LogError("[SIGNAL] MyGlobalEventTypeEnum not found.");
-                        return;
-                    }
-
-                    var normalEnumValue = Enum.Parse(enumType, "Normal");
-
-                    object[] parameters = { eventSubtype, normalEnumValue, 0L, null };
-
-                    addEventMethod.Invoke(eventSystemInstance, parameters);
-
-                    LoggerUtil.LogInfo($"[SIGNAL] Global Event triggered: {eventSubtype}");
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError($"[SIGNAL] Reflection event trigger failed: {ex}");
-                }
-            }, "SignalCommandHandler.TriggerGlobalEvent");
+                },
+                "SignalCommandHandler.TriggerGlobalEvent");
         }
     }
 }
