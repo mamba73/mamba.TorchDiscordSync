@@ -81,31 +81,27 @@ This allows accurate classification without hardcoded zones.
 
 Death messages support exactly four parameters:
 
-- **killer**
-- **victim**
-- **weapon**
-- **location**
+- killer
+- victim
+- weapon
+- location
 
-*Example templates:*
-
+**Example templates:**
 
 - *PvP Message:*
 ```"{killer} showed {victim} no mercy with {weapon}"```
-
 - *Result in game:*
 💀 mamba showed orko no mercy with Flare Gun
 
 
 - *Environment Oxygen Message:*
 ```"{victim} discovered that space has no oxygen"```
-
 - Result in game:
 ⚡ mamba discovered that space has no oxygen on Moon's surface
 
 
 - *Turret Message*
 ```"{killer} used {weapon} to send {victim} to eternal hunting grounds"```
-
 - Result in game:
 ⚔️ Space Pirates used Gatling Turret to send mamba to eternal hunting grounds lost in the void
 
