@@ -225,6 +225,33 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         ///
+        /// Send in-game faction chat to Discord faction channel (Game → Discord).
+        /// Called when player sends message in faction chat and we have mapped GameFactionChatId to synced faction.
+        ///
+        public async Task SendGameFactionMessageToDiscordAsync(
+            FactionModel faction,
+            string authorName,
+            string message
+        )
+        {
+            try
+            {
+                if (faction?.DiscordChannelID == 0 || string.IsNullOrWhiteSpace(authorName) || string.IsNullOrWhiteSpace(message))
+                    return;
+                string discordText = $"{authorName}: {message}";
+                if (discordText.Length > 2000) discordText = discordText.Substring(0, 1990) + "...";
+                bool sent = await _discord.SendLogAsync(faction.DiscordChannelID, discordText);
+                if (sent)
+                    LoggerUtil.LogInfo($"[CHAT] Game Faction {faction.Tag} → Discord: {authorName}: {message}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[CHAT] Game faction → Discord error: {ex.Message}");
+            }
+            await Task.CompletedTask;
+        }
+
+        ///
         /// Format game chat message for Discord display
         ///
         private string FormatGameMessageForDiscord(string playerName, string message)

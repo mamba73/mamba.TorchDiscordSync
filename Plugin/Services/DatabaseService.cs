@@ -378,6 +378,18 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
+        /// Get faction by game/Torch faction chat channel ID (e.g. from "Faction:233056185186241842").
+        /// </summary>
+        public FactionModel GetFactionByGameChatId(long gameFactionChatId)
+        {
+            if (gameFactionChatId == 0) return null;
+            lock (_lock)
+            {
+                return _factionData.Factions.FirstOrDefault(f => f.GameFactionChatId == gameFactionChatId);
+            }
+        }
+
+        /// <summary>
         /// Saves or updates a player in the database. If the player already exists (based on SteamID), it will be updated. Otherwise, a new player will be added.
         /// </summary>
         /// <param name="player"></param>

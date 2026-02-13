@@ -81,6 +81,13 @@ namespace mamba.TorchDiscordSync.Plugin.Models
         public string DiscordVoiceChannelName { get; set; }
 
         /// <summary>
+        /// Game/Torch faction chat channel ID (e.g. from "Faction:233056185186241842").
+        /// Used to match in-game faction chat to this synced faction and forward to Discord.
+        /// </summary>
+        [XmlElement]
+        public long GameFactionChatId { get; set; }
+
+        /// <summary>
         /// Track all Discord channels created for this faction
         /// Used for complete undo capability
         /// </summary>

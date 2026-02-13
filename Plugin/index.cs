@@ -410,11 +410,39 @@ namespace mamba.TorchDiscordSync
                     return; // Stop processing - private chat stays private
                 }
 
-                // PRIORITY 3: Filter out faction chat (security - don't leak to Discord)
+                // PRIORITY 3: Faction chat → forward to synced Discord faction channel (map GameFactionChatId)
                 if (channelName.StartsWith("Faction") || channelName == "Faction")
                 {
-                    LoggerUtil.LogDebug("[CHAT] Skipping faction chat (not forwarded to Discord)");
-                    return; // Stop processing - faction chat stays private
+                    long gameChatId = 0;
+                    if (channelName.StartsWith("Faction:") && channelName.Length > 8)
+                    {
+                        string idPart = channelName.Substring(8).Trim();
+                        long.TryParse(idPart, out gameChatId);
+                    }
+                    if (gameChatId != 0 && _db != null && _chatSync != null)
+                    {
+                        var faction = _db.GetFactionByGameChatId(gameChatId);
+                        if (faction == null && msg.AuthorSteamId.HasValue)
+                        {
+                            var player = _db.GetPlayerBySteamID((long)msg.AuthorSteamId.Value);
+                            if (player != null)
+                            {
+                                faction = _db.GetFaction(player.FactionID);
+                                if (faction != null && faction.DiscordChannelID != 0)
+                                {
+                                    faction.GameFactionChatId = gameChatId;
+                                    _db.SaveFaction(faction);
+                                    LoggerUtil.LogInfo($"[CHAT] Mapped faction chat {gameChatId} → {faction.Tag}");
+                                }
+                            }
+                        }
+                        if (faction != null && faction.DiscordChannelID != 0)
+                        {
+                            _ = _chatSync.SendGameFactionMessageToDiscordAsync(faction, msg.Author, msg.Message);
+                            LoggerUtil.LogDebug($"[CHAT] Faction → Discord {faction.Tag}: {msg.Author}: {msg.Message}");
+                        }
+                    }
+                    return;
                 }
 
                 // PRIORITY 4: Filter out Server-authored messages

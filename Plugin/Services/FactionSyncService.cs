@@ -360,14 +360,21 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
                     if (_config.Faction.AutoCreateForum && dbFaction.DiscordForumID == 0)
                     {
-                        var forumId = await _discord.CreateForumChannelAsync(lowcaseName, catId, roleId);
-                        if (forumId > 0)
+                        try
                         {
-                            dbFaction.DiscordForumID = forumId;
-                            dbFaction.DiscordForumName = lowcaseName;
-                            if (dbFaction.ChannelsCreated == null) dbFaction.ChannelsCreated = new List<DiscordChannelCreated>();
-                            dbFaction.ChannelsCreated.Add(new DiscordChannelCreated { ChannelID = forumId, ChannelName = lowcaseName, ChannelType = "Forum", CreatedAt = DateTime.UtcNow });
-                            LoggerUtil.LogSuccess("[FACTION_SYNC] Created forum: " + lowcaseName + " (ID: " + forumId + ")");
+                            var forumId = await _discord.CreateForumChannelAsync(lowcaseName, catId, roleId);
+                            if (forumId > 0)
+                            {
+                                dbFaction.DiscordForumID = forumId;
+                                dbFaction.DiscordForumName = lowcaseName;
+                                if (dbFaction.ChannelsCreated == null) dbFaction.ChannelsCreated = new List<DiscordChannelCreated>();
+                                dbFaction.ChannelsCreated.Add(new DiscordChannelCreated { ChannelID = forumId, ChannelName = lowcaseName, ChannelType = "Forum", CreatedAt = DateTime.UtcNow });
+                                LoggerUtil.LogSuccess("[FACTION_SYNC] Created forum: " + lowcaseName + " (ID: " + forumId + ")");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError("[FACTION_SYNC] Forum channel creation failed (Discord API may not support Forum in this version): " + ex.Message);
                         }
                     }
 
