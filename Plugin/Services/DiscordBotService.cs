@@ -187,7 +187,12 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     .AddField("Verification Code", "```" + verificationCode + "```", false)
                     .AddField(
                         "How to Complete",
-                        "Type: " + _config.BotPrefix + "verify " + verificationCode,
+                        "```"
+                            + "Type: "
+                            + _config.BotPrefix
+                            + "verify key:"
+                            + verificationCode
+                            + "```",
                         false
                     )
                     .AddField(
@@ -711,6 +716,32 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             _isReady = true;
             LoggerUtil.LogSuccess("[DISCORD_BOT] Bot is ready and listening!");
+
+            // NEW: Pre-load guild users so username/ID lookups work immediately
+            try
+            {
+                var guild = _client != null ? _client.GetGuild(_config.GuildID) : null;
+                if (guild != null)
+                {
+                    LoggerUtil.LogDebug(
+                        "[DISCORD_BOT] Downloading guild users to warm up cache..."
+                    );
+                    var _ = guild.DownloadUsersAsync();
+                }
+                else
+                {
+                    LoggerUtil.LogWarning(
+                        "[DISCORD_BOT] Guild not found on Ready - user search may be limited"
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogWarning(
+                    "[DISCORD_BOT] Failed to download guild users on Ready: " + ex.Message
+                );
+            }
+
             return Task.CompletedTask;
         }
 
@@ -844,16 +875,156 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                LoggerUtil.LogDebug("[DISCORD_BOT] Handling verify command for user: " + message.Author.Username);
+                LoggerUtil.LogDebug(
+                    "[DISCORD_BOT] Handling verify command for user: " + message.Author.Username
+                );
                 if (args.Length < 2)
                 {
                     await message.Author.SendMessageAsync(
-                        "❌ Usage: !verify CODE\n\nExample: !verify ABC12345"
+                        "❌ Usage:\n"
+                            + "  !verify CODE\n"
+                            + "  !verify key:CODE\n"
+                            + "  !verify username:YourGameName\n"
+                            + "  !verify steamid:YOUR_STEAM_ID\n\n"
+                            + "Examples:\n"
+                            + "  !verify ABC12345\n"
+                            + "  !verify key:ABC12345\n"
+                            + "  !verify username:mamba\n"
+                            + "  !verify steamid:76561198000000000"
                     );
                     return;
                 }
 
-                string code = args[1].ToUpper();
+                string rawArg = args[1].Trim();
+
+                // NEW: !verify key:CODE → submit verification code
+                if (rawArg.StartsWith("key:", StringComparison.OrdinalIgnoreCase))
+                {
+                    string keyCode = rawArg.Substring("key:".Length).Trim();
+                    if (string.IsNullOrEmpty(keyCode))
+                    {
+                        await message.Author.SendMessageAsync(
+                            "❌ Invalid format. Usage: !verify key:CODE"
+                        );
+                        return;
+                    }
+
+                    string normalizedCode = keyCode.ToUpper();
+                    LoggerUtil.LogDebug(
+                        "[DISCORD_BOT] VERIFY key: flow with code: " + normalizedCode
+                    );
+
+                    OnVerificationAttempt?.Invoke(
+                        normalizedCode,
+                        message.Author.Id,
+                        message.Author.Username
+                    );
+
+                    var embedKey = new EmbedBuilder()
+                        .WithColor(Color.Blue)
+                        .WithTitle("⏳ Verifying...")
+                        .WithDescription("Your verification code is being processed.")
+                        .WithFooter("You will receive a confirmation shortly")
+                        .Build();
+
+                    await message.Author.SendMessageAsync(embed: embedKey);
+                    return;
+                }
+
+                // NEW: !verify username:mamba → send instructions how to start verification from game
+                if (rawArg.StartsWith("username:", StringComparison.OrdinalIgnoreCase))
+                {
+                    string targetUser = rawArg.Substring("username:".Length).Trim();
+                    if (string.IsNullOrEmpty(targetUser))
+                    {
+                        await message.Author.SendMessageAsync(
+                            "❌ Invalid format. Usage: !verify username:YourGameName"
+                        );
+                        return;
+                    }
+
+                    LoggerUtil.LogDebug(
+                        "[DISCORD_BOT] VERIFY username: helper requested for: " + targetUser
+                    );
+
+                    var embedUser = new EmbedBuilder()
+                        .WithColor(Color.Green)
+                        .WithTitle("🛈 How to start verification")
+                        .WithDescription(
+                            "To link your Discord with your Space Engineers account, you must run a command **in-game**."
+                        )
+                        .AddField(
+                            "Step 1 - In Game",
+                            "Open chat and type:\n```/tds verify @"
+                                + targetUser
+                                + "```",
+                            false
+                        )
+                        .AddField(
+                            "Step 2 - Discord DM",
+                            "You will receive a DM from this bot with a **verification code**.\n"
+                                + "Follow the instructions in that DM to complete verification.",
+                            false
+                        )
+                        .WithFooter("This message does NOT verify you, it only shows instructions.")
+                        .Build();
+
+                    await message.Author.SendMessageAsync(embed: embedUser);
+                    return;
+                }
+
+                // NEW: !verify steamid:123... → send instructions with SteamID hint
+                if (rawArg.StartsWith("steamid:", StringComparison.OrdinalIgnoreCase))
+                {
+                    string targetSteam = rawArg.Substring("steamid:".Length).Trim();
+                    if (string.IsNullOrEmpty(targetSteam))
+                    {
+                        await message.Author.SendMessageAsync(
+                            "❌ Invalid format. Usage: !verify steamid:YOUR_STEAM_ID"
+                        );
+                        return;
+                    }
+
+                    LoggerUtil.LogDebug(
+                        "[DISCORD_BOT] VERIFY steamid: helper requested for: " + targetSteam
+                    );
+
+                    var embedSteam = new EmbedBuilder()
+                        .WithColor(Color.Green)
+                        .WithTitle("🛈 How to start verification")
+                        .WithDescription(
+                            "To link your Discord with your Space Engineers account, you must run a command **in-game**."
+                        )
+                        .AddField(
+                            "Step 1 - In Game",
+                            "Open chat and type (replace with your Discord name or ID):\n"
+                                + "```/tds verify @YourDiscordName```\n"
+                                + "or\n"
+                                + "```/tds verify YourDiscordID```",
+                            false
+                        )
+                        .AddField(
+                            "Step 2 - Discord DM",
+                            "You will receive a DM from this bot with a **verification code**.\n"
+                                + "Follow the instructions in that DM to complete verification.",
+                            false
+                        )
+                        .AddField(
+                            "Info",
+                            "SteamID you sent: `" + targetSteam + "` (for admin reference only).",
+                            false
+                        )
+                        .WithFooter("This message does NOT verify you, it only shows instructions.")
+                        .Build();
+
+                    await message.Author.SendMessageAsync(embed: embedSteam);
+                    return;
+                }
+
+                // BACKWARD COMPATIBLE: old syntax !verify CODE
+                string code = rawArg.ToUpper();
+                LoggerUtil.LogDebug("[DISCORD_BOT] VERIFY legacy flow with code: " + code);
+
                 OnVerificationAttempt?.Invoke(code, message.Author.Id, message.Author.Username);
 
                 var embed = new EmbedBuilder()
@@ -948,7 +1119,15 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
                 // Normalize search term - remove @ if present
                 string search = searchTerm.ToLower().Replace("@", "").Trim();
-                LoggerUtil.LogDebug("[DISCORD_BOT] Searching for Discord user: '" + search + "'");
+                LoggerUtil.LogDebug(
+                    "[DISCORD_BOT] Searching for Discord user: '"
+                        + search
+                        + "' (Guild users cached: "
+                        + guild.Users.Count
+                        + ", Members: "
+                        + guild.MemberCount
+                        + ")"
+                );
 
                 // FIRST: Try Discord ID match DIRECTLY (if search term is numeric)
                 if (ulong.TryParse(search, out ulong userId))

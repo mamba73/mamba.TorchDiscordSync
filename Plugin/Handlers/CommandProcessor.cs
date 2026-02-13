@@ -127,6 +127,12 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 }
 
                 // ========== ADMIN SYNC COMMANDS ==========
+                // Supported admin:sync commands:
+                //   /tds admin:sync:check       - show summary of sync status for all factions
+                //   /tds admin:sync:status      - short text summary for Discord/admins
+                //   /tds admin:sync:undo <TAG>  - undo sync for a single faction (role + channel + DB entry)
+                //   /tds admin:sync:undo_all    - undo sync for ALL factions (dangerous but not full reset)
+                //   /tds admin:sync:cleanup     - cleanup only "Orphaned" records (role/channel without proper status)
                 if (subcommand.StartsWith("admin:sync:"))
                 {
                     // PROVJERI JE LI ADMIN
@@ -139,7 +145,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                         return;
                     }
 
-                    // Ekstrakti sub-komandu (check, undo, cleanup, status)
+                    // Extract admin sync sub-command (check, undo, undo_all, cleanup, status)
                     string syncSubcommand = subcommand.Substring("admin:sync:".Length);
 
                     LoggerUtil.LogInfo(
@@ -195,6 +201,46 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                                             ChatUtils.SendError($"❌ Error: {errorMessage}");
                                             LoggerUtil.LogError(
                                                 $"[ADMIN:SYNC:UNDO] Failed: {errorMessage}"
+                                            );
+                                        }
+                                    }
+                                );
+                            break;
+                        }
+
+                        case "undo_all":
+                        {
+                            // Example: /tds admin:sync:undo_all
+                            LoggerUtil.LogWarning(
+                                "[ADMIN:SYNC:UNDO_ALL] "
+                                    + playerName
+                                    + " requested full faction undo (ALL factions)"
+                            );
+                            ChatUtils.SendWarning(
+                                "Running undo for ALL factions (Discord roles/channels + XML records)..."
+                            );
+
+                            var _ = _factionSync
+                                .AdminSyncUndoAll()
+                                .ContinueWith(
+                                    (Task<string> task) =>
+                                    {
+                                        if (!task.IsFaulted && !task.IsCanceled)
+                                        {
+                                            ChatUtils.SendSuccess(task.Result);
+                                            LoggerUtil.LogSuccess(
+                                                "[ADMIN:SYNC:UNDO_ALL] Completed by " + playerName
+                                            );
+                                        }
+                                        else
+                                        {
+                                            string errorMessage =
+                                                task.Exception != null
+                                                    ? task.Exception.Message
+                                                    : "Unknown error";
+                                            ChatUtils.SendError("❌ Error: " + errorMessage);
+                                            LoggerUtil.LogError(
+                                                "[ADMIN:SYNC:UNDO_ALL] Failed: " + errorMessage
                                             );
                                         }
                                     }

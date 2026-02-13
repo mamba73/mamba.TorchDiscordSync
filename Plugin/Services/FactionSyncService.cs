@@ -178,7 +178,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     return;
                 }
 
-                // Process each faction
+                // Process each faction - log SKIP / CREATE decision for each
                 foreach (var faction in factions)
                 {
                     // Skip factions with invalid tag length (should be 3 characters)
@@ -197,13 +197,21 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     if (_db.FactionExists(faction.FactionID))
                     {
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Faction {faction.Tag} (ID: {faction.FactionID}) already in database - SKIPPING SYNC"
+                            "[FACTION_SYNC] SKIP faction "
+                                + faction.Tag
+                                + " (ID: "
+                                + faction.FactionID
+                                + ") - already stored in XML database"
                         );
                         continue;
                     }
 
                     LoggerUtil.LogDebug(
-                        $"[FACTION_SYNC] Faction {faction.Tag} (ID: {faction.FactionID}) not in database - STARTING SYNC"
+                        "[FACTION_SYNC] CREATE flow for faction "
+                            + faction.Tag
+                            + " (ID: "
+                            + faction.FactionID
+                            + ") - not present in XML database"
                     );
 
                     // Get existing faction data from database
@@ -665,14 +673,13 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     }
                 }
 
-                // Update faction status
-                faction.SyncStatus = "Pending";
-                faction.SyncedAt = null;
-                faction.SyncedBy = null;
-                faction.ErrorMessage = "";
-                _db.SaveFaction(faction);
+                // Remove faction record from XML storage to avoid duplicate syncs on next run
+                _db.DeleteFaction(faction.FactionID);
+                LoggerUtil.LogDebug(
+                    $"[ADMIN:SYNC:UNDO] Removed faction {factionTag} (ID: {faction.FactionID}) from database"
+                );
 
-                result.AppendLine($"✓ Undo completed for {factionTag}");
+                result.AppendLine($"✓ Undo completed for {factionTag} (role, channel, and DB entry removed)");
                 LoggerUtil.LogSuccess($"[ADMIN:SYNC:UNDO] Completed for {factionTag}");
                 return result.ToString();
             }
@@ -760,6 +767,156 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             {
                 LoggerUtil.LogError($"[ADMIN:SYNC:CLEANUP] Error: {ex.Message}");
                 return $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:undo_all
+        /// Delete Discord roles and channels for ALL factions and clear faction records from XML.
+        /// This is similar to a scoped reset only for faction-related data.
+        /// </summary>
+        public async Task<string> AdminSyncUndoAll()
+        {
+            try
+            {
+                LoggerUtil.LogWarning("[ADMIN:SYNC:UNDO_ALL] Executing full faction undo (all factions)");
+
+                var allFactions = _db.GetAllFactions();
+                if (allFactions == null || allFactions.Count == 0)
+                {
+                    LoggerUtil.LogInfo("[ADMIN:SYNC:UNDO_ALL] No factions found in database");
+                    return "No factions in database to undo.";
+                }
+
+                var result = new System.Text.StringBuilder();
+                result.AppendLine("[UNDO_ALL] Starting full faction undo");
+                result.AppendLine("Total factions: " + allFactions.Count);
+
+                foreach (var faction in allFactions)
+                {
+                    result.AppendLine();
+                    result.AppendLine("Faction: " + faction.Tag + " (" + faction.Name + ")");
+
+                    // Delete role if exists
+                    if (faction.DiscordRoleID > 0)
+                    {
+                        try
+                        {
+                            bool deletedRole = await _discord.DeleteRoleAsync(faction.DiscordRoleID);
+                            if (deletedRole)
+                            {
+                                result.AppendLine("  ✓ Deleted role ID: " + faction.DiscordRoleID);
+                                LoggerUtil.LogSuccess(
+                                    "[ADMIN:SYNC:UNDO_ALL] Deleted role for faction " + faction.Tag
+                                );
+                            }
+                            else
+                            {
+                                result.AppendLine(
+                                    "  ⚠ Role not found or already deleted (ID: "
+                                        + faction.DiscordRoleID
+                                        + ")"
+                                );
+                                LoggerUtil.LogWarning(
+                                    "[ADMIN:SYNC:UNDO_ALL] Role not found for faction " + faction.Tag
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            result.AppendLine(
+                                "  ❌ Failed to delete role (ID: "
+                                    + faction.DiscordRoleID
+                                    + "): "
+                                    + ex.Message
+                            );
+                            LoggerUtil.LogError(
+                                "[ADMIN:SYNC:UNDO_ALL] Failed to delete role for "
+                                    + faction.Tag
+                                    + ": "
+                                    + ex.Message
+                            );
+                        }
+                    }
+                    else
+                    {
+                        result.AppendLine("  ℹ No Discord role stored for this faction.");
+                    }
+
+                    // Delete channel if exists
+                    if (faction.DiscordChannelID > 0)
+                    {
+                        try
+                        {
+                            bool deletedChannel = await _discord.DeleteChannelAsync(
+                                faction.DiscordChannelID
+                            );
+                            if (deletedChannel)
+                            {
+                                result.AppendLine(
+                                    "  ✓ Deleted channel ID: " + faction.DiscordChannelID
+                                );
+                                LoggerUtil.LogSuccess(
+                                    "[ADMIN:SYNC:UNDO_ALL] Deleted channel for faction " + faction.Tag
+                                );
+                            }
+                            else
+                            {
+                                result.AppendLine(
+                                    "  ⚠ Channel not found or already deleted (ID: "
+                                        + faction.DiscordChannelID
+                                        + ")"
+                                );
+                                LoggerUtil.LogWarning(
+                                    "[ADMIN:SYNC:UNDO_ALL] Channel not found for faction " + faction.Tag
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            result.AppendLine(
+                                "  ❌ Failed to delete channel (ID: "
+                                    + faction.DiscordChannelID
+                                    + "): "
+                                    + ex.Message
+                            );
+                            LoggerUtil.LogError(
+                                "[ADMIN:SYNC:UNDO_ALL] Failed to delete channel for "
+                                    + faction.Tag
+                                    + ": "
+                                    + ex.Message
+                            );
+                        }
+                    }
+                    else
+                    {
+                        result.AppendLine("  ℹ No Discord channel stored for this faction.");
+                    }
+
+                    // Finally, remove faction record from XML
+                    _db.DeleteFaction(faction.FactionID);
+                    result.AppendLine(
+                        "  ✓ Removed faction record from XML (ID: " + faction.FactionID + ")"
+                    );
+                    LoggerUtil.LogDebug(
+                        "[ADMIN:SYNC:UNDO_ALL] Removed faction "
+                            + faction.Tag
+                            + " (ID: "
+                            + faction.FactionID
+                            + ") from database"
+                    );
+                }
+
+                result.AppendLine();
+                result.AppendLine("[UNDO_ALL] Completed for all factions.");
+                LoggerUtil.LogSuccess("[ADMIN:SYNC:UNDO_ALL] Completed full faction undo.");
+
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[ADMIN:SYNC:UNDO_ALL] Error: " + ex.Message);
+                return "Error: " + ex.Message;
             }
         }
 

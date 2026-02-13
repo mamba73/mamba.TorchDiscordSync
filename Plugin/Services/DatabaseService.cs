@@ -151,6 +151,20 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
+        /// Delete a faction from the database by its ID.
+        /// Used by admin:sync:undo to remove records and avoid duplicate syncs.
+        /// </summary>
+        /// <param name="factionID">Faction ID.</param>
+        public void DeleteFaction(int factionID)
+        {
+            lock (_lock)
+            {
+                _data.Factions.RemoveAll(f => f.FactionID == factionID);
+                SaveToXml();
+            }
+        }
+
+        /// <summary>
         /// Retrieves a faction by its tag. Returns null if not found.
         /// </summary>
         /// <param name="tag">Faction tag to search for.</param>
