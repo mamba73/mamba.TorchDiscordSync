@@ -30,7 +30,7 @@ def get_version_from_manifest(manifest_path):
 def create_zip():
     # 1. Fetch version and current timestamp
     version = get_version_from_manifest("manifest.xml")
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     
     # 2. Generate filename
     zip_filename = f"{timestamp}_PROJECT_{PROJECT_NAME}_(v{version}).zip"
