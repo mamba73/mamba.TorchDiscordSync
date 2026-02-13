@@ -151,6 +151,24 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
+        /// Retrieves a faction by its tag. Returns null if not found.
+        /// </summary>
+        /// <param name="tag">Faction tag to search for.</param>
+        /// <returns>FactionModel if found, otherwise null.</returns>
+        public FactionModel GetFactionByTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+            {
+                return null;
+            }
+
+            lock (_lock)
+            {
+                return _data.Factions.FirstOrDefault(f => f.Tag == tag);
+            }
+        }
+
+        /// <summary>
         /// Saves or updates a player in the database. If the player already exists (based on SteamID), it will be updated. Otherwise, a new player will be added.
         /// </summary>
         /// <param name="player"></param>

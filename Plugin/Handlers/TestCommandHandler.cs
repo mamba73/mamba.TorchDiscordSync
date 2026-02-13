@@ -34,10 +34,10 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             {
                 var parts = subcommand.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
 
-                // === SIGNAL:HELP ===
+                // === TEST:HELP ===
                 if (parts.Length == 2 && parts[1].ToLower() == "help")
                 {
-                    HandleSignalHelp(playerName);
+                    HandleTestHelp(playerName);
                     return;
                 }
 
@@ -45,9 +45,9 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 {
                     _discordService.SendDirectMessage(
                         playerSteamID,
-                        "Invalid format. Use: signal:help or signal:strong:button"
+                        "Invalid format. Use: test:help or test:strong:button"
                     );
-                    ChatUtils.SendError("Invalid format. Use: signal:help or signal:strong:button");
+                    ChatUtils.SendError("Invalid format. Use: test:help or test:strong:button");
                     return;
                 }
 
@@ -57,7 +57,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                 if (action == "button")
                 {
-                    HandleSignalButton(isStrong, playerSteamID, playerName);
+                    HandleTestButton(isStrong, playerSteamID, playerName);
                 }
                 else if (action == "spawn")
                 {
@@ -106,14 +106,14 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         private void HandleTestButton(bool isStrong, long playerSteamID, string playerName)
         {
             string eventSubtype = isStrong
-                ? "SpawnCargoShipSignal_Button_Strong"
-                : "SpawnCargoShipSignal_Button_Normal";
+                ? "SpawnCargoShipTest_Button_Strong"
+                : "SpawnCargoShipTest_Button_Normal";
 
             LoggerUtil.LogInfo(
                 $"[TEST] Button requested by {playerName} ({playerSteamID}) → {eventSubtype}"
             );
 
-            ChatUtils.SendInfo($"Signal Button {(isStrong ? "Strong" : "Normal")} triggered.");
+            ChatUtils.SendInfo($"Test Button {(isStrong ? "Strong" : "Normal")} triggered.");
 
             TriggerGlobalEvent(eventSubtype);
 
@@ -123,7 +123,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 "Yellow"
             );
 
-            LoggerUtil.LogInfo($"[SIGNAL] Global Event triggered for button: {eventSubtype}");
+            LoggerUtil.LogInfo($"[TEST] Global Event triggered for button: {eventSubtype}");
         }
 
         private void HandleTestSpawn(bool isStrong, long playerSteamID, string playerName)
@@ -146,8 +146,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 }
 
                 string eventSubtype = isStrong
-                    ? "SpawnCargoShipSignal_Strong"
-                    : "SpawnCargoShipSignal_Normal";
+                    ? "SpawnCargoShipTest_Strong"
+                    : "SpawnCargoShipTest_Normal";
 
                 LoggerUtil.LogInfo($"[TEST] Triggering spawn event: {eventSubtype}");
                 TriggerGlobalEvent(eventSubtype);
@@ -158,7 +158,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     "Blue"
                 );
 
-                LoggerUtil.LogInfo($"[SIGNAL] Global Event triggered for spawn: {eventSubtype}");
+                LoggerUtil.LogInfo($"[TEST] Global Event triggered for spawn: {eventSubtype}");
             }
             catch (Exception ex)
             {
