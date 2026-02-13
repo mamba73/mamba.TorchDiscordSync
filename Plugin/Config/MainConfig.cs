@@ -598,12 +598,16 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         public bool AutoCreateChannels { get; set; }
 
         [XmlElement]
+        public bool AutoCreateForum { get; set; }
+
+        [XmlElement]
         public bool AutoCreateVoice { get; set; }
 
         public FactionConfig()
         {
             Enabled = false;
             AutoCreateChannels = false;
+            AutoCreateForum = false;
             AutoCreateVoice = false;
         }
     }

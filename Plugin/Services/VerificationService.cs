@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using mamba.TorchDiscordSync.Plugin.Models;
 using mamba.TorchDiscordSync.Plugin.Utils;
 
 namespace mamba.TorchDiscordSync.Plugin.Services
@@ -79,10 +80,12 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
-        /// Verify the code from Discord bot
-        /// KORISTI: _db.MarkAsVerified() → VerificationPlayers.xml
+        /// <summary>
+        /// Verify the code from Discord bot.
+        /// Uses VerificationPlayers.xml; logs event to VerificationData.xml (no duplicate).
+        /// Returns result with SteamIdForNotify so in-game message can be sent (success or error).
         /// </summary>
-        public Task<string> VerifyAsync(string code, ulong discordId, string discordUsername)
+        public Task<VerificationResult> VerifyAsync(string code, ulong discordId, string discordUsername)
         {
             try
             {
@@ -91,43 +94,62 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 if (string.IsNullOrEmpty(code))
                 {
                     LoggerUtil.LogWarning("[VERIFY] Empty verification code");
-                    return Task.FromResult("Invalid verification code");
+                    return Task.FromResult(new VerificationResult { Message = "Invalid verification code", IsSuccess = false });
                 }
 
-                // Find verification by code iz VerificationPlayers.xml
                 var allPending = _db.GetAllPendingVerifications();
                 var verification = allPending.Find(p => p.VerificationCode == code);
 
                 if (verification == null)
                 {
                     LoggerUtil.LogWarning($"[VERIFY] Code not found: {code}");
-                    return Task.FromResult("Verification code not found!");
+                    return Task.FromResult(new VerificationResult { Message = "Verification code not found!", IsSuccess = false });
                 }
 
-                // Check if code is expired
                 if (verification.ExpiresAt < DateTime.UtcNow)
                 {
                     LoggerUtil.LogWarning($"[VERIFY] Code expired: {code}");
+                    long steamId = verification.SteamID;
+                    string gameName = verification.GamePlayerName ?? steamId.ToString();
                     _db.DeletePendingVerification(verification.SteamID);
-                    return Task.FromResult("Verification code has expired!");
+                    return Task.FromResult(new VerificationResult
+                    {
+                        Message = "Verification code has expired!",
+                        IsSuccess = false,
+                        SteamIdForNotify = steamId,
+                        GamePlayerName = gameName
+                    });
                 }
 
-                // NOVO: Mark as verified u VerificationPlayers.xml
-                _db.MarkAsVerified(verification.SteamID, discordUsername, discordId);
+                long steamID = verification.SteamID;
+                string gamePlayerName = verification.GamePlayerName ?? steamID.ToString();
+                _db.MarkAsVerified(steamID, discordUsername, discordId);
+
+                _db.SaveVerificationHistory(new VerificationHistoryModel
+                {
+                    SteamID = steamID,
+                    DiscordUsername = discordUsername,
+                    DiscordUserID = discordId,
+                    VerifiedAt = DateTime.UtcNow,
+                    Status = "Success"
+                });
 
                 LoggerUtil.LogSuccess(
-                    $"[VERIFY] Verified: SteamID {verification.SteamID} → Discord {discordUsername} (ID: {discordId})"
-                );
-                LoggerUtil.LogDebug(
-                    $"[VERIFY] Saved to VerificationPlayers.xml as verified player"
+                    $"[VERIFY] Verified: SteamID {steamID} → Discord {discordUsername} (ID: {discordId})"
                 );
 
-                return Task.FromResult("Verification successful!");
+                return Task.FromResult(new VerificationResult
+                {
+                    Message = "Verification successful!",
+                    IsSuccess = true,
+                    SteamIdForNotify = steamID,
+                    GamePlayerName = gamePlayerName
+                });
             }
             catch (Exception ex)
             {
                 LoggerUtil.LogError($"[VERIFY] Verification failed: {ex.Message}");
-                return Task.FromResult($"Verification error: {ex.Message}");
+                return Task.FromResult(new VerificationResult { Message = $"Verification error: {ex.Message}", IsSuccess = false });
             }
         }
 

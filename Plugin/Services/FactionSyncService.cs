@@ -351,6 +351,39 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                         }
                     }
 
+                    // ============================================================
+                    // Create forum and voice channels if enabled (same name lowcase, same role)
+                    // ============================================================
+                    string lowcaseName = (gameFaction.Name != null ? gameFaction.Name : dbFaction.Tag).ToLower();
+                    ulong? catId = _config.Discord.FactionCategoryId;
+                    ulong? roleId = dbFaction.DiscordRoleID > 0 ? (ulong?)dbFaction.DiscordRoleID : null;
+
+                    if (_config.Faction.AutoCreateForum && dbFaction.DiscordForumID == 0)
+                    {
+                        var forumId = await _discord.CreateForumChannelAsync(lowcaseName, catId, roleId);
+                        if (forumId > 0)
+                        {
+                            dbFaction.DiscordForumID = forumId;
+                            dbFaction.DiscordForumName = lowcaseName;
+                            if (dbFaction.ChannelsCreated == null) dbFaction.ChannelsCreated = new List<DiscordChannelCreated>();
+                            dbFaction.ChannelsCreated.Add(new DiscordChannelCreated { ChannelID = forumId, ChannelName = lowcaseName, ChannelType = "Forum", CreatedAt = DateTime.UtcNow });
+                            LoggerUtil.LogSuccess("[FACTION_SYNC] Created forum: " + lowcaseName + " (ID: " + forumId + ")");
+                        }
+                    }
+
+                    if (_config.Faction.AutoCreateVoice && dbFaction.DiscordVoiceChannelID == 0)
+                    {
+                        var voiceId = await _discord.CreateVoiceChannelAsync(lowcaseName, catId, roleId);
+                        if (voiceId > 0)
+                        {
+                            dbFaction.DiscordVoiceChannelID = voiceId;
+                            dbFaction.DiscordVoiceChannelName = lowcaseName;
+                            if (dbFaction.ChannelsCreated == null) dbFaction.ChannelsCreated = new List<DiscordChannelCreated>();
+                            dbFaction.ChannelsCreated.Add(new DiscordChannelCreated { ChannelID = voiceId, ChannelName = lowcaseName, ChannelType = "Voice", CreatedAt = DateTime.UtcNow });
+                            LoggerUtil.LogSuccess("[FACTION_SYNC] Created voice: " + lowcaseName + " (ID: " + voiceId + ")");
+                        }
+                    }
+
                     // Update sync status metadata
                     if (dbFaction.DiscordRoleID > 0 && dbFaction.DiscordChannelID > 0)
                     {
@@ -454,13 +487,20 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                             );
                         }
 
-                        // Delete Discord channel
                         if (faction.DiscordChannelID != 0)
                         {
                             await _discord.DeleteChannelAsync(faction.DiscordChannelID);
-                            LoggerUtil.LogInfo(
-                                $"[FACTION_SYNC] Deleted Discord channel for: {faction.Name}"
-                            );
+                            LoggerUtil.LogInfo($"[FACTION_SYNC] Deleted Discord channel for: {faction.Name}");
+                        }
+                        if (faction.DiscordForumID != 0)
+                        {
+                            await _discord.DeleteChannelAsync(faction.DiscordForumID);
+                            LoggerUtil.LogInfo($"[FACTION_SYNC] Deleted forum for: {faction.Name}");
+                        }
+                        if (faction.DiscordVoiceChannelID != 0)
+                        {
+                            await _discord.DeleteChannelAsync(faction.DiscordVoiceChannelID);
+                            LoggerUtil.LogInfo($"[FACTION_SYNC] Deleted voice for: {faction.Name}");
                         }
                     }
                 }
@@ -706,7 +746,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     }
                 }
 
-                // Delete Discord channel
+                // Delete Discord channels (text, forum, voice)
                 if (faction.DiscordChannelID > 0)
                 {
                     try
@@ -731,6 +771,29 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                         LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Failed to delete channel: {ex.Message}");
                         return $"Failed to delete channel: {ex.Message}";
                     }
+                }
+
+                if (faction.DiscordForumID > 0)
+                {
+                    try
+                    {
+                        await _discord.DeleteChannelAsync(faction.DiscordForumID);
+                        result.AppendLine($"✓ Deleted forum: {faction.DiscordForumName}");
+                        faction.DiscordForumID = 0;
+                        faction.DiscordForumName = "";
+                    }
+                    catch (Exception ex) { LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Forum delete: {ex.Message}"); faction.DiscordForumID = 0; }
+                }
+                if (faction.DiscordVoiceChannelID > 0)
+                {
+                    try
+                    {
+                        await _discord.DeleteChannelAsync(faction.DiscordVoiceChannelID);
+                        result.AppendLine($"✓ Deleted voice: {faction.DiscordVoiceChannelName}");
+                        faction.DiscordVoiceChannelID = 0;
+                        faction.DiscordVoiceChannelName = "";
+                    }
+                    catch (Exception ex) { LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Voice delete: {ex.Message}"); faction.DiscordVoiceChannelID = 0; }
                 }
 
                 // Remove faction record from XML storage to avoid duplicate syncs on next run

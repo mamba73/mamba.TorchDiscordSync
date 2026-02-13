@@ -205,27 +205,41 @@ namespace mamba.TorchDiscordSync
                 {
                     _discordBot.OnMessageReceivedEvent += async msg =>
                     {
-                        // Only process messages from the configured chat channel
-                        if (
-                            msg.Channel is SocketTextChannel textChannel
-                            && textChannel.Id == _config.Discord.ChatChannelId
-                        )
-                        {
-                            // Skip bot messages and commands (prevent loops)
-                            if (
-                                msg.Author.IsBot
-                                || msg.Content.StartsWith(_config.Discord.BotPrefix)
-                            )
-                                return;
+                        if (msg.Author.IsBot || msg.Content.StartsWith(_config.Discord.BotPrefix))
+                            return;
 
-                            // Forward to ChatSyncService to send to game chat
-                            await _chatSync.SendDiscordMessageToGameAsync(
-                                msg.Author.Username,
-                                msg.Content
-                            );
-                            LoggerUtil.LogDebug(
-                                $"[DISCORD›GAME] Forwarded message from {msg.Author.Username}"
-                            );
+                        if (msg.Channel is SocketTextChannel textChannel)
+                        {
+                            ulong channelId = textChannel.Id;
+                            // Global chat channel → game global
+                            if (channelId == _config.Discord.ChatChannelId)
+                            {
+                                await _chatSync.SendDiscordMessageToGameAsync(
+                                    msg.Author.Username,
+                                    msg.Content
+                                );
+                                LoggerUtil.LogDebug(
+                                    $"[DISCORD›GAME] Forwarded message from {msg.Author.Username}"
+                                );
+                                return;
+                            }
+                            // Faction channel (synced) → game faction only (secure)
+                            var factions = _db?.GetAllFactions();
+                            if (factions != null)
+                            {
+                                var faction = factions.FirstOrDefault(f => f.DiscordChannelID == channelId);
+                                if (faction != null)
+                                {
+                                    await _chatSync.SendDiscordMessageToFactionInGameAsync(
+                                        faction.FactionID,
+                                        msg.Author.Username,
+                                        msg.Content
+                                    );
+                                    LoggerUtil.LogDebug(
+                                        $"[DISCORD›FACTION] {faction.Tag} from {msg.Author.Username}"
+                                    );
+                                }
+                            }
                         }
                     };
                 }
@@ -468,7 +482,7 @@ namespace mamba.TorchDiscordSync
             return Task.FromResult(0);
         }
 
-        // Handles verification attempts from Discord users
+        // Handles verification attempts from Discord users. Sends DM first, then in-game notification.
         private Task HandleVerificationAsync(string code, ulong discordID, string discordUsername)
         {
             if (_verificationCommandHandler != null)
@@ -479,42 +493,27 @@ namespace mamba.TorchDiscordSync
                     {
                         try
                         {
-                            // Get the verification result message
-                            string resultMessage = t.Result;
-                            LoggerUtil.LogInfo("[VERIFY] Verification result: " + resultMessage);
+                            var result = t.Result;
+                            LoggerUtil.LogInfo("[VERIFY] Verification result: " + result.Message);
 
-                            // Check if verification was successful
-                            bool isSuccess =
-                                resultMessage.Contains("successful")
-                                || resultMessage.Contains("Successful");
-
-                            // NEW: Get verified player data for notifications and role assignment
-                            var verifiedPlayer = _db?.GetVerifiedPlayerByDiscordID(discordID);
+                            bool isSuccess = result.IsSuccess;
+                            var verifiedPlayer = isSuccess ? _db?.GetVerifiedPlayerByDiscordID(discordID) : null;
 
                             if (isSuccess && verifiedPlayer != null)
                             {
-                                LoggerUtil.LogDebug(
-                                    $"[VERIFY] Found verified player: SteamID={verifiedPlayer.SteamID}, GameName={verifiedPlayer.GamePlayerName}"
-                                );
-
-                                // NEW: Get or create Verified role
                                 if (_discordBot != null)
                                 {
                                     ulong verifiedRoleId =
                                         await _discordBot.GetOrCreateVerifiedRoleAsync();
                                     if (verifiedRoleId != 0)
                                     {
-                                        // Update config with verified role ID
                                         _config.Discord.VerifiedRoleId = verifiedRoleId;
                                         _config.Save();
 
-                                        // Assign Verified role to user
                                         var discordClient = _discordBot.GetClient();
                                         if (discordClient != null)
                                         {
-                                            var discordUser = await discordClient.GetUserAsync(
-                                                discordID
-                                            );
+                                            var discordUser = await discordClient.GetUserAsync(discordID);
                                             if (discordUser != null)
                                             {
                                                 bool roleAssigned =
@@ -523,24 +522,19 @@ namespace mamba.TorchDiscordSync
                                                         verifiedRoleId
                                                     );
                                                 if (roleAssigned)
-                                                {
                                                     LoggerUtil.LogSuccess(
                                                         $"[VERIFY] Assigned Verified role to {discordUsername}"
                                                     );
-                                                }
                                             }
                                         }
                                     }
 
-                                    // NEW: Get faction and assign faction role
                                     if (_db != null)
                                     {
                                         var playerFaction = _db.GetAllFactions()
                                             ?.FirstOrDefault(f =>
                                                 f.Players != null
-                                                && f.Players.Any(p =>
-                                                    p.SteamID == verifiedPlayer.SteamID
-                                                )
+                                                && f.Players.Any(p => p.SteamID == verifiedPlayer.SteamID)
                                             );
 
                                         if (playerFaction != null)
@@ -548,9 +542,7 @@ namespace mamba.TorchDiscordSync
                                             var discordClient = _discordBot.GetClient();
                                             if (discordClient != null)
                                             {
-                                                var discordUser = await discordClient.GetUserAsync(
-                                                    discordID
-                                                );
+                                                var discordUser = await discordClient.GetUserAsync(discordID);
                                                 if (discordUser != null)
                                                 {
                                                     bool factionRoleAssigned =
@@ -559,49 +551,38 @@ namespace mamba.TorchDiscordSync
                                                             playerFaction.Tag
                                                         );
                                                     if (factionRoleAssigned)
-                                                    {
                                                         LoggerUtil.LogSuccess(
                                                             $"[VERIFY] Assigned faction role '{playerFaction.Tag}' to {discordUsername}"
                                                         );
-                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
-
-                                // NEW: Send in-game notification
-                                SendInGameNotification(
-                                    verifiedPlayer.SteamID,
-                                    verifiedPlayer.GamePlayerName,
-                                    isSuccess,
-                                    resultMessage
-                                );
-                            }
-                            else if (!isSuccess && verifiedPlayer != null)
-                            {
-                                // Send failure notification to in-game player
-                                SendInGameNotification(
-                                    verifiedPlayer.SteamID,
-                                    verifiedPlayer.GamePlayerName,
-                                    isSuccess,
-                                    resultMessage
-                                );
                             }
 
-                            // Send result back to Discord user
+                            // 1) Send result DM to Discord user first
                             if (_discordBot != null)
                             {
-                                // Send result DM to user
                                 await _discordBot.SendVerificationResultDMAsync(
                                     discordUsername,
                                     discordID,
-                                    resultMessage,
+                                    result.Message,
                                     isSuccess
                                 );
-
                                 LoggerUtil.LogDebug(
                                     "[VERIFY] Sent verification result DM to " + discordUsername
+                                );
+                            }
+
+                            // 2) Then send in-game private message to player (success or error when we have SteamID)
+                            if (result.SteamIdForNotify.HasValue && !string.IsNullOrEmpty(result.GamePlayerName))
+                            {
+                                SendInGameNotification(
+                                    result.SteamIdForNotify.Value,
+                                    result.GamePlayerName,
+                                    isSuccess,
+                                    result.Message
                                 );
                             }
                         }

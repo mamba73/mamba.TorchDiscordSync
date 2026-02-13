@@ -509,25 +509,21 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     $"[VERIFY_STATUS_CMD] Checking status for {playerName} (SteamID: {playerSteamID})"
                 );
 
-                // Get verification status from database
-                var verification = _db?.GetVerification(playerSteamID);
+                // Get verification status from VerificationPlayers.xml
+                var verified = _db?.GetVerifiedPlayer(playerSteamID);
+                var pending = _db?.GetPendingVerification(playerSteamID);
 
                 string statusText = "";
-                if (verification == null)
-                {
-                    statusText =
-                        "[NOT VERIFIED] You have not started verification yet\nType /tds verify @DiscordName to begin";
-                }
-                else if (verification.IsVerified)
+                if (verified != null)
                 {
                     statusText = "[VERIFIED] You are verified!\n";
-                    statusText += $"Discord: {verification.DiscordUsername}\n";
-                    statusText += $"Verified at: {verification.VerifiedAt:yyyy-MM-dd HH:mm}";
+                    statusText += $"Discord: {verified.DiscordUsername}\n";
+                    statusText += $"Verified at: {verified.VerifiedAt:yyyy-MM-dd HH:mm}";
                 }
-                else
+                else if (pending != null && pending.ExpiresAt > DateTime.UtcNow)
                 {
                     // Calculate time remaining
-                    var codeAge = DateTime.UtcNow - verification.CodeGeneratedAt;
+                    var codeAge = DateTime.UtcNow - pending.CodeGeneratedAt;
                     int ConfigVerifyExpiration = _config.VerificationCodeExpirationMinutes;
                     var timeRemaining = TimeSpan.FromMinutes(ConfigVerifyExpiration) - codeAge;
 
@@ -539,11 +535,16 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     else
                     {
                         statusText = "[IN PROGRESS] Verification pending\n";
-                        statusText += $"Discord Username: {verification.DiscordUsername}\n";
-                        statusText += $"Code: {verification.VerificationCode}\n";
+                        statusText += $"Discord Username: {pending.DiscordUsername}\n";
+                        statusText += $"Code: {pending.VerificationCode}\n";
                         statusText +=
                             $"Time Remaining: {(int)timeRemaining.TotalMinutes}m {(int)timeRemaining.Seconds}s";
                     }
+                }
+                else
+                {
+                    statusText =
+                        "[NOT VERIFIED] You have not started verification yet\nType /tds verify @DiscordName to begin";
                 }
 
                 ChatUtils.SendInfo(statusText);
@@ -785,9 +786,9 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     reason = string.Join(" ", reasonParts);
                 }
 
-                // Get verification info before deleting
-                var verification = _db?.GetVerification(targetSteamID);
-                if (verification == null)
+                var verified = _db?.GetVerifiedPlayer(targetSteamID);
+                var pending = _db?.GetPendingVerification(targetSteamID);
+                if (verified == null && pending == null)
                 {
                     ChatUtils.SendWarning("Verification not found for SteamID: " + targetSteamID);
                     LoggerUtil.LogWarning(
@@ -799,12 +800,13 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     return;
                 }
 
-                // Delete verification
-                _db?.DeleteVerification(targetSteamID);
+                string displayName = verified?.DiscordUsername ?? pending?.DiscordUsername ?? targetSteamID.ToString();
+                _db?.DeletePendingVerification(targetSteamID);
+                _db?.DeleteVerifiedPlayer(targetSteamID);
 
                 ChatUtils.SendSuccess(
                     "Verification removed for: "
-                        + verification.DiscordUsername
+                        + displayName
                         + " (SteamID: "
                         + targetSteamID
                         + ")"
@@ -813,7 +815,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     "[UNVERIFY_CMD] "
                         + adminName
                         + " removed verification for "
-                        + verification.DiscordUsername
+                        + displayName
                         + " (SteamID: "
                         + targetSteamID
                         + ") - Reason: "
@@ -823,7 +825,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 // Log to admin log with SteamID
                 _ = _eventLog.LogAsync(
                     "UnverifyCommand",
-                    $"Admin: {adminName} | Unverified SteamID: {targetSteamID} | Discord: {verification.DiscordUsername} | Reason: {reason}"
+                    $"Admin: {adminName} | Unverified SteamID: {targetSteamID} | Discord: {displayName} | Reason: {reason}"
                 );
             }
             catch (Exception ex)
@@ -841,8 +843,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         {
             try
             {
-                var allVerifications = _db?.GetAllVerifications();
-                var verified = allVerifications?.FindAll(v => v.IsVerified);
+                var verified = _db?.GetAllVerifiedPlayers();
 
                 if (verified == null || verified.Count == 0)
                 {
@@ -871,14 +872,13 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
         /// <summary>
         /// Handle /tds admin:verify:pending command (admin only)
-        /// Lists all pending verifications
+        /// Lists all pending verifications (from VerificationPlayers.xml)
         /// </summary>
         private void HandleAdminVerifyPending(string adminName)
         {
             try
             {
-                var allVerifications = _db?.GetAllVerifications();
-                var pending = allVerifications?.FindAll(v => !v.IsVerified);
+                var pending = _db?.GetAllPendingVerifications();
 
                 if (pending == null || pending.Count == 0)
                 {
@@ -931,8 +931,9 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     return;
                 }
 
-                var verification = _db?.GetVerification(targetSteamID);
-                if (verification == null)
+                var verified = _db?.GetVerifiedPlayer(targetSteamID);
+                var pending = _db?.GetPendingVerification(targetSteamID);
+                if (verified == null && pending == null)
                 {
                     ChatUtils.SendWarning("Verification not found for SteamID: " + targetSteamID);
                     LoggerUtil.LogWarning(
@@ -944,12 +945,13 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     return;
                 }
 
-                // Delete verification
-                _db?.DeleteVerification(targetSteamID);
+                string displayName = verified?.DiscordUsername ?? pending?.DiscordUsername ?? targetSteamID.ToString();
+                _db?.DeletePendingVerification(targetSteamID);
+                _db?.DeleteVerifiedPlayer(targetSteamID);
 
                 ChatUtils.SendSuccess(
                     "Verification deleted for: "
-                        + verification.DiscordUsername
+                        + displayName
                         + " (SteamID: "
                         + targetSteamID
                         + ")"
@@ -958,7 +960,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     "[VERIFY_DELETE] "
                         + adminName
                         + " deleted verification for "
-                        + verification.DiscordUsername
+                        + displayName
                         + " (SteamID: "
                         + targetSteamID
                         + ")"
@@ -967,7 +969,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 // Log to admin log
                 _ = _eventLog.LogAsync(
                     "VerificationDeleted",
-                    $"Admin: {adminName} | Deleted SteamID: {targetSteamID} | Discord: {verification.DiscordUsername}"
+                    $"Admin: {adminName} | Deleted SteamID: {targetSteamID} | Discord: {displayName}"
                 );
             }
             catch (Exception ex)

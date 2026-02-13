@@ -591,6 +591,93 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
+        /// Create voice channel with same category and role permissions as faction. Name = lowercase (same as faction).
+        /// </summary>
+        public async Task<ulong> CreateVoiceChannelAsync(
+            string channelName,
+            ulong? categoryID = null,
+            ulong? roleID = null
+        )
+        {
+            try
+            {
+                if (!_isReady) { LoggerUtil.LogError("[DISCORD_BOT] Bot not ready"); return 0; }
+                var guild = _client.GetGuild(_config.GuildID);
+                if (guild == null) { LoggerUtil.LogError("[DISCORD_BOT] Guild not found"); return 0; }
+
+                RestVoiceChannel channel = null;
+                if (categoryID.HasValue && categoryID.Value > 0)
+                {
+                    var cat = guild.GetCategoryChannel(categoryID.Value);
+                    if (cat != null)
+                        channel = await guild.CreateVoiceChannelAsync(channelName, x => x.CategoryId = categoryID.Value);
+                    else
+                        channel = await guild.CreateVoiceChannelAsync(channelName);
+                }
+                else
+                    channel = await guild.CreateVoiceChannelAsync(channelName);
+
+                if (channel == null) return 0;
+                if (roleID.HasValue && roleID.Value > 0)
+                {
+                    var role = guild.GetRole(roleID.Value);
+                    if (role != null)
+                    {
+                        await channel.AddPermissionOverwriteAsync(guild.EveryoneRole, new OverwritePermissions(viewChannel: PermValue.Deny));
+                        await channel.AddPermissionOverwriteAsync(role, new OverwritePermissions(viewChannel: PermValue.Allow, connect: PermValue.Allow, speak: PermValue.Allow));
+                    }
+                }
+                LoggerUtil.LogSuccess("[DISCORD_BOT] Created voice channel: " + channelName + " (ID: " + channel.Id + ")");
+                return channel.Id;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD_BOT] Create voice channel error: " + ex.Message);
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Create forum channel with same category and role permissions. Name = lowercase (same as faction).
+        /// </summary>
+        public async Task<ulong> CreateForumChannelAsync(
+            string channelName,
+            ulong? categoryID = null,
+            ulong? roleID = null
+        )
+        {
+            try
+            {
+                if (!_isReady) { LoggerUtil.LogError("[DISCORD_BOT] Bot not ready"); return 0; }
+                var guild = _client.GetGuild(_config.GuildID);
+                if (guild == null) { LoggerUtil.LogError("[DISCORD_BOT] Guild not found"); return 0; }
+
+                RestForumChannel channel = await guild.CreateForumChannelAsync(channelName, x =>
+                {
+                    if (categoryID.HasValue && categoryID.Value > 0)
+                        x.CategoryId = categoryID.Value;
+                });
+                if (channel == null) return 0;
+                if (roleID.HasValue && roleID.Value > 0)
+                {
+                    var role = guild.GetRole(roleID.Value);
+                    if (role != null)
+                    {
+                        await channel.AddPermissionOverwriteAsync(guild.EveryoneRole, new OverwritePermissions(viewChannel: PermValue.Deny));
+                        await channel.AddPermissionOverwriteAsync(role, new OverwritePermissions(viewChannel: PermValue.Allow, sendMessages: PermValue.Allow));
+                    }
+                }
+                LoggerUtil.LogSuccess("[DISCORD_BOT] Created forum channel: " + channelName + " (ID: " + channel.Id + ")");
+                return channel.Id;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD_BOT] Create forum channel error: " + ex.Message);
+                return 0;
+            }
+        }
+
+        /// <summary>
         /// Delete a channel by ID
         /// </summary>
         public async Task<bool> DeleteChannelAsync(ulong channelID)

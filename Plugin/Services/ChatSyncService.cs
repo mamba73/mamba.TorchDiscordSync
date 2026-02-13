@@ -174,6 +174,57 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         ///
+        /// Send Discord message to game faction only (secure: only synced faction members receive it as PM).
+        /// Called when message is received in a faction's Discord channel.
+        ///
+        public async Task SendDiscordMessageToFactionInGameAsync(
+            int factionId,
+            string discordUsername,
+            string message
+        )
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(discordUsername) || string.IsNullOrWhiteSpace(message))
+                    return;
+                var faction = _db?.GetFaction(factionId);
+                if (faction?.Players == null || faction.Players.Count == 0)
+                {
+                    LoggerUtil.LogDebug($"[CHAT] Faction {factionId} has no players - skipping faction message");
+                    return;
+                }
+                string gameMessage = FormatDiscordMessageForGame(discordUsername, message);
+                string factionMsg = $"[Faction] [Discord] {gameMessage}";
+                var players = new List<VRage.Game.ModAPI.IMyPlayer>();
+                MyAPIGateway.Players.GetPlayers(players);
+                int sent = 0;
+                foreach (var fp in faction.Players)
+                {
+                    var player = players.FirstOrDefault(p => (long)p.SteamUserId == fp.SteamID);
+                    if (player?.Character == null) continue;
+                    try
+                    {
+                        Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
+                            factionMsg,
+                            "TDS",
+                            player.Character.EntityId,
+                            "Blue"
+                        );
+                        sent++;
+                    }
+                    catch { /* skip single failure */ }
+                }
+                if (sent > 0)
+                    LoggerUtil.LogInfo($"[CHAT] Discord → Faction {faction.Tag}: {discordUsername}: {message} (sent to {sent} members)");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[CHAT] Faction message error: {ex.Message}");
+            }
+            await Task.CompletedTask;
+        }
+
+        ///
         /// Format game chat message for Discord display
         ///
         private string FormatGameMessageForDiscord(string playerName, string message)

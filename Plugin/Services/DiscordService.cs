@@ -100,6 +100,38 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             }
         }
 
+        /// <summary>Create voice channel in faction category with same role permissions. Name = lowercase.</summary>
+        public async Task<ulong> CreateVoiceChannelAsync(string channelName, ulong? categoryID = null, ulong? roleID = null)
+        {
+            try
+            {
+                if (_botService != null)
+                    return await _botService.CreateVoiceChannelAsync(channelName, categoryID, roleID);
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD] Create voice channel error: " + ex.Message);
+                return 0;
+            }
+        }
+
+        /// <summary>Create forum channel in faction category with same role permissions. Name = lowercase.</summary>
+        public async Task<ulong> CreateForumChannelAsync(string channelName, ulong? categoryID = null, ulong? roleID = null)
+        {
+            try
+            {
+                if (_botService != null)
+                    return await _botService.CreateForumChannelAsync(channelName, categoryID, roleID);
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[DISCORD] Create forum channel error: " + ex.Message);
+                return 0;
+            }
+        }
+
         /// <summary>
         /// Delete Discord role
         /// </summary>

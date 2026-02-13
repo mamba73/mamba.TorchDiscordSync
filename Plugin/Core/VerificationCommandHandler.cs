@@ -2,6 +2,7 @@
 using System;
 using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Plugin.Config;
+using mamba.TorchDiscordSync.Plugin.Models;
 using mamba.TorchDiscordSync.Plugin.Services;
 using mamba.TorchDiscordSync.Plugin.Utils;
 
@@ -136,7 +137,7 @@ namespace mamba.TorchDiscordSync.Plugin.Core
         /// Handle verification from Discord bot (!verify CODE command)
         /// Called when user completes verification on Discord
         /// </summary>
-        public Task<string> VerifyFromDiscordAsync(
+        public async Task<VerificationResult> VerifyFromDiscordAsync(
             string code,
             ulong discordId,
             string discordUsername
@@ -144,15 +145,15 @@ namespace mamba.TorchDiscordSync.Plugin.Core
         {
             if (string.IsNullOrEmpty(code))
             {
-                return Task.FromResult("Invalid verification code");
+                return new VerificationResult { Message = "Invalid verification code", IsSuccess = false };
             }
 
             if (_verification != null)
             {
-                return _verification.VerifyAsync(code, discordId, discordUsername);
+                return await _verification.VerifyAsync(code, discordId, discordUsername);
             }
 
-            return Task.FromResult("Verification service unavailable");
+            return new VerificationResult { Message = "Verification service unavailable", IsSuccess = false };
         }
 
         /// <summary>
