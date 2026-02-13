@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 # --- CONFIGURATION & PATHS ---
 script_dir = os.path.dirname(os.path.abspath(__file__))
-config_file = os.path.join(script_dir, "sync_config.ini")
+config_file = os.path.join(script_dir, "config_sync.ini")
 
 def load_config():
     config = configparser.ConfigParser()

@@ -369,8 +369,19 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                         );
                     }
 
-                    // Save faction record to XML database
-                    _db.SaveFaction(dbFaction);
+                    // Save faction to database
+                    try
+                    {
+                        _db.SaveFaction(dbFaction);
+                        LoggerUtil.LogSuccess($"[FACTION_SYNC] ✓ Saved faction: {dbFaction.Tag}");
+
+                        // Sync Discord roles for verified players in this faction
+                        await SyncFactionRolesForVerifiedPlayersAsync(dbFaction);
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[FACTION_SYNC] Failed to save faction: {ex.Message}");
+                    }
 
                     // ============================================================
                     // Sync faction members (add them to faction)
@@ -1004,6 +1015,152 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         
+        /// <summary>
+        /// Synchronize Discord roles for verified players in a faction
+        /// - Adds faction role to verified players who are in the faction
+        /// - Removes faction role from verified players who are no longer in the faction
+        /// </summary>
+        private async Task SyncFactionRolesForVerifiedPlayersAsync(FactionModel dbFaction)
+        {
+            try
+            {
+                // Get all verified players
+                var verifiedPlayers = _db.GetAllVerifiedPlayers();
+                if (verifiedPlayers == null || verifiedPlayers.Count == 0)
+                {
+                    LoggerUtil.LogDebug("[FACTION_ROLE_SYNC] No verified players to sync");
+                    return;
+                }
+
+                // Get faction member Steam IDs
+                var steamIdsInFaction = new HashSet<long>(dbFaction.Players.Select(p => p.SteamID));
+
+                // Get Discord bot service
+                var botService = _discord.GetBotService();
+                if (botService == null)
+                {
+                    LoggerUtil.LogDebug("[FACTION_ROLE_SYNC] DiscordBotService not available");
+                    return;
+                }
+
+                // Get Discord client (SocketDiscordClient - has GetUser support)
+                var client = botService.GetClient();
+                if (client == null)
+                {
+                    LoggerUtil.LogDebug("[FACTION_ROLE_SYNC] Discord client not available");
+                    return;
+                }
+
+                // Get guild (SocketGuild - has GetUser support)
+                var guild = client.GetGuild(_config.Discord.GuildID);
+                if (guild == null)
+                {
+                    LoggerUtil.LogDebug("[FACTION_ROLE_SYNC] Discord guild not found");
+                    return;
+                }
+
+                // Get faction role
+                var role = guild.GetRole(dbFaction.DiscordRoleID);
+                if (role == null)
+                {
+                    LoggerUtil.LogDebug(
+                        $"[FACTION_ROLE_SYNC] Role not found for faction {dbFaction.Tag}"
+                    );
+                    return;
+                }
+
+                LoggerUtil.LogInfo(
+                    $"[FACTION_ROLE_SYNC] Syncing roles for faction {dbFaction.Tag} ({dbFaction.Players.Count} members)"
+                );
+
+                // ============================================================
+                // PART 1: Add faction role to verified players in this faction
+                // ============================================================
+                foreach (var vp in verifiedPlayers)
+                {
+                    // Check if this verified player is in this faction
+                    if (!steamIdsInFaction.Contains(vp.SteamID))
+                        continue;
+
+                    // Get Discord user from guild by ID (SocketGuild supports GetUser)
+                    var user = guild.GetUser(vp.DiscordUserID);
+                    if (user == null)
+                    {
+                        LoggerUtil.LogDebug(
+                            $"[FACTION_ROLE_SYNC] Discord user not found for {vp.DiscordUsername} (ID: {vp.DiscordUserID})"
+                        );
+                        continue;
+                    }
+
+                    // Check if user already has the role (use Roles collection, not RoleIds)
+                    if (user.Roles.Contains(role))
+                    {
+                        LoggerUtil.LogDebug(
+                            $"[FACTION_ROLE_SYNC] SKIP {vp.DiscordUsername} - already has {dbFaction.Tag}"
+                        );
+                        continue;
+                    }
+
+                    // Add role to user
+                    try
+                    {
+                        await user.AddRoleAsync(role);
+                        LoggerUtil.LogSuccess(
+                            $"[FACTION_ROLE_SYNC] Added {dbFaction.Tag} to {vp.DiscordUsername}"
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError(
+                            $"[FACTION_ROLE_SYNC] Failed to add role to {vp.DiscordUsername}: {ex.Message}"
+                        );
+                    }
+                }
+
+                // ============================================================
+                // PART 2: Remove faction role from verified players NOT in this faction
+                // ============================================================
+                foreach (var vp in verifiedPlayers)
+                {
+                    // Check if this verified player is IN this faction
+                    if (steamIdsInFaction.Contains(vp.SteamID))
+                        continue; // Player is in faction, don't remove role
+
+                    // Get Discord user from guild by ID (SocketGuild supports GetUser)
+                    var user = guild.GetUser(vp.DiscordUserID);
+                    if (user == null)
+                        continue;
+
+                    // Check if user has the faction role (use Roles collection, not RoleIds)
+                    if (user.Roles.Contains(role))
+                    {
+                        // Remove role from user
+                        try
+                        {
+                            await user.RemoveRoleAsync(role);
+                            LoggerUtil.LogSuccess(
+                                $"[FACTION_ROLE_SYNC] Removed {dbFaction.Tag} from {vp.DiscordUsername} (no longer in faction)"
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError(
+                                $"[FACTION_ROLE_SYNC] Failed to remove role from {vp.DiscordUsername}: {ex.Message}"
+                            );
+                        }
+                    }
+                }
+
+                LoggerUtil.LogSuccess($"[FACTION_ROLE_SYNC] Completed for faction {dbFaction.Tag}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError(
+                    $"[FACTION_ROLE_SYNC] Error syncing roles: {ex.Message}\n{ex.StackTrace}"
+                );
+            }
+        }
+
 
         /// <summary>
         /// Retrieves the display name for a player by their identity ID.
