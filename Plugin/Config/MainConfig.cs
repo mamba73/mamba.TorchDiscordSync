@@ -20,6 +20,8 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         /// </summary>
         public static readonly string PLUGIN_DIR_NAME = "mambaSaveData";
 
+        public DataStorageConfig DataStorage { get; set; } = new DataStorageConfig();
+    
         /// <summary>
         /// Get the base instance directory (where Torch stores data)
         /// Tries environment variable first, falls back to default
