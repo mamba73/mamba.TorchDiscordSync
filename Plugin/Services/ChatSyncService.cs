@@ -201,7 +201,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 var players = new List<VRage.Game.ModAPI.IMyPlayer>();
                 MyAPIGateway.Players.GetPlayers(players);
                 int sent = 0;
-                LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sending \"{factionMsg}\" to {faction.Players.Count} faction members");
+                LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sending to {faction.Players.Count} faction members");
                 foreach (var fp in faction.Players)
                 {
                     var player = players.FirstOrDefault(p => (long)p.SteamUserId == fp.SteamID);
@@ -210,21 +210,26 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                         LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: SteamID {fp.SteamID} not in game - skip");
                         continue;
                     }
-                    if (player.Character == null)
-                    {
-                        LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: SteamID {fp.SteamID} no character (dead/spectator?) - skip");
-                        continue;
-                    }
                     try
                     {
+                        long targetId = 0;
+                        if (player.Character != null)
+                            targetId = player.Character.EntityId;
+                        if (targetId == 0 && player.IdentityId != 0)
+                            targetId = player.IdentityId;
+                        if (targetId == 0)
+                        {
+                            LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: SteamID {fp.SteamID} no Character/Identity - skip");
+                            continue;
+                        }
                         Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
                             factionMsg,
                             "TDS",
-                            player.Character.EntityId,
+                            targetId,
                             "Blue"
                         );
                         sent++;
-                        LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sent to SteamID {fp.SteamID} EntityId {player.Character.EntityId}");
+                        LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sent to SteamID {fp.SteamID} targetId={targetId}");
                     }
                     catch (Exception ex)
                     {
@@ -232,7 +237,19 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     }
                 }
                 if (sent > 0)
+                {
+                    if (_config?.Faction?.FactionDiscordToGlobalFallback == true)
+                    {
+                        try
+                        {
+                            string broadcastMsg = $"[{faction.Tag} Discord] {discordUsername}: {message}";
+                            if (broadcastMsg.Length > 200) broadcastMsg = broadcastMsg.Substring(0, 197) + "...";
+                            Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(broadcastMsg, "TDS", 0, "Blue");
+                        }
+                        catch { /* ignore */ }
+                    }
                     LoggerUtil.LogInfo($"[CHAT] Discord → Faction {faction.Tag}: {discordUsername}: {message} (sent to {sent} members)");
+                }
                 else
                     LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sent=0 (no in-game player received)");
             }

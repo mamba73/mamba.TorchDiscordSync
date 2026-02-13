@@ -603,12 +603,21 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public bool AutoCreateVoice { get; set; }
 
+        /// <summary>
+        /// When true, Discord faction messages are also sent to global chat with prefix [TAG Discord]
+        /// so they are visible. Use if PM/EntityId delivery does not show in your client.
+        /// Default: true so Discord→faction messages are visible in-game.
+        /// </summary>
+        [XmlElement]
+        public bool FactionDiscordToGlobalFallback { get; set; }
+
         public FactionConfig()
         {
             Enabled = false;
             AutoCreateChannels = false;
             AutoCreateForum = false;
             AutoCreateVoice = false;
+            FactionDiscordToGlobalFallback = true;
         }
     }
 
