@@ -153,7 +153,7 @@ namespace mamba.TorchDiscordSync
 
                 try
                 {
-                    _damageTracking = new DamageTrackingService();
+                    _damageTracking = new DamageTrackingService(_config); 
                     LoggerUtil.LogInfo(
                         "[INIT] DamageTrackingService instance created (Init deferred to session load)"
                     );

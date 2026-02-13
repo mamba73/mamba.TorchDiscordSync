@@ -59,7 +59,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
             // Store DamageTracking reference and pass to KillerDetectionService
             _damageTracking = damageTracking;
-            _killerDetector = new KillerDetectionService(_damageTracking);
+            _killerDetector = new KillerDetectionService(config, _damageTracking);
             _locationService = new DeathLocationService(config);
 
             LoggerUtil.LogInfo(

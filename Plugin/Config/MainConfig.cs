@@ -20,8 +20,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         /// </summary>
         public static readonly string PLUGIN_DIR_NAME = "mambaSaveData";
 
-        public DataStorageConfig DataStorage { get; set; } = new DataStorageConfig();
-    
         /// <summary>
         /// Get the base instance directory (where Torch stores data)
         /// Tries environment variable first, falls back to default
@@ -158,7 +156,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
 
         [XmlArray("AdminSteamIDs")]
         [XmlArrayItem("SteamID")]
-        public long[] AdminSteamIDs { get; set; } // Example: 76561198020205461 (replace with actual SteamID)
+        public long[] AdminSteamIDs { get; set; }
 
         // ========== DISCORD BOT SETTINGS ==========
         [XmlElement]
@@ -184,18 +182,34 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public int VerificationCodeExpirationMinutes { get; set; } = 15;
 
+        // ========== SERVICE CLEANUP INTERVALS (TASK 1) ==========
+        /// <summary>
+        /// Cleanup interval for services (in seconds)
+        /// Default: 30 seconds
+        /// </summary>
         [XmlElement]
         public int CleanupIntervalSeconds { get; set; } = 30;
 
+        /// <summary>
+        /// Maximum age for damage history records (in seconds)
+        /// Default: 15 seconds
+        /// </summary>
         [XmlElement]
         public int DamageHistoryMaxSeconds { get; set; } = 15;
+
+        // ========== DATA STORAGE SETTINGS (TASK 2) ==========
+        /// <summary>
+        /// Data storage configuration - controls what data is saved to XML files
+        /// Includes event logging, death history, and chat message archiving
+        /// </summary>
+        [XmlElement]
+        public DataStorageConfig DataStorage { get; set; }
 
         public MainConfig()
         {
             Enabled = true;
             Debug = false;
             SyncIntervalSeconds = 30;
-            // AdminSteamIDs = new long[0];
             AdminSteamIDs = new long[] { 
                 76561198020205461, // mamba's SteamID - replace with actual admin SteamIDs
                 76561198000000001  // Add actual admin SteamIDs here
@@ -205,6 +219,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             Death = new DeathConfig();
             Monitoring = new MonitoringConfig();
             Faction = new FactionConfig();
+            DataStorage = new DataStorageConfig();
         }
 
         // Updated Load method to use correct path
@@ -301,7 +316,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         public ulong AdminAlertChannelId { get; set; }
 
         [XmlElement]
-        public ulong VerifiedRoleId { get; set; } // NEW: For storing the Verified role ID
+        public ulong VerifiedRoleId { get; set; }
 
         public DiscordConfig()
         {
@@ -412,8 +427,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             MuteDurationMinutes = 10;
             MaxMutesBeforeKick = 2;
             WarningMessage = "?? Please avoid using inappropriate language.";
-            MuteMessage =
-                "?? You have been muted for {minutes} minutes due to repeated violations.";
+            MuteMessage = "?? You have been muted for {minutes} minutes due to repeated violations.";
             KickMessage = "?? You have been removed from the channel for repeated violations.";
             AdminLogChannelId = 0;
         }
@@ -441,7 +455,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public int OldRevengeWindowHours { get; set; }
 
-        // NEW: Death Location Zones configuration
         [XmlElement]
         public bool EnableLocationZones { get; set; }
 
@@ -457,7 +470,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public int MessageDeduplicationWindowSeconds { get; set; }
 
-        // NEW: Location detection thresholds (in kilometers)
         [XmlElement]
         public double InnerSystemMaxKm { get; set; }
 
@@ -475,16 +487,11 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             DetectRetaliation = false;
             RetaliationWindowMinutes = 60;
             OldRevengeWindowHours = 24;
-
-            // Death Location Zones defaults
             EnableLocationZones = true;
             GridDetectionEnabled = true;
             ShowGridName = true;
-
             DeathMessageEmotes = "📢,⚔️,💀,🔥,⚡";
             MessageDeduplicationWindowSeconds = 3;
-
-            // Location detection thresholds (in kilometers)
             InnerSystemMaxKm = 5000.0;
             OuterSpaceMaxKm = 10000.0;
             PlanetProximityMultiplier = 3.0;
@@ -507,7 +514,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public bool EnableSimSpeedMonitoring { get; set; }
 
-        // NEW: SimSpeed Channel Naming
         [XmlElement]
         public string SimSpeedChannelNameFormat { get; set; }
 
@@ -517,7 +523,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public string SimSpeedWarningEmoji { get; set; }
 
-        // NEW: SimSpeed Alerts
         [XmlElement]
         public bool EnableSimSpeedAlerts { get; set; }
 
@@ -527,14 +532,12 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public int SimSpeedAlertCooldownSeconds { get; set; }
 
-        // NEW: Player Count Channel Naming
         [XmlElement]
         public bool EnablePlayerCountMonitoring { get; set; }
 
         [XmlElement]
         public string PlayerCountChannelNameFormat { get; set; }
 
-        // NEW: Player Count Alerts
         [XmlElement]
         public bool EnablePlayerCountAlerts { get; set; }
 
@@ -544,11 +547,9 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public string PlayerCountAlertMessage { get; set; }
 
-        // NEW: Admin Alerts
         [XmlElement]
         public bool EnableAdminAlerts { get; set; }
 
-        // NEW: Server Status Messages
         [XmlElement]
         public string ServerStartedMessage { get; set; }
 
@@ -567,29 +568,18 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             SimSpeedThreshold = 0.6f;
             StatusUpdateIntervalSeconds = 30;
             EnableSimSpeedMonitoring = true;
-
-            // SimSpeed Channel Naming
             SimSpeedChannelNameFormat = "{emoji} SimSpeed: {ss}";
             SimSpeedNormalEmoji = "🔧";
             SimSpeedWarningEmoji = "⚠️";
-
-            // SimSpeed Alerts
             EnableSimSpeedAlerts = true;
-            SimSpeedAlertMessage =
-                "🚨 **SIMSPEED WARNING** 🚨\nCurrent: **{ss}**\nThreshold: **{threshold}**";
+            SimSpeedAlertMessage = "🚨 **SIMSPEED WARNING** 🚨\nCurrent: **{ss}**\nThreshold: **{threshold}**";
             SimSpeedAlertCooldownSeconds = 1200;
-
-            // Player Count
             EnablePlayerCountMonitoring = true;
             PlayerCountChannelNameFormat = "👥 {p}/{pp} players";
             EnablePlayerCountAlerts = false;
             PlayerCountAlertThreshold = 10;
             PlayerCountAlertMessage = "📊 Player count: **{p}** / {pp}";
-
-            // Admin Alerts
             EnableAdminAlerts = true;
-
-            // Server Status Messages
             ServerStartedMessage = "✅ Server Started!";
             ServerStoppedMessage = "❌ Server Stopped!";
             ServerRestartedMessage = "🔄 Server Restarted!";
@@ -610,15 +600,63 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public bool AutoCreateVoice { get; set; }
 
-        // [XmlElement]
-        // public ulong CategoryId { get; set; }
-
         public FactionConfig()
         {
             Enabled = false;
             AutoCreateChannels = false;
             AutoCreateVoice = false;
-            // CategoryId = 0;
+        }
+    }
+
+    // ========== DATA STORAGE CONFIGURATION (TASK 2) ==========
+    [XmlType("DataStorageConfig")]
+    public class DataStorageConfig
+    {
+        /// <summary>
+        /// Save event logs to EventData.xml
+        /// Default: true (events are logged)
+        /// </summary>
+        [XmlElement]
+        public bool SaveEventLogs { get; set; }
+
+        /// <summary>
+        /// Save death history to EventData.xml
+        /// Default: true (deaths are logged)
+        /// </summary>
+        [XmlElement]
+        public bool SaveDeathHistory { get; set; }
+
+        /// <summary>
+        /// Save global chat messages to ChatData.xml
+        /// Default: false (global chat not logged by default)
+        /// </summary>
+        [XmlElement]
+        public bool SaveGlobalChat { get; set; }
+
+        /// <summary>
+        /// Save faction chat messages to ChatData.xml
+        /// Default: false (faction chat not logged by default)
+        /// </summary>
+        [XmlElement]
+        public bool SaveFactionChat { get; set; }
+
+        /// <summary>
+        /// Save private chat messages to ChatData.xml
+        /// Default: false (private chat not logged by default for privacy)
+        /// </summary>
+        [XmlElement]
+        public bool SavePrivateChat { get; set; }
+
+        /// <summary>
+        /// Default constructor with recommended settings
+        /// </summary>
+        public DataStorageConfig()
+        {
+            SaveEventLogs = true;
+            SaveDeathHistory = true;
+            SaveGlobalChat = false;
+            SaveFactionChat = false;
+            SavePrivateChat = false;
         }
     }
 }

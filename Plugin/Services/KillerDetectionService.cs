@@ -54,8 +54,14 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             }
         }
 
-        public KillerDetectionService(DamageTrackingService damageTracking = null)
+        /// <summary>
+        /// Initialize KillerDetectionService with MainConfig
+        /// </summary>
+        /// <param name="config">MainConfig for cleanup intervals</param>
+        /// <param name="damageTracking">Optional damage tracking service</param>
+        public KillerDetectionService(MainConfig config, DamageTrackingService damageTracking = null)
         {
+            _config = config ?? new MainConfig();
             this.damageTracking = damageTracking;
         }
 

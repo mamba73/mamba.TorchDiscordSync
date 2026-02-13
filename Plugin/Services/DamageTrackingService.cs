@@ -113,6 +113,9 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         /// <summary>Whether to log damage to XML file</summary>
         private readonly bool _enableLogging;
 
+        /// <summary>Main configuration - for dynamic config values</summary>
+        // private readonly MainConfig _config;
+
         /// <summary>Last cleanup timestamp</summary>
         private DateTime _lastCleanup = DateTime.Now;
 
@@ -123,9 +126,11 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         /// <summary>
         /// Initialize DamageTrackingService
         /// </summary>
+        /// <param name="config">MainConfig for cleanup intervals</param>
         /// <param name="enableLogging">Whether to log damage to XML file (optional)</param>
-        public DamageTrackingService(bool enableLogging = false)
+        public DamageTrackingService(MainConfig config, bool enableLogging = false)
         {
+            _config = config ?? new MainConfig();
             _damageHistory = new Dictionary<long, DamageRecord[]>();
             _bufferIndices = new Dictionary<long, int>();
             _enableLogging = enableLogging;
