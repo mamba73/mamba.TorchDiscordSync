@@ -20,6 +20,8 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         /// </summary>
         public static readonly string PLUGIN_DIR_NAME = "mambaSaveData";
 
+        public DataStorageConfig DataStorage { get; set; } = new DataStorageConfig();
+    
         /// <summary>
         /// Get the base instance directory (where Torch stores data)
         /// Tries environment variable first, falls back to default
@@ -182,6 +184,12 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public int VerificationCodeExpirationMinutes { get; set; } = 15;
 
+        [XmlElement]
+        public int CleanupIntervalSeconds { get; set; } = 30;
+
+        [XmlElement]
+        public int DamageHistoryMaxSeconds { get; set; } = 15;
+
         public MainConfig()
         {
             Enabled = true;
@@ -316,12 +324,12 @@ namespace mamba.TorchDiscordSync.Plugin.Config
     // ========== CHAT SYNCHRONIZATION CONFIGURATION ==========
     [XmlType("ChatConfig")]
     public class ChatConfig
-    {
+    {  
         [XmlElement]
-        public bool EnableModeration { get; set; }
+        public bool Enabled { get; set; }
 
         [XmlElement]
-        public string[] BlacklistedWords { get; set; }
+        public bool EnableModeration { get; set; }
 
         [XmlElement]
         public int MaxWarningsBeforeMute { get; set; }
@@ -343,9 +351,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
 
         [XmlElement]
         public ulong AdminLogChannelId { get; set; }
-
-        [XmlElement]
-        public bool Enabled { get; set; }
 
         [XmlElement]
         public bool BotToGame { get; set; }
@@ -403,7 +408,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             FactionColor = "Green";
             StripEmojisForInGameChat = true;
             EnableModeration = false;
-            BlacklistedWords = new string[] { "hack", "cheat", "exploit", "http" };
             MaxWarningsBeforeMute = 3;
             MuteDurationMinutes = 10;
             MaxMutesBeforeKick = 2;

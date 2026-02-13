@@ -24,7 +24,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         private readonly MainConfig _config;
         private readonly DiscordService _discordService;
         private readonly DatabaseService _db;
-        
+        private readonly BlacklistConfig _blacklistConfig;
+
         // Dictionary for tracking user violations
         private Dictionary<ulong, UserViolationRecord> _userViolations = new Dictionary<ulong, UserViolationRecord>();
         private object _lockObject = new object();
@@ -36,6 +37,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             _config = config;
             _discordService = discordService;
             _db = db;
+            _blacklistConfig = new BlacklistConfig(); // Load blacklist config (can be extended to load from file)
+            LoggerUtil.LogInfo("[CHAT_MODERATOR] Initialized with blacklist");
         }
 
         // Process Discord message with moderation
@@ -269,20 +272,47 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         private bool ContainsBlacklistedWords(string message, out string foundWord)
         {
             foundWord = null;
-            if (_config.Chat.BlacklistedWords == null || _config.Chat.BlacklistedWords.Length == 0)
+
+            var words = _blacklistConfig.GetWordsArray(); // ✅ Use BlacklistConfig
+            if (words == null || words.Length == 0)
                 return false;
 
-            string lowerMessage = message.ToLower();
-            for (int i = 0; i < _config.Chat.BlacklistedWords.Length; i++)
+            string messageToCheck = _blacklistConfig.CaseSensitive ? message : message.ToLower();
+
+            for (int i = 0; i < words.Length; i++)
             {
-                string word = _config.Chat.BlacklistedWords[i].ToLower();
-                if (lowerMessage.Contains(word))
+                string word = _blacklistConfig.CaseSensitive ? words[i] : words[i].ToLower();
+
+                if (_blacklistConfig.PartialMatch)
                 {
-                    foundWord = word;
-                    return true;
+                    // Match partial word: "hack" matches "hacking"
+                    if (messageToCheck.Contains(word))
+                    {
+                        foundWord = word;
+                        return true;
+                    }
+                }
+                else
+                {
+                    // Match whole word only
+                    if (ContainsWholeWord(messageToCheck, word))
+                    {
+                        foundWord = word;
+                        return true;
+                    }
                 }
             }
             return false;
+        }
+
+        // NEW helper method:
+        private bool ContainsWholeWord(string message, string word)
+        {
+            // Simple whole word matching
+            var regex = new System.Text.RegularExpressions.Regex(
+                @"\b" + System.Text.RegularExpressions.Regex.Escape(word) + @"\b"
+            );
+            return regex.IsMatch(message);
         }
 
         // Check for attachments or links

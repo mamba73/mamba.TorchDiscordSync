@@ -8,11 +8,11 @@ An advanced Space Engineers Torch server plugin providing deep Discord integrati
 
 Unlike simple chat relays, this plugin focuses on **deep game integration**—tracking accurate kill data, analyzing damage sources in real-time, synchronizing player factions, and monitoring server health.
 
-**Author**: mamba  
+**C#**: 4.6+ / .NET Framework 4.8  
 **Torch**: 1.3.1+  
 **Space Engineers**: 1.208+  
-**C#**: 4.6+ / .NET Framework 4.8  
-**Version**: 2.2.439
+**Author**: mamba  
+**Version**: 2.2.467
 
 
 ---
@@ -28,8 +28,8 @@ Unlike simple chat relays, this plugin focuses on **deep game integration**—tr
 | **Discord Bot Connection** | ✅ Done | Basic bot connectivity and intent handling. |
 | **Data Storage (XML)** | ✅ Done | Current storage solution. |
 | **Death Location Classification** | ✅ Done | Planet, orbit & inner, outer, deep space detection. |
-| **User Verification** | 🚧 In Progress | Securely linking SteamID to Discord UserID. |
-| **Faction Synchronization** | 🚧 In Progress | Syncing SE Factions to Discord Roles. |
+| **User Verification** | ✅ Done | Securely linking SteamID to Discord UserID. Steam ID verification with in-game confirmation. |
+| **Faction Synchronization** | ✅ Done | Syncing SE Factions to Discord Roles. Automatic role management for faction members. |
 | **Secure Faction Chat** | ⏳ Planned | Private channels for faction comms (Game ↔ Discord). |
 | **SQLite Migration** | ⏳ Planned | First major upcoming milestone!  Critical for high-volume features (Raid Alerts). |
 
@@ -110,15 +110,15 @@ Death messages support exactly four parameters:
 ---
 ## 🗺️ Roadmap & Future Plans
 
-### 1. SQLite Migration (High Priority)
+### 1. Secure Faction Chat
+Once Faction Sync is complete, the plugin will create private Discord channels restricted to faction members, allowing secure communication between the game faction chat and Discord.
+
+### 2. SQLite Migration (High Priority)
 To support high-frequency data logging (such as bullet impacts during heavy PvP) without causing server lag, the storage system will be migrated from XML to SQLite. This is a prerequisite for the Raid Alert system.
 
-### 2. Raid Alerts (Offline Protection)
+### 3. Raid Alerts (Offline Protection)
 *Dependency: SQLite Migration*
 A system to notify Faction members via Discord DM/Ping when their base is taking damage while they are offline. Requires the performance of SQLite to handle rapid damage events without impacting SimSpeed.
-
-### 3. Secure Faction Chat
-Once Faction Sync is complete, the plugin will create private Discord channels restricted to faction members, allowing secure communication between the game faction chat and Discord.
 
 ### 4. Leaderboards & Statistics
 Weekly or monthly PvP rankings (K/D ratios, Most Active Faction, Top Ace Pilot) generated from the gathered kill data.
@@ -126,7 +126,7 @@ Weekly or monthly PvP rankings (K/D ratios, Most Active Faction, Top Ace Pilot) 
 ### 5. Bounty / Retaliation System
 Building on the existing retaliation logic, this feature will allow players to place bounties on others, tracked and announced via Discord.
 
-### . Discord Admin Commands
+### 6. Discord Admin Commands
 Administrative commands will be accessible directly from Discord, allowing server management from mobile devices without logging into the game.
 Planned capabilities:
 - Trigger faction sync

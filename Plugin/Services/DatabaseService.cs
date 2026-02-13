@@ -404,7 +404,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             long steamID,
             string discordUsername,
             string verificationCode,
-            int expirationMinutes = 15,
+            int expirationMinutes,
             string gamePlayerName = null
         )
         {
