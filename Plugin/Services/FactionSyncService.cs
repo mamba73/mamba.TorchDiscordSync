@@ -530,6 +530,276 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
+        /// Admin command: /tds admin:sync:check
+        /// Check status of all faction syncs
+        /// </summary>
+        public string AdminSyncCheck()
+        {
+            try
+            {
+                LoggerUtil.LogInfo("[ADMIN:SYNC:CHECK] Executed");
+
+                var allFactions = _db.GetAllFactions();
+                if (allFactions == null || allFactions.Count == 0)
+                {
+                    return "No factions in database";
+                }
+
+                var result = new System.Text.StringBuilder();
+                result.AppendLine("[SYNC STATUS CHECK]");
+                result.AppendLine();
+
+                int synced = 0, orphaned = 0, failed = 0, pending = 0;
+
+                foreach (var faction in allFactions)
+                {
+                    if (faction.SyncStatus == "Synced")
+                    {
+                        result.AppendLine($"✓ {faction.Tag}: SYNCED");
+                        result.AppendLine($"    Role ID: {faction.DiscordRoleID}");
+                        result.AppendLine($"    Channel: {faction.DiscordChannelName} (ID: {faction.DiscordChannelID})");
+                        result.AppendLine($"    Synced at: {faction.SyncedAt}");
+                        synced++;
+                    }
+                    else if (faction.SyncStatus == "Orphaned")
+                    {
+                        result.AppendLine($"⚠ {faction.Tag}: ORPHANED - {faction.ErrorMessage}");
+                        orphaned++;
+                    }
+                    else if (faction.SyncStatus == "Failed")
+                    {
+                        result.AppendLine($"❌ {faction.Tag}: FAILED - {faction.ErrorMessage}");
+                        failed++;
+                    }
+                    else
+                    {
+                        result.AppendLine($"⏳ {faction.Tag}: PENDING");
+                        pending++;
+                    }
+                }
+
+                result.AppendLine();
+                result.AppendLine($"Summary: Synced={synced}, Pending={pending}, Orphaned={orphaned}, Failed={failed}");
+
+                LoggerUtil.LogInfo($"[ADMIN:SYNC:CHECK] Result: {synced} synced, {pending} pending, {orphaned} orphaned, {failed} failed");
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[ADMIN:SYNC:CHECK] Error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:undo <faction_tag>
+        /// Delete Discord role and channel for a faction
+        /// </summary>
+        public async Task<string> AdminSyncUndo(string factionTag)
+        {
+            try
+            {
+                LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Executing for faction: {factionTag}");
+
+                var faction = _db.GetFactionByTag(factionTag);
+                if (faction == null)
+                {
+                    LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Faction not found: {factionTag}");
+                    return $"Faction '{factionTag}' not found in database";
+                }
+
+                var result = new System.Text.StringBuilder();
+                result.AppendLine($"[UNDO] {factionTag}");
+
+                // Delete Discord role
+                if (faction.DiscordRoleID > 0)
+                {
+                    try
+                    {
+                        bool roleDeleted = await _discord.DeleteRoleAsync(faction.DiscordRoleID);
+                        if (roleDeleted)
+                        {
+                            result.AppendLine($"✓ Deleted Discord role: {faction.DiscordRoleName}");
+                            LoggerUtil.LogSuccess($"[ADMIN:SYNC:UNDO] Deleted role: {faction.DiscordRoleName}");
+                            faction.DiscordRoleID = 0;
+                            faction.DiscordRoleName = "";
+                        }
+                        else
+                        {
+                            result.AppendLine($"⚠ Discord role not found or already deleted: {faction.DiscordRoleName}");
+                            LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Role not found: {faction.DiscordRoleName}");
+                            faction.DiscordRoleID = 0;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Failed to delete role: {ex.Message}");
+                        return $"Failed to delete role: {ex.Message}";
+                    }
+                }
+
+                // Delete Discord channel
+                if (faction.DiscordChannelID > 0)
+                {
+                    try
+                    {
+                        bool channelDeleted = await _discord.DeleteChannelAsync(faction.DiscordChannelID);
+                        if (channelDeleted)
+                        {
+                            result.AppendLine($"✓ Deleted Discord channel: {faction.DiscordChannelName}");
+                            LoggerUtil.LogSuccess($"[ADMIN:SYNC:UNDO] Deleted channel: {faction.DiscordChannelName}");
+                            faction.DiscordChannelID = 0;
+                            faction.DiscordChannelName = "";
+                        }
+                        else
+                        {
+                            result.AppendLine($"⚠ Discord channel not found or already deleted: {faction.DiscordChannelName}");
+                            LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Channel not found: {faction.DiscordChannelName}");
+                            faction.DiscordChannelID = 0;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Failed to delete channel: {ex.Message}");
+                        return $"Failed to delete channel: {ex.Message}";
+                    }
+                }
+
+                // Update faction status
+                faction.SyncStatus = "Pending";
+                faction.SyncedAt = null;
+                faction.SyncedBy = null;
+                faction.ErrorMessage = "";
+                _db.SaveFaction(faction);
+
+                result.AppendLine($"✓ Undo completed for {factionTag}");
+                LoggerUtil.LogSuccess($"[ADMIN:SYNC:UNDO] Completed for {factionTag}");
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:cleanup
+        /// Delete all orphaned Discord roles and channels
+        /// </summary>
+        public async Task<string> AdminSyncCleanup()
+        {
+            try
+            {
+                LoggerUtil.LogWarning("[ADMIN:SYNC:CLEANUP] Executing cleanup of orphaned syncs");
+
+                var allFactions = _db.GetAllFactions();
+                var orphaned = allFactions?.Where(f => f.SyncStatus == "Orphaned").ToList();
+
+                if (orphaned == null || orphaned.Count == 0)
+                {
+                    LoggerUtil.LogInfo("[ADMIN:SYNC:CLEANUP] No orphaned syncs to clean");
+                    return "No orphaned syncs to clean up";
+                }
+
+                var result = new System.Text.StringBuilder();
+                result.AppendLine($"[CLEANUP] Found {orphaned.Count} orphaned syncs");
+
+                int cleaned = 0;
+
+                foreach (var faction in orphaned)
+                {
+                    try
+                    {
+                        // Delete role if exists
+                        if (faction.DiscordRoleID > 0)
+                        {
+                            bool deleted = await _discord.DeleteRoleAsync(faction.DiscordRoleID);
+                            if (deleted)
+                            {
+                                result.AppendLine($"✓ Deleted orphaned role: {faction.DiscordRoleName}");
+                                LoggerUtil.LogSuccess($"[ADMIN:SYNC:CLEANUP] Deleted role: {faction.DiscordRoleName}");
+                            }
+                        }
+
+                        // Delete channel if exists
+                        if (faction.DiscordChannelID > 0)
+                        {
+                            bool deleted = await _discord.DeleteChannelAsync(faction.DiscordChannelID);
+                            if (deleted)
+                            {
+                                result.AppendLine($"✓ Deleted orphaned channel: {faction.DiscordChannelName}");
+                                LoggerUtil.LogSuccess($"[ADMIN:SYNC:CLEANUP] Deleted channel: {faction.DiscordChannelName}");
+                            }
+                        }
+
+                        // Reset faction status
+                        faction.SyncStatus = "Pending";
+                        faction.DiscordRoleID = 0;
+                        faction.DiscordChannelID = 0;
+                        faction.DiscordRoleName = "";
+                        faction.DiscordChannelName = "";
+                        faction.SyncedAt = null;
+                        faction.ErrorMessage = "";
+                        _db.SaveFaction(faction);
+
+                        cleaned++;
+                    }
+                    catch (Exception ex)
+                    {
+                        result.AppendLine($"❌ Failed to clean {faction.Tag}: {ex.Message}");
+                        LoggerUtil.LogError($"[ADMIN:SYNC:CLEANUP] Failed to clean {faction.Tag}: {ex.Message}");
+                    }
+                }
+
+                result.AppendLine($"✓ Cleanup complete: {cleaned} factions cleaned");
+                LoggerUtil.LogSuccess($"[ADMIN:SYNC:CLEANUP] Completed: {cleaned} factions");
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[ADMIN:SYNC:CLEANUP] Error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:status
+        /// Show summary of sync status
+        /// </summary>
+        public string AdminSyncStatus()
+        {
+            try
+            {
+                LoggerUtil.LogInfo("[ADMIN:SYNC:STATUS] Executed");
+
+                var allFactions = _db.GetAllFactions();
+                if (allFactions == null || allFactions.Count == 0)
+                {
+                    return "No factions in database";
+                }
+
+                int synced = allFactions.Count(f => f.SyncStatus == "Synced");
+                int pending = allFactions.Count(f => f.SyncStatus == "Pending");
+                int failed = allFactions.Count(f => f.SyncStatus == "Failed");
+                int orphaned = allFactions.Count(f => f.SyncStatus == "Orphaned");
+                int total = allFactions.Count;
+
+                string status = $"Sync Status: {synced}/{total} synced | {pending} pending | {failed} failed | {orphaned} orphaned";
+
+                LoggerUtil.LogInfo($"[ADMIN:SYNC:STATUS] {status}");
+                return status;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[ADMIN:SYNC:STATUS] Error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        
+
+        /// <summary>
         /// Retrieves the display name for a player by their identity ID.
         /// </summary>
         private string GetPlayerName(long playerId)

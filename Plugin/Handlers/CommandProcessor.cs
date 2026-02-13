@@ -21,7 +21,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         private readonly SyncOrchestrator _orchestrator;
         private readonly VerificationService _verification;
         private readonly VerificationCommandHandler _verificationCommandHandler;
-        private readonly SignalCommandHandler _signalHandler;
+        private readonly TestCommandHandler _testHandler;
 
         public CommandProcessor(
             MainConfig config,
@@ -42,7 +42,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             _orchestrator = orchestrator;
             _verification = verification;
             _verificationCommandHandler = verificationCommandHandler;
-            _signalHandler = new SignalCommandHandler(_discordService);
+            _testHandler = new TestCommandHandler(_discordService);
 
             if (_verificationCommandHandler != null)
             {
@@ -112,13 +112,13 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     return;
                 }
 
-                // === SIGNAL COMMANDS ===
-                if (subcommand.StartsWith("signal:"))
+                // === TEST COMMANDS ===
+                if (subcommand.StartsWith("test:"))
                 {
                     LoggerUtil.LogInfo(
-                        $"[SIGNAL_CMD] Signal command from {playerName}: {subcommand}"
+                        $"[TEST_CMD] Test command from {playerName}: {subcommand}"
                     );
-                    _signalHandler.HandleSignalCommand(
+                    _testHandler.HandleTestCommand(
                         subcommand,
                         playerSteamID,
                         playerName,
@@ -126,6 +126,99 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     );
                     return;
                 }
+
+                // ========== ADMIN SYNC COMMANDS ==========
+                if (subcommand.StartsWith("admin:sync:"))
+                {
+                    // PROVJERI JE LI ADMIN
+                    if (!CommandAuthorizationUtil.IsUserAdmin(playerSteamID, _config.AdminSteamIDs))
+                    {
+                        ChatUtils.SendError("❌ Admin command - access denied");
+                        LoggerUtil.LogWarning($"[COMMAND] Non-admin {playerName} (SteamID: {playerSteamID}) tried admin:sync command: {subcommand}");
+                        return;
+                    }
+
+                    // Ekstrakti sub-komandu (check, undo, cleanup, status)
+                    string syncSubcommand = subcommand.Substring("admin:sync:".Length);
+
+                    LoggerUtil.LogInfo($"[COMMAND] Admin {playerName} (SteamID: {playerSteamID}) executing: admin:sync:{syncSubcommand}");
+
+                    switch (syncSubcommand)
+                    {
+                        case "check":
+                            {
+                                string result = _factionSync.AdminSyncCheck();
+                                ChatUtils.SendSuccess(result);
+                                LoggerUtil.LogInfo($"[ADMIN:SYNC:CHECK] Executed by {playerName}");
+                                break;
+                            }
+
+                        case "undo":
+                            {
+                                if (parts.Length < 4)
+                                {
+                                    ChatUtils.SendError("Usage: /tds admin:sync:undo <faction_tag>");
+                                    LoggerUtil.LogDebug($"[ADMIN:SYNC:UNDO] Missing arguments from {playerName}");
+                                    return;
+                                }
+
+                                string factionTag = parts[3];
+                                LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] {playerName} undoing faction: {factionTag}");
+
+                                var _ = _factionSync.AdminSyncUndo(factionTag).ContinueWith(task =>
+                                {
+                                    if (task.IsCompletedSuccessfully)
+                                    {
+                                        ChatUtils.SendSuccess(task.Result);
+                                        LoggerUtil.LogSuccess($"[ADMIN:SYNC:UNDO] Completed by {playerName} for {factionTag}");
+                                    }
+                                    else
+                                    {
+                                        ChatUtils.SendError($"❌ Error: {task.Exception?.Message}");
+                                        LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Failed: {task.Exception?.Message}");
+                                    }
+                                });
+                                break;
+                            }
+
+                        case "cleanup":
+                            {
+                                ChatUtils.SendWarning("⚙ Cleaning up orphaned Discord roles/channels...");
+                                LoggerUtil.LogWarning($"[ADMIN:SYNC:CLEANUP] {playerName} starting cleanup");
+
+                                var _ = _factionSync.AdminSyncCleanup().ContinueWith(task =>
+                                {
+                                    if (task.IsCompletedSuccessfully)
+                                    {
+                                        ChatUtils.SendSuccess(task.Result);
+                                        LoggerUtil.LogSuccess($"[ADMIN:SYNC:CLEANUP] Completed by {playerName}");
+                                    }
+                                    else
+                                    {
+                                        ChatUtils.SendError($"❌ Error: {task.Exception?.Message}");
+                                        LoggerUtil.LogError($"[ADMIN:SYNC:CLEANUP] Failed: {task.Exception?.Message}");
+                                    }
+                                });
+                                break;
+                            }
+
+                        case "status":
+                            {
+                                string status = _factionSync.AdminSyncStatus();
+                                ChatUtils.SendInfo(status);
+                                LoggerUtil.LogInfo($"[ADMIN:SYNC:STATUS] Executed by {playerName}");
+                                break;
+                            }
+
+                        default:
+                            ChatUtils.SendError($"Unknown admin:sync subcommand: {syncSubcommand}");
+                            LoggerUtil.LogWarning($"[COMMAND] Unknown admin:sync subcommand from {playerName}: {syncSubcommand}");
+                            break;
+                    }
+
+                    return;
+                }
+
                 // Admin-only commands
                 List<string> adminOnlyCommands = new List<string>
                 {
@@ -205,11 +298,10 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 ChatUtils.SendError("Command error: " + ex.Message);
             }
         }
-
         /// <summary>
         /// Display help text based on user authorization level
-        /// Non-admins see only: verify, verify:status, help, status
-        /// Admins see all commands
+        /// Non-admins see: verify, verify:status, verify:help, status, help
+        /// Admins see: all user commands + all admin commands (sync, verify, etc.)
         /// </summary>
         private void HandleHelpCommand(long playerSteamID)
         {
@@ -222,35 +314,58 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     _config.AdminSteamIDs
                 );
 
-                string helpText = "=== TDS Commands ===\n";
+                var helpText = new System.Text.StringBuilder();
+                helpText.AppendLine("═══════════════════════════════════════════════");
+                helpText.AppendLine("            TDS (Torch Discord Sync)");
+                helpText.AppendLine("═══════════════════════════════════════════════");
+                helpText.AppendLine();
 
+                // ========== ADMIN COMMANDS ==========
                 if (isAdmin)
                 {
-                    // ADMIN - show all commands (ASCII only - no emoji)
-                    helpText += "[ADMIN] COMMANDS:\n";
-                    helpText += "/tds sync - Synchronize factions\n";
-                    helpText += "/tds reset - Reset Discord roles/channels\n";
-                    helpText += "/tds reload - Reload configuration\n";
-                    helpText += "/tds cleanup - Clean orphaned Discord items\n";
-                    helpText += "/tds unverify <SteamID> [reason] - Remove verification\n";
-                    helpText += "/tds admin:verify:list - List verified users\n";
-                    helpText += "/tds admin:verify:pending - List pending verifications\n";
-                    helpText += "/tds admin:verify:delete <SteamID> - Delete verification\n";
-                    helpText += "\n";
+                    helpText.AppendLine("[ADMIN] SYNC COMMANDS:");
+                    helpText.AppendLine("  /tds admin:sync:check      - Check status of all faction syncs");
+                    helpText.AppendLine("  /tds admin:sync:undo <tag> - Undo sync for faction (delete role/channel)");
+                    helpText.AppendLine("  /tds admin:sync:cleanup    - Delete all orphaned Discord roles/channels");
+                    helpText.AppendLine("  /tds admin:sync:status     - Show sync status summary");
+                    helpText.AppendLine();
+
+                    helpText.AppendLine("[ADMIN] GENERAL COMMANDS:");
+                    helpText.AppendLine("  /tds sync                  - Synchronize all factions to Discord");
+                    helpText.AppendLine("  /tds reset                 - Reset Discord (DELETE all roles/channels!)");
+                    helpText.AppendLine("  /tds reload                - Reload configuration");
+                    helpText.AppendLine("  /tds cleanup               - Clean orphaned Discord items");
+                    helpText.AppendLine();
+
+                    helpText.AppendLine("[ADMIN] VERIFICATION COMMANDS:");
+                    helpText.AppendLine("  /tds unverify <SteamID> [reason]  - Remove user verification");
+                    helpText.AppendLine("  /tds admin:verify:list             - List all verified users");
+                    helpText.AppendLine("  /tds admin:verify:pending          - List pending verifications");
+                    helpText.AppendLine("  /tds admin:verify:delete <SteamID> - Delete verification");
+                    helpText.AppendLine();
+
+                    helpText.AppendLine("[ADMIN] HELP:");
+                    helpText.AppendLine("  /tds admin:help            - Show admin commands");
+                    helpText.AppendLine();
                 }
 
-                // USER - show available commands (for everyone - ASCII only)
-                helpText += "[USER] COMMANDS:\n";
-                helpText += "/tds verify @DiscordName - Link your Discord account\n";
-                helpText += "/tds verify <DiscordUserID> - Link using Discord User ID\n";
-                helpText += "/tds verify:status - Check your verification status\n";
-                helpText += "/tds verify:delete - Delete pending verification\n";
-                helpText += "/tds verify:help - Detailed verification guide\n";
-                helpText += "/tds status - Show plugin status\n";
-                helpText += "/tds help - Show this help\n";
-                helpText += "===================";
+                // ========== USER COMMANDS ==========
+                helpText.AppendLine("[USER] VERIFICATION COMMANDS:");
+                helpText.AppendLine("  /tds verify @DiscordName        - Link Discord account (by username)");
+                helpText.AppendLine("  /tds verify <DiscordUserID>     - Link Discord account (by ID)");
+                helpText.AppendLine("  /tds verify:status              - Check your verification status");
+                helpText.AppendLine("  /tds verify:delete              - Delete your pending verification");
+                helpText.AppendLine("  /tds verify:help                - Detailed verification guide");
+                helpText.AppendLine();
 
-                ChatUtils.SendHelpText(helpText);
+                helpText.AppendLine("[USER] INFO COMMANDS:");
+                helpText.AppendLine("  /tds status                 - Show plugin status");
+                helpText.AppendLine("  /tds help                   - Show this help");
+                helpText.AppendLine();
+
+                helpText.AppendLine("═══════════════════════════════════════════════");
+
+                ChatUtils.SendHelpText(helpText.ToString());
                 LoggerUtil.LogInfo(
                     $"[HELP_CMD] Help sent to {(isAdmin ? "ADMIN" : "USER")} SteamID {playerSteamID}"
                 );
