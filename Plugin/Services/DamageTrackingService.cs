@@ -85,10 +85,14 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         private const int BUFFER_SIZE = 20;
 
         /// <summary>How often to cleanup old records (seconds)</summary>
-        private const int CLEANUP_INTERVAL_SECONDS = 30;
+        //private const int CLEANUP_INTERVAL_SECONDS = 30;
 
         /// <summary>Maximum age for records to keep (seconds)</summary>
-        private const int MAX_HISTORY_SECONDS = 15;
+        //private const int MAX_HISTORY_SECONDS = 15;
+
+        private readonly MainConfig _config;
+        private int CleanupIntervalSeconds => _config.CleanupIntervalSeconds;
+        private int MaxHistorySeconds => _config.DamageHistoryMaxSeconds;
 
         // ════════════════════════════════════════════════════════════════════════
         // FIELDS
@@ -180,7 +184,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     return;
 
                 // Periodic cleanup of old records
-                if ((DateTime.Now - _lastCleanup).TotalSeconds > CLEANUP_INTERVAL_SECONDS)
+                if ((DateTime.Now - _lastCleanup).TotalSeconds > CleanupIntervalSeconds)
                 {
                     CleanupOldRecords();
                     _lastCleanup = DateTime.Now;
@@ -346,7 +350,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
         /// <summary>
         /// Remove old records periodically to prevent memory buildup
-        /// Removes all records older than MAX_HISTORY_SECONDS
+        /// Removes all records older than MaxHistorySeconds
         /// Called automatically by OnDamageReceived
         /// </summary>
         private void CleanupOldRecords()
@@ -356,7 +360,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 lock (_lock)
                 {
                     // Records older than this are removed
-                    var cutoffTime = DateTime.Now.AddSeconds(-MAX_HISTORY_SECONDS);
+                    var cutoffTime = DateTime.Now.AddSeconds(-MaxHistorySeconds);
                     var keysToRemove = new List<long>();
 
                     // Go through each victim's history
