@@ -383,8 +383,8 @@ namespace mamba.TorchDiscordSync
                     return;
 
                 string channelName = msg.Channel.ToString() ?? "Unknown";
-
-                LoggerUtil.LogDebug($"[CHAT] Channel: {channelName}, Message: {msg.Message}");
+                if (channelName.IndexOf("Faction", StringComparison.OrdinalIgnoreCase) >= 0)
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Incoming chat: Channel=\"{channelName}\" Author=\"{msg.Author}\" SteamId={msg.AuthorSteamId} Message=\"{msg.Message}\"");
 
                 // PRIORITY 1: Check for /tds commands FIRST (before any filtering)
                 // This ensures commands work in ALL channels (Global and Faction)
@@ -414,33 +414,45 @@ namespace mamba.TorchDiscordSync
                 if (channelName.StartsWith("Faction") || channelName == "Faction")
                 {
                     long gameChatId = 0;
-                    if (channelName.StartsWith("Faction:") && channelName.Length > 8)
+                    if (channelName.Length > 8)
                     {
-                        string idPart = channelName.Substring(8).Trim();
-                        long.TryParse(idPart, out gameChatId);
+                        int colonIdx = channelName.IndexOf(':');
+                        if (colonIdx >= 0 && colonIdx < channelName.Length - 1)
+                        {
+                            string idPart = channelName.Substring(colonIdx + 1).Trim();
+                            long.TryParse(idPart, out gameChatId);
+                        }
                     }
-                    if (gameChatId != 0 && _db != null && _chatSync != null)
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Faction channel raw: channelName=\"{channelName}\" gameChatId={gameChatId} authorSteamId={msg.AuthorSteamId} author=\"{msg.Author}\"");
+
+                    if (_db != null && _chatSync != null)
                     {
-                        var faction = _db.GetFactionByGameChatId(gameChatId);
+                        var faction = gameChatId != 0 ? _db.GetFactionByGameChatId(gameChatId) : null;
                         if (faction == null && msg.AuthorSteamId.HasValue)
                         {
-                            var player = _db.GetPlayerBySteamID((long)msg.AuthorSteamId.Value);
+                            long authorSteamId = (long)msg.AuthorSteamId.Value;
+                            var player = _db.GetPlayerBySteamID(authorSteamId);
                             if (player != null)
-                            {
                                 faction = _db.GetFaction(player.FactionID);
-                                if (faction != null && faction.DiscordChannelID != 0)
-                                {
-                                    faction.GameFactionChatId = gameChatId;
-                                    _db.SaveFaction(faction);
-                                    LoggerUtil.LogInfo($"[CHAT] Mapped faction chat {gameChatId} → {faction.Tag}");
-                                }
+                            if (faction == null)
+                            {
+                                var allFactions = _db.GetAllFactions();
+                                faction = allFactions?.FirstOrDefault(f => f.Players != null && f.Players.Any(p => p.SteamID == authorSteamId));
+                            }
+                            if (faction != null && faction.DiscordChannelID != 0 && gameChatId != 0)
+                            {
+                                faction.GameFactionChatId = gameChatId;
+                                _db.SaveFaction(faction);
+                                LoggerUtil.LogInfo($"[CHAT] Mapped faction chat {gameChatId} → {faction.Tag}");
                             }
                         }
                         if (faction != null && faction.DiscordChannelID != 0)
                         {
                             _ = _chatSync.SendGameFactionMessageToDiscordAsync(faction, msg.Author, msg.Message);
-                            LoggerUtil.LogDebug($"[CHAT] Faction → Discord {faction.Tag}: {msg.Author}: {msg.Message}");
+                            LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction → Discord: forwarded {faction.Tag} \"{msg.Author}: {msg.Message}\"");
                         }
+                        else
+                            LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction → Discord: skip (faction=" + (faction != null ? "ok" : "null") + " DiscordChannelID=" + (faction?.DiscordChannelID ?? 0) + ")");
                     }
                     return;
                 }

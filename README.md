@@ -12,7 +12,7 @@ Unlike simple chat relays, this plugin focuses on **deep game integration**—tr
 **Torch**: 1.3.1+  
 **Space Engineers**: 1.208+  
 **Author**: mamba  
-**Version**: 2.2.492
+**Version**: 2.2.493
 
 
 ---

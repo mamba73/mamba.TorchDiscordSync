@@ -186,22 +186,35 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             try
             {
                 if (string.IsNullOrWhiteSpace(discordUsername) || string.IsNullOrWhiteSpace(message))
+                {
+                    LoggerUtil.LogInfo("[CHAT_DEBUG] Discord→Faction: skip (empty user or message)");
                     return;
+                }
                 var faction = _db?.GetFaction(factionId);
                 if (faction?.Players == null || faction.Players.Count == 0)
                 {
-                    LoggerUtil.LogDebug($"[CHAT] Faction {factionId} has no players - skipping faction message");
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: faction {factionId} has no players");
                     return;
                 }
                 string gameMessage = FormatDiscordMessageForGame(discordUsername, message);
-                string factionMsg = $"[Faction] [Discord] {gameMessage}";
+                string factionMsg = $"[Discord] {discordUsername}: {message}";
                 var players = new List<VRage.Game.ModAPI.IMyPlayer>();
                 MyAPIGateway.Players.GetPlayers(players);
                 int sent = 0;
+                LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sending \"{factionMsg}\" to {faction.Players.Count} faction members");
                 foreach (var fp in faction.Players)
                 {
                     var player = players.FirstOrDefault(p => (long)p.SteamUserId == fp.SteamID);
-                    if (player?.Character == null) continue;
+                    if (player == null)
+                    {
+                        LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: SteamID {fp.SteamID} not in game - skip");
+                        continue;
+                    }
+                    if (player.Character == null)
+                    {
+                        LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: SteamID {fp.SteamID} no character (dead/spectator?) - skip");
+                        continue;
+                    }
                     try
                     {
                         Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
@@ -211,11 +224,17 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                             "Blue"
                         );
                         sent++;
+                        LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sent to SteamID {fp.SteamID} EntityId {player.Character.EntityId}");
                     }
-                    catch { /* skip single failure */ }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[CHAT_DEBUG] Discord→Faction: SendChatMessage failed for SteamID {fp.SteamID}: {ex.Message}");
+                    }
                 }
                 if (sent > 0)
                     LoggerUtil.LogInfo($"[CHAT] Discord → Faction {faction.Tag}: {discordUsername}: {message} (sent to {sent} members)");
+                else
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sent=0 (no in-game player received)");
             }
             catch (Exception ex)
             {
@@ -236,13 +255,29 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         {
             try
             {
-                if (faction?.DiscordChannelID == 0 || string.IsNullOrWhiteSpace(authorName) || string.IsNullOrWhiteSpace(message))
+                if (faction == null)
+                {
+                    LoggerUtil.LogInfo("[CHAT_DEBUG] Game Faction→Discord: skip (faction null)");
                     return;
+                }
+                if (faction.DiscordChannelID == 0)
+                {
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction→Discord: skip (DiscordChannelID=0 for {faction.Tag})");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(authorName) || string.IsNullOrWhiteSpace(message))
+                {
+                    LoggerUtil.LogInfo("[CHAT_DEBUG] Game Faction→Discord: skip (empty author or message)");
+                    return;
+                }
                 string discordText = $"{authorName}: {message}";
                 if (discordText.Length > 2000) discordText = discordText.Substring(0, 1990) + "...";
+                LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction→Discord: sending to channel {faction.DiscordChannelID} ({faction.Tag}): \"{discordText}\"");
                 bool sent = await _discord.SendLogAsync(faction.DiscordChannelID, discordText);
                 if (sent)
                     LoggerUtil.LogInfo($"[CHAT] Game Faction {faction.Tag} → Discord: {authorName}: {message}");
+                else
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction→Discord: SendLogAsync returned false");
             }
             catch (Exception ex)
             {
