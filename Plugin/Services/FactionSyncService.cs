@@ -147,16 +147,17 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
-        /// Synchronize all player factions to Discord
-        /// Creates Discord roles and channels for each faction
-        /// FIXED: Checks if role/channel already exist on Discord
-        /// FIXED: Passes roleID to CreateChannelAsync for permission setup
-        /// FIXED: Creates channel in category from the beginning
+        /// Synchronize all player factions to Discord.
+        /// For each game faction:
+        ///  - If it exists in XML, SKIP DB create but CHECK/REPAIR Discord role + channel.
+        ///  - If it does not exist in XML, CREATE role + channel and save to XML.
+        /// Role name is always 3-char tag (e.g. BLB, sVz).
+        /// Channel name is lowercase faction name (e.g. "blind leading blind", "svizac").
         /// </summary>
         public async Task SyncFactionsAsync(List<FactionModel> factions = null)
         {
             // Check if faction sync is enabled in config
-            if (_config?.Faction?.Enabled != true)
+            if (_config == null || _config.Faction == null || !_config.Faction.Enabled)
             {
                 LoggerUtil.LogDebug("[FACTION_SYNC] Faction sync is disabled in config - skipping");
                 return;
@@ -178,166 +179,209 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     return;
                 }
 
-                // Process each faction - log SKIP / CREATE decision for each
-                foreach (var faction in factions)
+                // Process each faction - SKIP / CREATE decision per faction
+                foreach (var gameFaction in factions)
                 {
                     // Skip factions with invalid tag length (should be 3 characters)
-                    if (faction.Tag == null || faction.Tag.Length != 3)
+                    if (gameFaction.Tag == null || gameFaction.Tag.Length != 3)
                     {
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Skipping faction with invalid tag: {faction.Tag}"
+                            "[FACTION_SYNC] Skipping faction with invalid tag: " + gameFaction.Tag
                         );
                         continue;
                     }
 
-                    // ============================================================
-                    // KORAK 1: Check if faction already exists in database
-                    // If yes, skip entire sync process for this faction
-                    // ============================================================
-                    if (_db.FactionExists(faction.FactionID))
+                    // Look up existing faction record in XML database
+                    var existing = _db.GetFaction(gameFaction.FactionID);
+                    FactionModel dbFaction;
+
+                    if (existing != null)
                     {
+                        // SKIP DB create, but still verify Discord objects
+                        dbFaction = existing;
                         LoggerUtil.LogDebug(
-                            "[FACTION_SYNC] SKIP faction "
-                                + faction.Tag
+                            "[FACTION_SYNC] SKIP DB create for faction "
+                                + dbFaction.Tag
                                 + " (ID: "
-                                + faction.FactionID
-                                + ") - already stored in XML database"
+                                + dbFaction.FactionID
+                                + ") - already stored in XML, checking Discord objects"
                         );
-                        continue;
                     }
-
-                    LoggerUtil.LogDebug(
-                        "[FACTION_SYNC] CREATE flow for faction "
-                            + faction.Tag
-                            + " (ID: "
-                            + faction.FactionID
-                            + ") - not present in XML database"
-                    );
-
-                    // Get existing faction data from database
-                    var existing = _db.GetFaction(faction.FactionID);
+                    else
+                    {
+                        // CREATE new record based on game faction
+                        dbFaction = gameFaction;
+                        LoggerUtil.LogDebug(
+                            "[FACTION_SYNC] CREATE faction "
+                                + dbFaction.Tag
+                                + " (ID: "
+                                + dbFaction.FactionID
+                                + ") - not present in XML, creating role/channel and saving"
+                        );
+                    }
 
                     // ============================================================
                     // Check if role already exists on Discord
                     // ============================================================
-                    if (existing != null && existing.DiscordRoleID > 0)
+                    if (dbFaction.DiscordRoleID > 0)
                     {
-                        // Try to find the role on Discord
-                        var existingRole = _discord.GetExistingRole(existing.DiscordRoleID);
+                        var existingRole = _discord.GetExistingRole(dbFaction.DiscordRoleID);
                         if (existingRole != null)
                         {
-                            // Role already exists - use the stored ID
-                            faction.DiscordRoleID = existing.DiscordRoleID;
                             LoggerUtil.LogDebug(
-                                $"[FACTION_SYNC] Role already exists for {faction.Tag} (ID: {existing.DiscordRoleID})"
+                                "[FACTION_SYNC] Existing Discord role found for "
+                                    + dbFaction.Tag
+                                    + " (RoleID: "
+                                    + dbFaction.DiscordRoleID
+                                    + ")"
                             );
                         }
                         else
                         {
-                            // Stored ID doesn't exist on Discord anymore - need to create new
-                            faction.DiscordRoleID = 0;
+                            LoggerUtil.LogDebug(
+                                "[FACTION_SYNC] Stored role ID not found on Discord for "
+                                    + dbFaction.Tag
+                                    + " (RoleID: "
+                                    + dbFaction.DiscordRoleID
+                                    + ") - will recreate"
+                            );
+                            dbFaction.DiscordRoleID = 0;
                         }
                     }
 
                     // ============================================================
                     // Check if channel already exists on Discord
                     // ============================================================
-                    if (existing != null && existing.DiscordChannelID > 0)
+                    if (dbFaction.DiscordChannelID > 0)
                     {
-                        // Try to find the channel on Discord
-                        var existingChannel = _discord.GetExistingChannel(
-                            existing.DiscordChannelID
-                        );
+                        var existingChannel = _discord.GetExistingChannel(dbFaction.DiscordChannelID);
                         if (existingChannel != null)
                         {
-                            // Channel already exists - use the stored ID
-                            faction.DiscordChannelID = existing.DiscordChannelID;
                             LoggerUtil.LogDebug(
-                                $"[FACTION_SYNC] Channel already exists for {faction.Name} (ID: {existing.DiscordChannelID})"
+                                "[FACTION_SYNC] Existing Discord channel found for "
+                                    + dbFaction.Tag
+                                    + " (ChannelID: "
+                                    + dbFaction.DiscordChannelID
+                                    + ")"
                             );
                         }
                         else
                         {
-                            // Stored ID doesn't exist on Discord anymore - need to create new
-                            faction.DiscordChannelID = 0;
+                            LoggerUtil.LogDebug(
+                                "[FACTION_SYNC] Stored channel ID not found on Discord for "
+                                    + dbFaction.Tag
+                                    + " (ChannelID: "
+                                    + dbFaction.DiscordChannelID
+                                    + ") - will recreate"
+                            );
+                            dbFaction.DiscordChannelID = 0;
                         }
                     }
 
                     // ============================================================
                     // Create role if needed
                     // ============================================================
-                    if (faction.DiscordRoleID == 0)
+                    if (dbFaction.DiscordRoleID == 0)
                     {
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Creating Discord role for faction: {faction.Tag}"
+                            "[FACTION_SYNC] Creating Discord role for faction: " + dbFaction.Tag
                         );
-                        faction.DiscordRoleID = await _discord.CreateRoleAsync(faction.Tag);
+                        dbFaction.DiscordRoleID = await _discord.CreateRoleAsync(dbFaction.Tag);
 
-                        if (faction.DiscordRoleID > 0)
+                        if (dbFaction.DiscordRoleID > 0)
                         {
+                            dbFaction.DiscordRoleName = dbFaction.Tag;
                             LoggerUtil.LogSuccess(
-                                $"[FACTION_SYNC] Created role {faction.Tag} (ID: {faction.DiscordRoleID})"
+                                "[FACTION_SYNC] Created role "
+                                    + dbFaction.Tag
+                                    + " (ID: "
+                                    + dbFaction.DiscordRoleID
+                                    + ")"
                             );
                         }
                         else
                         {
                             LoggerUtil.LogWarning(
-                                $"[FACTION_SYNC] Failed to create role for {faction.Tag}"
+                                "[FACTION_SYNC] Failed to create role for " + dbFaction.Tag
                             );
                         }
                     }
 
                     // ============================================================
                     // Create channel if needed
+                    // Channel name is lowercase faction name
                     // Pass roleID for permission setup
                     // ============================================================
-                    if (faction.DiscordChannelID == 0)
+                    if (dbFaction.DiscordChannelID == 0)
                     {
+                        string channelName =
+                            (gameFaction.Name != null ? gameFaction.Name : dbFaction.Tag)
+                                .ToLower();
+
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Creating Discord channel for faction: {faction.Name}"
+                            "[FACTION_SYNC] Creating Discord channel for faction: "
+                                + gameFaction.Name
+                                + " (channel: "
+                                + channelName
+                                + ")"
                         );
 
-                        // Create channel with category and role for permissions
-                        faction.DiscordChannelID = await _discord.CreateChannelAsync(
-                            faction.Name.ToLower(),
+                        dbFaction.DiscordChannelID = await _discord.CreateChannelAsync(
+                            channelName,
                             _config.Discord.FactionCategoryId,
-                            faction.DiscordRoleID // Pass roleID for permission setup
+                            dbFaction.DiscordRoleID
                         );
 
-                        if (faction.DiscordChannelID > 0)
+                        if (dbFaction.DiscordChannelID > 0)
                         {
+                            dbFaction.DiscordChannelName = channelName;
                             LoggerUtil.LogSuccess(
-                                $"[FACTION_SYNC] Created channel {faction.Name} (ID: {faction.DiscordChannelID})"
+                                "[FACTION_SYNC] Created channel "
+                                    + channelName
+                                    + " (ID: "
+                                    + dbFaction.DiscordChannelID
+                                    + ")"
                             );
                         }
                         else
                         {
                             LoggerUtil.LogWarning(
-                                $"[FACTION_SYNC] Failed to create channel for {faction.Name}"
+                                "[FACTION_SYNC] Failed to create channel for " + gameFaction.Name
                             );
                         }
                     }
 
-                    // Save faction to database
-                    _db.SaveFaction(faction);
-
-                    // Log the result
-                    if (faction.DiscordRoleID > 0 && faction.DiscordChannelID > 0)
+                    // Update sync status metadata
+                    if (dbFaction.DiscordRoleID > 0 && dbFaction.DiscordChannelID > 0)
                     {
+                        dbFaction.SyncStatus = "Synced";
+                        dbFaction.SyncedAt = DateTime.UtcNow;
                         LoggerUtil.LogInfo(
-                            $"[FACTION_SYNC] Faction ready: {faction.Tag} - {faction.Name} (Role: {faction.DiscordRoleID}, Channel: {faction.DiscordChannelID})"
+                            "[FACTION_SYNC] Faction ready: "
+                                + dbFaction.Tag
+                                + " - "
+                                + gameFaction.Name
+                                + " (Role: "
+                                + dbFaction.DiscordRoleID
+                                + ", Channel: "
+                                + dbFaction.DiscordChannelID
+                                + ")"
                         );
                     }
 
+                    // Save faction record to XML database
+                    _db.SaveFaction(dbFaction);
+
                     // ============================================================
                     // Sync faction members (add them to faction)
+                    // Use players from game faction (current session)
                     // ============================================================
-                    if (faction.Players != null && faction.Players.Count > 0)
+                    if (gameFaction.Players != null && gameFaction.Players.Count > 0)
                     {
-                        foreach (var player in faction.Players)
+                        foreach (var player in gameFaction.Players)
                         {
                             // Create synced nickname with faction tag
-                            player.SyncedNick = "[" + faction.Tag + "] " + player.OriginalNick;
+                            player.SyncedNick = "[" + dbFaction.Tag + "] " + player.OriginalNick;
 
                             // Create player model for database
                             var playerModel = new PlayerModel
@@ -346,7 +390,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                                 SteamID = player.SteamID,
                                 OriginalNick = player.OriginalNick,
                                 SyncedNick = player.SyncedNick,
-                                FactionID = faction.FactionID,
+                                FactionID = dbFaction.FactionID,
                                 DiscordUserID = player.DiscordUserID,
                             };
 
@@ -355,7 +399,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                         }
 
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Synced {faction.Players.Count} players for {faction.Tag}"
+                            "[FACTION_SYNC] Synced "
+                                + gameFaction.Players.Count
+                                + " players for "
+                                + dbFaction.Tag
                         );
                     }
                 }
@@ -364,7 +411,9 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[FACTION_SYNC] Sync error: {ex.Message}\n{ex.StackTrace}");
+                LoggerUtil.LogError(
+                    "[FACTION_SYNC] Sync error: " + ex.Message + "\n" + ex.StackTrace
+                );
             }
         }
 

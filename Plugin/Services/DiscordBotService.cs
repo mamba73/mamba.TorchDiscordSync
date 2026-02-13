@@ -186,9 +186,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     )
                     .AddField("Verification Code", "```" + verificationCode + "```", false)
                     .AddField(
-                        "How to Complete",
+                        "To complete type here in this DM:\n",
                         "```"
-                            + "Type: "
                             + _config.BotPrefix
                             + "verify key:"
                             + verificationCode
