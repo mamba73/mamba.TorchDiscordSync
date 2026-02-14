@@ -8,20 +8,23 @@ import zipfile
 import configparser
 from datetime import datetime
 
+# --- VERSION & METADATA ---
+SCRIPT_VER = "1.1.5"
+
 # --- CONFIGURATION & PATHS ---
 script_dir = os.path.dirname(os.path.abspath(__file__))
 config_file = os.path.join(script_dir, "config_sync.ini")
 
 def load_config():
     config = configparser.ConfigParser()
+    # ScriptVersion is removed from here to prevent stale values in .ini
     defaults = {
         'LogDir': 'logs',
         'VSCodePath': r"c:\dev\VSCode\bin\code.cmd",
         'ProjectName': 'mamba.TorchDiscordSync',
         'DevRemote': 'private',
         'ReleaseRemote': 'origin',
-        'KeepLogsDays': '7',
-        'ScriptVersion': '1.1.4'
+        'KeepLogsDays': '7'
     }
     updated = False
     if not os.path.exists(config_file):
@@ -41,7 +44,6 @@ def load_config():
 cfg = load_config()
 LOG_DIR = os.path.join(script_dir, cfg.get('LogDir'))
 VS_CODE_PATH = cfg.get('VSCodePath')
-SCRIPT_VER = cfg.get('ScriptVersion')
 
 MANIFEST_PATH = "manifest.xml"
 README_PATH = "README.md"
@@ -86,7 +88,7 @@ def update_readme(version):
     try:
         if not os.path.exists(README_PATH): return
         with open(README_PATH, 'r', encoding='utf-8') as f: content = f.read()
-        # Fixed regex with \g<1> for group safety
+        # Group reference \g<1> used for stability
         pattern = r"(?i)(\*?\*?version\*?\*?[:\s]+)([0-9\.]+)"
         new_content = re.sub(pattern, rf"\g<1>{version}", content)
         with open(README_PATH, 'w', encoding='utf-8') as f: f.write(new_content)
@@ -121,7 +123,7 @@ def create_zip(version, use_staging=False):
         with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
             if use_staging:
                 if not os.path.exists(PUBLISH_DIR) or not os.listdir(PUBLISH_DIR):
-                    log_and_print(f"ERROR: Staging directory empty.", "ERROR")
+                    log_and_print("ERROR: Staging directory empty. Run build.py first!", "ERROR")
                     return None
                 for file in os.listdir(PUBLISH_DIR):
                     zipf.write(os.path.join(PUBLISH_DIR, file), file)
@@ -143,7 +145,7 @@ def create_zip(version, use_staging=False):
 def handle_dev(version, auto_yes):
     current_branch = run("git rev-parse --abbrev-ref HEAD")
     if current_branch != DEV_BRANCH:
-        log_and_print(f"Switching to {DEV_BRANCH}...")
+        log_and_print(f"Switching from {current_branch} to {DEV_BRANCH}...")
         run(f"git checkout {DEV_BRANCH} -f")
     else:
         log_and_print(f"Active branch is {DEV_BRANCH}. Protecting workspace.")
@@ -151,8 +153,9 @@ def handle_dev(version, auto_yes):
     update_readme(version)
     run("git add .")
     
-    if not run("git diff --cached --name-status") or run("git diff --cached --name-status") == "SUCCESS":
-        log_and_print("No changes to sync. Workspace is clean.")
+    status = run("git diff --cached --name-status")
+    if not status or status == "SUCCESS":
+        log_and_print("Nothing to sync. Workspace is clean.")
         return
 
     msg = "automatic dev sync" if auto_yes else input(f"Enter dev commit message (v{version}): ").strip()
@@ -170,6 +173,7 @@ def handle_release(version, auto_yes, do_zip, do_deploy):
     zip_path = None
     if do_zip or do_deploy:
         zip_path = create_zip(version, use_staging=True)
+        if not zip_path: sys.exit("ABORTED: Could not create distribution ZIP.")
 
     run(f"git checkout {RELEASE_BRANCH} -f")
     for f in ["sync.py", "build.py", "config_sync.ini", "config_check.ini"]:
