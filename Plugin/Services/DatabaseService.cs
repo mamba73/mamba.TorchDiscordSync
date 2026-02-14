@@ -1,0 +1,789 @@
+// Plugin/Services/DatabaseService.cs
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Xml.Serialization;
+using mamba.TorchDiscordSync.Plugin.Config;
+using mamba.TorchDiscordSync.Plugin.Models;
+using mamba.TorchDiscordSync.Plugin.Utils;
+
+namespace mamba.TorchDiscordSync.Plugin.Services
+{
+    public class DatabaseService
+    {
+        // VerificationData.xml - only verification events (history). No duplicate of VerificationPlayers.xml.
+        private readonly string _verificationDataPath;
+        private VerificationDataModel _verificationData;
+        private readonly object _lock = new object();
+
+        // Separate data files (wrappers: FactionDataModel, PlayerDataModel, EventDataModel, ChatDataModel)
+        private readonly string _factionDataPath;
+        private readonly string _playerDataPath;
+        private readonly string _eventDataPath;
+        private readonly string _chatDataPath;
+        private FactionDataModel _factionData;
+        private PlayerDataModel _playerData;
+        private EventDataModel _eventData;
+        private ChatDataModel _chatData;
+
+        // ============================================================
+        // VERIFICATIONPLAYERS.XML FIELDS
+        // ============================================================
+        private readonly string _verificationPlayersPath;
+        private VerificationPlayersData _verificationPlayersData;
+
+        /// <summary>
+        /// Init database service, load data from XML or create new if not exists.
+        /// Data is stored in: FactionData.xml, PlayerData.xml, EventData.xml, ChatData.xml, VerificationData.xml, VerificationPlayers.xml.
+        /// </summary>
+        /// <param name="configPath"></param>
+        public DatabaseService(string configPath = null)
+        {
+            string dataDir = MainConfig.GetDataDirectory();
+
+            _verificationDataPath = Path.Combine(dataDir, "VerificationData.xml");
+            _factionDataPath = Path.Combine(dataDir, "FactionData.xml");
+            _playerDataPath = Path.Combine(dataDir, "PlayerData.xml");
+            _eventDataPath = Path.Combine(dataDir, "EventData.xml");
+            _chatDataPath = Path.Combine(dataDir, "ChatData.xml");
+
+            _verificationData = new VerificationDataModel();
+            _factionData = new FactionDataModel();
+            _playerData = new PlayerDataModel();
+            _eventData = new EventDataModel();
+            _chatData = new ChatDataModel();
+
+            LoadFactionDataFromXml();
+            LoadPlayerDataFromXml();
+            LoadEventDataFromXml();
+            LoadChatDataFromXml();
+            LoadVerificationDataFromXml(); // VerificationData.xml (events only); migrate from legacy MambaTorchDiscordSyncData.xml if present
+
+            _verificationPlayersPath = Path.Combine(dataDir, "VerificationPlayers.xml");
+            LoadVerificationPlayersFromXml();
+        }
+
+        // ============================================================
+        // LOAD / SAVE PER-FILE
+        // ============================================================
+
+        private void LoadFactionDataFromXml()
+        {
+            try
+            {
+                if (File.Exists(_factionDataPath))
+                {
+                    var serializer = new XmlSerializer(typeof(FactionDataModel));
+                    using (var fs = new FileStream(_factionDataPath, FileMode.Open))
+                        _factionData = (FactionDataModel)serializer.Deserialize(fs);
+                    if (_factionData?.Factions == null) _factionData = new FactionDataModel();
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DB] Failed to load FactionData.xml: {ex.Message}");
+                _factionData = new FactionDataModel();
+            }
+        }
+
+        private void LoadPlayerDataFromXml()
+        {
+            try
+            {
+                if (File.Exists(_playerDataPath))
+                {
+                    var serializer = new XmlSerializer(typeof(PlayerDataModel));
+                    using (var fs = new FileStream(_playerDataPath, FileMode.Open))
+                        _playerData = (PlayerDataModel)serializer.Deserialize(fs);
+                    if (_playerData?.Players == null) _playerData = new PlayerDataModel();
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DB] Failed to load PlayerData.xml: {ex.Message}");
+                _playerData = new PlayerDataModel();
+            }
+        }
+
+        private void LoadEventDataFromXml()
+        {
+            try
+            {
+                if (File.Exists(_eventDataPath))
+                {
+                    var serializer = new XmlSerializer(typeof(EventDataModel));
+                    using (var fs = new FileStream(_eventDataPath, FileMode.Open))
+                        _eventData = (EventDataModel)serializer.Deserialize(fs);
+                    if (_eventData == null) _eventData = new EventDataModel();
+                    if (_eventData.EventLogs == null) _eventData.EventLogs = new List<EventLogModel>();
+                    if (_eventData.DeathHistory == null) _eventData.DeathHistory = new List<DeathHistoryModel>();
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DB] Failed to load EventData.xml: {ex.Message}");
+                _eventData = new EventDataModel();
+            }
+        }
+
+        private void LoadChatDataFromXml()
+        {
+            try
+            {
+                if (File.Exists(_chatDataPath))
+                {
+                    var serializer = new XmlSerializer(typeof(ChatDataModel));
+                    using (var fs = new FileStream(_chatDataPath, FileMode.Open))
+                        _chatData = (ChatDataModel)serializer.Deserialize(fs);
+                    if (_chatData == null) _chatData = new ChatDataModel();
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DB] Failed to load ChatData.xml: {ex.Message}");
+                _chatData = new ChatDataModel();
+            }
+        }
+
+        /// <summary>
+        /// Loads VerificationData.xml (verification events only). If legacy MambaTorchDiscordSyncData.xml exists, migrates to separate files.
+        /// Verification state (pending/verified) is only in VerificationPlayers.xml - no duplicates.
+        /// </summary>
+        private void LoadVerificationDataFromXml()
+        {
+            string legacyPath = Path.Combine(Path.GetDirectoryName(_verificationDataPath), "MambaTorchDiscordSyncData.xml");
+            if (File.Exists(legacyPath))
+            {
+                try
+                {
+                    var legacySerializer = new XmlSerializer(typeof(LegacyRootDataModel));
+                    using (var fs = new FileStream(legacyPath, FileMode.Open))
+                    {
+                        var legacy = (LegacyRootDataModel)legacySerializer.Deserialize(fs);
+                        if (legacy != null)
+                        {
+                            bool hadLegacyData = (legacy.Factions?.Count ?? 0) > 0 || (legacy.Players?.Count ?? 0) > 0
+                                || (legacy.EventLogs?.Count ?? 0) > 0 || (legacy.DeathHistory?.Count ?? 0) > 0;
+                            if (hadLegacyData)
+                            {
+                                if (legacy.Factions?.Count > 0) _factionData.Factions = new List<FactionModel>(legacy.Factions);
+                                if (legacy.Players?.Count > 0) _playerData.Players = new List<PlayerModel>(legacy.Players);
+                                if (legacy.EventLogs?.Count > 0) _eventData.EventLogs = new List<EventLogModel>(legacy.EventLogs);
+                                if (legacy.DeathHistory?.Count > 0) _eventData.DeathHistory = new List<DeathHistoryModel>(legacy.DeathHistory);
+                                SaveFactionDataToXml();
+                                SavePlayerDataToXml();
+                                SaveEventDataToXml();
+                                LoggerUtil.LogInfo("[DB] Migrated legacy MambaTorchDiscordSyncData.xml to FactionData.xml, PlayerData.xml, EventData.xml");
+                            }
+                            // Only verification events go to VerificationData.xml (no Verifications - that would duplicate VerificationPlayers.xml)
+                            if (legacy.VerificationHistory?.Count > 0)
+                            {
+                                _verificationData.VerificationHistory = new List<VerificationHistoryModel>(legacy.VerificationHistory);
+                                SaveVerificationDataToXml();
+                            }
+                            LoggerUtil.LogInfo("[DB] Migrated verification history to VerificationData.xml");
+                            return;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogWarning($"[DB] Legacy migration skipped: {ex.Message}");
+                }
+            }
+
+            if (!File.Exists(_verificationDataPath))
+                return;
+            try
+            {
+                var serializer = new XmlSerializer(typeof(VerificationDataModel));
+                using (var fs = new FileStream(_verificationDataPath, FileMode.Open))
+                {
+                    _verificationData = (VerificationDataModel)serializer.Deserialize(fs);
+                    if (_verificationData == null) _verificationData = new VerificationDataModel();
+                    if (_verificationData.VerificationHistory == null) _verificationData.VerificationHistory = new List<VerificationHistoryModel>();
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[DB] Failed to load VerificationData.xml: {ex.Message}");
+                _verificationData = new VerificationDataModel();
+            }
+        }
+
+        private void SaveFactionDataToXml()
+        {
+            try
+            {
+                var serializer = new XmlSerializer(typeof(FactionDataModel));
+                using (var fs = new FileStream(_factionDataPath, FileMode.Create))
+                    serializer.Serialize(fs, _factionData);
+            }
+            catch (Exception ex) { LoggerUtil.LogError($"[DB] Failed to save FactionData.xml: {ex.Message}"); }
+        }
+
+        private void SavePlayerDataToXml()
+        {
+            try
+            {
+                var serializer = new XmlSerializer(typeof(PlayerDataModel));
+                using (var fs = new FileStream(_playerDataPath, FileMode.Create))
+                    serializer.Serialize(fs, _playerData);
+            }
+            catch (Exception ex) { LoggerUtil.LogError($"[DB] Failed to save PlayerData.xml: {ex.Message}"); }
+        }
+
+        private void SaveEventDataToXml()
+        {
+            try
+            {
+                var serializer = new XmlSerializer(typeof(EventDataModel));
+                using (var fs = new FileStream(_eventDataPath, FileMode.Create))
+                    serializer.Serialize(fs, _eventData);
+            }
+            catch (Exception ex) { LoggerUtil.LogError($"[DB] Failed to save EventData.xml: {ex.Message}"); }
+        }
+
+        private void SaveChatDataToXml()
+        {
+            try
+            {
+                var serializer = new XmlSerializer(typeof(ChatDataModel));
+                using (var fs = new FileStream(_chatDataPath, FileMode.Create))
+                    serializer.Serialize(fs, _chatData);
+            }
+            catch (Exception ex) { LoggerUtil.LogError($"[DB] Failed to save ChatData.xml: {ex.Message}"); }
+        }
+
+        private void SaveVerificationDataToXml()
+        {
+            try
+            {
+                var serializer = new XmlSerializer(typeof(VerificationDataModel));
+                using (var fs = new FileStream(_verificationDataPath, FileMode.Create))
+                    serializer.Serialize(fs, _verificationData);
+            }
+            catch (Exception ex) { LoggerUtil.LogError($"[DB] Failed to save VerificationData.xml: {ex.Message}"); }
+        }
+
+        /// <summary>
+        /// Saves all data to XML files. FactionData and PlayerData always; EventData/ChatData only if enabled in config; VerificationData always.
+        /// </summary>
+        public void SaveToXml()
+        {
+            lock (_lock)
+            {
+                SaveFactionDataToXml();
+                SavePlayerDataToXml();
+                var cfg = MainConfig.Load();
+                if (cfg?.DataStorage != null)
+                {
+                    if (cfg.DataStorage.SaveEventLogs || cfg.DataStorage.SaveDeathHistory)
+                        SaveEventDataToXml();
+                    if (cfg.DataStorage.SaveGlobalChat || cfg.DataStorage.SaveFactionChat || cfg.DataStorage.SavePrivateChat)
+                        SaveChatDataToXml();
+                }
+                SaveVerificationDataToXml();
+            }
+        }
+
+        /// <summary>
+        /// Saves or updates a faction in the database. If the faction already exists (based on FactionID), it will be updated. Otherwise, a new faction will be added.
+        /// </summary>
+        /// <param name="faction"></param>
+        public void SaveFaction(FactionModel faction)
+        {
+            lock (_lock)
+            {
+                var existing = _factionData.Factions.FirstOrDefault(f => f.FactionID == faction.FactionID);
+                if (existing != null)
+                {
+                    existing.Tag = faction.Tag;
+                    existing.Name = faction.Name;
+                    existing.DiscordRoleID = faction.DiscordRoleID;
+                    existing.DiscordChannelID = faction.DiscordChannelID;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                    existing.Players = faction.Players;
+                }
+                else
+                {
+                    faction.CreatedAt = DateTime.UtcNow;
+                    faction.UpdatedAt = DateTime.UtcNow;
+                    _factionData.Factions.Add(faction);
+                }
+                SaveToXml();
+            }
+        }
+
+        /// <summary>
+        /// Retrieves a faction by its ID. Returns null if not found.
+        /// </summary>
+        /// <param name="factionID"></param>
+        /// <returns></returns>
+        public FactionModel GetFaction(int factionID)
+        {
+            return _factionData.Factions.FirstOrDefault(f => f.FactionID == factionID);
+        }
+
+        /// <summary>
+        /// Check if faction exists in database by FactionID
+        /// Used to prevent duplicate role/channel creation
+        /// </summary>
+        /// <param name="factionID"></param>
+        /// <returns>True if faction exists, false otherwise</returns>
+        public bool FactionExists(int factionID)
+        {
+            lock (_lock)
+            {
+                return _factionData.Factions.Any(f => f.FactionID == factionID);
+            }
+        }
+
+        public List<FactionModel> GetAllFactions()
+        {
+            return new List<FactionModel>(_factionData.Factions);
+        }
+
+        /// <summary>
+        /// Delete a faction from the database by its ID.
+        /// Used by admin:sync:undo to remove records and avoid duplicate syncs.
+        /// </summary>
+        /// <param name="factionID">Faction ID.</param>
+        public void DeleteFaction(int factionID)
+        {
+            lock (_lock)
+            {
+                _factionData.Factions.RemoveAll(f => f.FactionID == factionID);
+                SaveToXml();
+            }
+        }
+
+        /// <summary>
+        /// Retrieves a faction by its tag. Returns null if not found.
+        /// </summary>
+        /// <param name="tag">Faction tag to search for.</param>
+        /// <returns>FactionModel if found, otherwise null.</returns>
+        public FactionModel GetFactionByTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+            {
+                return null;
+            }
+
+            lock (_lock)
+            {
+                return _factionData.Factions.FirstOrDefault(f => f.Tag == tag);
+            }
+        }
+
+        /// <summary>
+        /// Get faction by game/Torch faction chat channel ID (e.g. from "Faction:233056185186241842").
+        /// </summary>
+        public FactionModel GetFactionByGameChatId(long gameFactionChatId)
+        {
+            if (gameFactionChatId == 0) return null;
+            lock (_lock)
+            {
+                return _factionData.Factions.FirstOrDefault(f => f.GameFactionChatId == gameFactionChatId);
+            }
+        }
+
+        /// <summary>
+        /// Saves or updates a player in the database. If the player already exists (based on SteamID), it will be updated. Otherwise, a new player will be added.
+        /// </summary>
+        /// <param name="player"></param>
+        public void SavePlayer(PlayerModel player)
+        {
+            lock (_lock)
+            {
+                var existing = _playerData.Players.FirstOrDefault(p => p.SteamID == player.SteamID);
+                if (existing != null)
+                {
+                    existing.OriginalNick = player.OriginalNick;
+                    existing.SyncedNick = player.SyncedNick;
+                    existing.SteamID = player.SteamID;
+                    existing.FactionID = player.FactionID;
+                    existing.DiscordUserID = player.DiscordUserID;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    player.CreatedAt = DateTime.UtcNow;
+                    player.UpdatedAt = DateTime.UtcNow;
+                    _playerData.Players.Add(player);
+                }
+                SaveToXml();
+            }
+        }
+
+        /// <summary>
+        /// Retrieves a player by their SteamID. Returns null if not found.
+        /// </summary>
+        /// <param name="steamID"></param>
+        /// <returns></returns>
+        public PlayerModel GetPlayerBySteamID(long steamID)
+        {
+            return _playerData.Players.FirstOrDefault(p => p.SteamID == steamID);
+        }
+
+        public void LogEvent(EventLogModel evt)
+        {
+            lock (_lock)
+            {
+                _eventData.EventLogs.Add(evt);
+                SaveToXml();
+            }
+        }
+
+        /// <summary>
+        /// Logs a player death event to the database
+        /// </summary>
+        /// <param name="killerSteamID"></param>
+        /// <param name="victimSteamID"></param>
+        /// <param name="deathType"></param>
+        /// <param name="weapon"></param>
+        /// <param name="location"></param>
+        public void LogDeath(
+            long killerSteamID,
+            long victimSteamID,
+            string deathType,
+            string weapon = null,
+            string location = null
+        )
+        {
+            lock (_lock)
+            {
+                var entry = new DeathHistoryModel
+                {
+                    KillerSteamID = killerSteamID,
+                    VictimSteamID = victimSteamID,
+                    DeathTime = DateTime.UtcNow,
+                    DeathType = deathType,
+                    Weapon = weapon,
+                    Location = location,
+                };
+                _eventData.DeathHistory.Add(entry);
+                SaveToXml();
+            }
+        }
+
+        public DeathHistoryModel GetLastKill(long killerSteamID, long victimSteamID)
+        {
+            return _eventData
+                .DeathHistory.Where(d =>
+                    d.KillerSteamID == killerSteamID && d.VictimSteamID == victimSteamID
+                )
+                .OrderByDescending(d => d.DeathTime)
+                .FirstOrDefault();
+        }
+
+        public void ClearAllData()
+        {
+            lock (_lock)
+            {
+                _factionData = new FactionDataModel();
+                _playerData = new PlayerDataModel();
+                _eventData = new EventDataModel();
+                _chatData = new ChatDataModel();
+                _verificationData = new VerificationDataModel();
+                SaveToXml();
+            }
+        }
+
+        // ============================================================
+        // VERIFICATION EVENTS - VerificationData.xml (no duplicate with VerificationPlayers.xml)
+        // ============================================================
+        /// <summary>
+        /// Saves verification event to VerificationData.xml. Skips duplicate (same SteamID + VerifiedAt within 1s).
+        /// </summary>
+        public void SaveVerificationHistory(VerificationHistoryModel entry)
+        {
+            lock (_lock)
+            {
+                if (entry == null) return;
+                var cutoff = entry.VerifiedAt.AddSeconds(-1);
+                bool duplicate = _verificationData.VerificationHistory.Any(v =>
+                    v.SteamID == entry.SteamID && v.VerifiedAt >= cutoff && v.VerifiedAt <= entry.VerifiedAt.AddSeconds(1));
+                if (!duplicate)
+                {
+                    _verificationData.VerificationHistory.Add(entry);
+                    SaveVerificationDataToXml();
+                }
+            }
+        }
+
+        public List<VerificationHistoryModel> GetVerificationHistory(long steamID)
+        {
+            return _verificationData
+                .VerificationHistory.Where(v => v.SteamID == steamID)
+                .OrderByDescending(v => v.VerifiedAt)
+                .ToList();
+        }
+
+        // ============================================================
+        // JAVNE METODE ZA VERIFICATIONPLAYERS.XML
+        // ============================================================
+
+        private void LoadVerificationPlayersFromXml()
+        {
+            lock (_lock)
+            {
+                try
+                {
+                    if (File.Exists(_verificationPlayersPath))
+                    {
+                        var serializer = new XmlSerializer(typeof(VerificationPlayersData));
+                        using (var stream = new FileStream(_verificationPlayersPath, FileMode.Open))
+                        {
+                            _verificationPlayersData = (VerificationPlayersData)
+                                serializer.Deserialize(stream);
+                        }
+                        LoggerUtil.LogSuccess(
+                            $"[DB] Loaded VerificationPlayers.xml - {_verificationPlayersData.PendingVerifications.Count} pending, {_verificationPlayersData.VerifiedPlayers.Count} verified"
+                        );
+                    }
+                    else
+                    {
+                        _verificationPlayersData = new VerificationPlayersData();
+                        SaveVerificationPlayersToXml();
+                        LoggerUtil.LogInfo("[DB] Created new VerificationPlayers.xml");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError(
+                        $"[DB] Error loading VerificationPlayers.xml: {ex.Message}"
+                    );
+                    _verificationPlayersData = new VerificationPlayersData();
+                }
+            }
+        }
+
+        private void SaveVerificationPlayersToXml()
+        {
+            lock (_lock)
+            {
+                try
+                {
+                    var serializer = new XmlSerializer(typeof(VerificationPlayersData));
+                    using (var stream = new FileStream(_verificationPlayersPath, FileMode.Create))
+                    {
+                        serializer.Serialize(stream, _verificationPlayersData);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LoggerUtil.LogError($"[DB] Error saving VerificationPlayers.xml: {ex.Message}");
+                }
+            }
+        }
+
+        public void AddPendingVerification(
+            long steamID,
+            string discordUsername,
+            string verificationCode,
+            int expirationMinutes,
+            string gamePlayerName = null
+        )
+        {
+            lock (_lock)
+            {
+                // Ukloni ako već postoji
+                _verificationPlayersData.PendingVerifications.RemoveAll(p => p.SteamID == steamID);
+
+                var pending = new PendingVerification
+                {
+                    SteamID = steamID,
+                    DiscordUsername = discordUsername,
+                    VerificationCode = verificationCode,
+                    CodeGeneratedAt = DateTime.UtcNow,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes),
+                    GamePlayerName = gamePlayerName,
+                };
+
+                _verificationPlayersData.PendingVerifications.Add(pending);
+                SaveVerificationPlayersToXml();
+                LoggerUtil.LogDebug(
+                    $"[DB] Added pending verification for SteamID {steamID} (PlayerName: {gamePlayerName})"
+                );
+            }
+        }
+
+        public void MarkAsVerified(
+            long steamID,
+            string discordUsername,
+            ulong discordUserID,
+            string gamePlayerName = null
+        )
+        {
+            lock (_lock)
+            {
+                // Get player name from pending verification if not provided
+                string playerNameToSave = gamePlayerName;
+                if (string.IsNullOrEmpty(playerNameToSave))
+                {
+                    var pending = _verificationPlayersData.PendingVerifications.Find(p =>
+                        p.SteamID == steamID
+                    );
+                    if (pending != null && !string.IsNullOrEmpty(pending.GamePlayerName))
+                    {
+                        playerNameToSave = pending.GamePlayerName;
+                    }
+                }
+
+                // Ukloni sa pending liste
+                _verificationPlayersData.PendingVerifications.RemoveAll(p => p.SteamID == steamID);
+
+                // Ukloni ako postoji na verified listi
+                _verificationPlayersData.VerifiedPlayers.RemoveAll(v => v.SteamID == steamID);
+
+                // Dodaj na verified listu
+                var verified = new VerifiedPlayer
+                {
+                    SteamID = steamID,
+                    DiscordUsername = discordUsername,
+                    DiscordUserID = discordUserID,
+                    VerifiedAt = DateTime.UtcNow,
+                    GamePlayerName = playerNameToSave,
+                };
+
+                _verificationPlayersData.VerifiedPlayers.Add(verified);
+                SaveVerificationPlayersToXml();
+                LoggerUtil.LogDebug(
+                    $"[DB] Marked SteamID {steamID} as verified (PlayerName: {playerNameToSave})"
+                );
+            }
+        }
+
+        public PendingVerification GetPendingVerification(long steamID)
+        {
+            lock (_lock)
+            {
+                var pending = _verificationPlayersData.PendingVerifications.Find(p =>
+                    p.SteamID == steamID
+                );
+
+                // Ako je expired, obriši
+                if (pending != null && pending.ExpiresAt < DateTime.UtcNow)
+                {
+                    _verificationPlayersData.PendingVerifications.Remove(pending);
+                    SaveVerificationPlayersToXml();
+                    return null;
+                }
+
+                return pending;
+            }
+        }
+
+        public VerifiedPlayer GetVerifiedPlayer(long steamID)
+        {
+            lock (_lock)
+            {
+                return _verificationPlayersData.VerifiedPlayers.Find(v => v.SteamID == steamID);
+            }
+        }
+
+        public VerifiedPlayer GetVerifiedPlayerByDiscordID(ulong discordUserID)
+        {
+            lock (_lock)
+            {
+                return _verificationPlayersData.VerifiedPlayers.Find(v =>
+                    v.DiscordUserID == discordUserID
+                );
+            }
+        }
+
+        public List<PendingVerification> GetAllPendingVerifications()
+        {
+            lock (_lock)
+            {
+                return new List<PendingVerification>(_verificationPlayersData.PendingVerifications);
+            }
+        }
+
+        public List<VerifiedPlayer> GetAllVerifiedPlayers()
+        {
+            lock (_lock)
+            {
+                return new List<VerifiedPlayer>(_verificationPlayersData.VerifiedPlayers);
+            }
+        }
+
+        public void DeletePendingVerification(long steamID)
+        {
+            lock (_lock)
+            {
+                _verificationPlayersData.PendingVerifications.RemoveAll(p => p.SteamID == steamID);
+                SaveVerificationPlayersToXml();
+                LoggerUtil.LogDebug($"[DB] Deleted pending verification for SteamID {steamID}");
+            }
+        }
+
+        public void DeleteVerifiedPlayer(long steamID)
+        {
+            lock (_lock)
+            {
+                _verificationPlayersData.VerifiedPlayers.RemoveAll(v => v.SteamID == steamID);
+                SaveVerificationPlayersToXml();
+                LoggerUtil.LogDebug($"[DB] Deleted verified player SteamID {steamID}");
+            }
+        }
+    }
+
+    // ============================================================
+    // XML KLASE ZA VERIFICATIONPLAYERS.XML
+    // ============================================================
+
+    [XmlRoot("VerificationPlayers")]
+    public class VerificationPlayersData
+    {
+        [XmlArray("PendingVerifications")]
+        [XmlArrayItem("Pending")]
+        public List<PendingVerification> PendingVerifications { get; set; } =
+            new List<PendingVerification>();
+
+        [XmlArray("VerifiedPlayers")]
+        [XmlArrayItem("Verified")]
+        public List<VerifiedPlayer> VerifiedPlayers { get; set; } = new List<VerifiedPlayer>();
+    }
+
+    public class PendingVerification
+    {
+        [XmlElement]
+        public long SteamID { get; set; }
+
+        [XmlElement]
+        public string DiscordUsername { get; set; }
+
+        [XmlElement]
+        public string VerificationCode { get; set; }
+
+        [XmlElement]
+        public DateTime CodeGeneratedAt { get; set; }
+
+        [XmlElement]
+        public DateTime ExpiresAt { get; set; }
+
+        [XmlElement]
+        public string GamePlayerName { get; set; } // NEW: For in-game notifications
+    }
+
+    public class VerifiedPlayer
+    {
+        [XmlElement]
+        public long SteamID { get; set; }
+
+        [XmlElement]
+        public string DiscordUsername { get; set; }
+
+        [XmlElement]
+        public ulong DiscordUserID { get; set; }
+
+        [XmlElement]
+        public DateTime VerifiedAt { get; set; }
+
+        [XmlElement]
+        public string GamePlayerName { get; set; } // NEW: For in-game notifications
+    }
+}
