@@ -3,54 +3,11 @@ bin/
 obj/
 *.zip
 
-# Visual Studio
+# Visual Studio & Local
 .vs/
 *.user
-*.suo
-
-# Dependencies
-Dependencies/*.dll
-Dependencies/*
-Dependencies/
-tmp/*
-tmp/
-doc/*.txt
-build_archive/
-build_staging/
+temp_msg.txt
 
 # Logs
-*.log
-
-# Config
-*.config
-*.ini
-
-# Environment files
-*.env
-*.local
-*.cache
-*.bak
-*.old
-*.orig
-*.tmp
-*.swp
-*.DS_Store
-# *.class
-*.pyc
-*.egg-info/
-
-# Documentation files
-.inspect/
-.inspect/*
 logs/
-logs/*
-tmp/
-tmp/*
-doc/
-*.py
-*.md
-*.txt
-# LICENSE
-README.md
-# TODO.md
-# CHANGELOG.md
+*.log
