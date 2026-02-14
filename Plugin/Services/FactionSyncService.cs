@@ -147,16 +147,17 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         /// <summary>
-        /// Synchronize all player factions to Discord
-        /// Creates Discord roles and channels for each faction
-        /// FIXED: Checks if role/channel already exist on Discord
-        /// FIXED: Passes roleID to CreateChannelAsync for permission setup
-        /// FIXED: Creates channel in category from the beginning
+        /// Synchronize all player factions to Discord.
+        /// For each game faction:
+        ///  - If it exists in XML, SKIP DB create but CHECK/REPAIR Discord role + channel.
+        ///  - If it does not exist in XML, CREATE role + channel and save to XML.
+        /// Role name is always 3-char tag (e.g. BLB, sVz).
+        /// Channel name is lowercase faction name (e.g. "blind leading blind", "svizac").
         /// </summary>
         public async Task SyncFactionsAsync(List<FactionModel> factions = null)
         {
             // Check if faction sync is enabled in config
-            if (_config?.Faction?.Enabled != true)
+            if (_config == null || _config.Faction == null || !_config.Faction.Enabled)
             {
                 LoggerUtil.LogDebug("[FACTION_SYNC] Faction sync is disabled in config - skipping");
                 return;
@@ -178,142 +179,260 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     return;
                 }
 
-                // Process each faction
-                foreach (var faction in factions)
+                // Process each faction - SKIP / CREATE decision per faction
+                foreach (var gameFaction in factions)
                 {
                     // Skip factions with invalid tag length (should be 3 characters)
-                    if (faction.Tag == null || faction.Tag.Length != 3)
+                    if (gameFaction.Tag == null || gameFaction.Tag.Length != 3)
                     {
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Skipping faction with invalid tag: {faction.Tag}"
+                            "[FACTION_SYNC] Skipping faction with invalid tag: " + gameFaction.Tag
                         );
                         continue;
                     }
 
-                    // Get existing faction data from database
-                    var existing = _db.GetFaction(faction.FactionID);
+                    // Look up existing faction record in XML database
+                    var existing = _db.GetFaction(gameFaction.FactionID);
+                    FactionModel dbFaction;
+
+                    if (existing != null)
+                    {
+                        // SKIP DB create, but still verify Discord objects
+                        dbFaction = existing;
+                        LoggerUtil.LogDebug(
+                            "[FACTION_SYNC] SKIP DB create for faction "
+                                + dbFaction.Tag
+                                + " (ID: "
+                                + dbFaction.FactionID
+                                + ") - already stored in XML, checking Discord objects"
+                        );
+                    }
+                    else
+                    {
+                        // CREATE new record based on game faction
+                        dbFaction = gameFaction;
+                        LoggerUtil.LogDebug(
+                            "[FACTION_SYNC] CREATE faction "
+                                + dbFaction.Tag
+                                + " (ID: "
+                                + dbFaction.FactionID
+                                + ") - not present in XML, creating role/channel and saving"
+                        );
+                    }
 
                     // ============================================================
                     // Check if role already exists on Discord
                     // ============================================================
-                    if (existing != null && existing.DiscordRoleID > 0)
+                    if (dbFaction.DiscordRoleID > 0)
                     {
-                        // Try to find the role on Discord
-                        var existingRole = _discord.GetExistingRole(existing.DiscordRoleID);
+                        var existingRole = _discord.GetExistingRole(dbFaction.DiscordRoleID);
                         if (existingRole != null)
                         {
-                            // Role already exists - use the stored ID
-                            faction.DiscordRoleID = existing.DiscordRoleID;
                             LoggerUtil.LogDebug(
-                                $"[FACTION_SYNC] Role already exists for {faction.Tag} (ID: {existing.DiscordRoleID})"
+                                "[FACTION_SYNC] Existing Discord role found for "
+                                    + dbFaction.Tag
+                                    + " (RoleID: "
+                                    + dbFaction.DiscordRoleID
+                                    + ")"
                             );
                         }
                         else
                         {
-                            // Stored ID doesn't exist on Discord anymore - need to create new
-                            faction.DiscordRoleID = 0;
+                            LoggerUtil.LogDebug(
+                                "[FACTION_SYNC] Stored role ID not found on Discord for "
+                                    + dbFaction.Tag
+                                    + " (RoleID: "
+                                    + dbFaction.DiscordRoleID
+                                    + ") - will recreate"
+                            );
+                            dbFaction.DiscordRoleID = 0;
                         }
                     }
 
                     // ============================================================
                     // Check if channel already exists on Discord
                     // ============================================================
-                    if (existing != null && existing.DiscordChannelID > 0)
+                    if (dbFaction.DiscordChannelID > 0)
                     {
-                        // Try to find the channel on Discord
-                        var existingChannel = _discord.GetExistingChannel(
-                            existing.DiscordChannelID
-                        );
+                        var existingChannel = _discord.GetExistingChannel(dbFaction.DiscordChannelID);
                         if (existingChannel != null)
                         {
-                            // Channel already exists - use the stored ID
-                            faction.DiscordChannelID = existing.DiscordChannelID;
                             LoggerUtil.LogDebug(
-                                $"[FACTION_SYNC] Channel already exists for {faction.Name} (ID: {existing.DiscordChannelID})"
+                                "[FACTION_SYNC] Existing Discord channel found for "
+                                    + dbFaction.Tag
+                                    + " (ChannelID: "
+                                    + dbFaction.DiscordChannelID
+                                    + ")"
                             );
                         }
                         else
                         {
-                            // Stored ID doesn't exist on Discord anymore - need to create new
-                            faction.DiscordChannelID = 0;
+                            LoggerUtil.LogDebug(
+                                "[FACTION_SYNC] Stored channel ID not found on Discord for "
+                                    + dbFaction.Tag
+                                    + " (ChannelID: "
+                                    + dbFaction.DiscordChannelID
+                                    + ") - will recreate"
+                            );
+                            dbFaction.DiscordChannelID = 0;
                         }
                     }
 
                     // ============================================================
                     // Create role if needed
                     // ============================================================
-                    if (faction.DiscordRoleID == 0)
+                    if (dbFaction.DiscordRoleID == 0)
                     {
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Creating Discord role for faction: {faction.Tag}"
+                            "[FACTION_SYNC] Creating Discord role for faction: " + dbFaction.Tag
                         );
-                        faction.DiscordRoleID = await _discord.CreateRoleAsync(faction.Tag);
+                        dbFaction.DiscordRoleID = await _discord.CreateRoleAsync(dbFaction.Tag);
 
-                        if (faction.DiscordRoleID > 0)
+                        if (dbFaction.DiscordRoleID > 0)
                         {
+                            dbFaction.DiscordRoleName = dbFaction.Tag;
                             LoggerUtil.LogSuccess(
-                                $"[FACTION_SYNC] Created role {faction.Tag} (ID: {faction.DiscordRoleID})"
+                                "[FACTION_SYNC] Created role "
+                                    + dbFaction.Tag
+                                    + " (ID: "
+                                    + dbFaction.DiscordRoleID
+                                    + ")"
                             );
                         }
                         else
                         {
                             LoggerUtil.LogWarning(
-                                $"[FACTION_SYNC] Failed to create role for {faction.Tag}"
+                                "[FACTION_SYNC] Failed to create role for " + dbFaction.Tag
                             );
                         }
                     }
 
                     // ============================================================
                     // Create channel if needed
+                    // Channel name is lowercase faction name
                     // Pass roleID for permission setup
                     // ============================================================
-                    if (faction.DiscordChannelID == 0)
+                    if (dbFaction.DiscordChannelID == 0)
                     {
+                        string channelName =
+                            (gameFaction.Name != null ? gameFaction.Name : dbFaction.Tag)
+                                .ToLower();
+
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Creating Discord channel for faction: {faction.Name}"
+                            "[FACTION_SYNC] Creating Discord channel for faction: "
+                                + gameFaction.Name
+                                + " (channel: "
+                                + channelName
+                                + ")"
                         );
 
-                        // Create channel with category and role for permissions
-                        faction.DiscordChannelID = await _discord.CreateChannelAsync(
-                            faction.Name.ToLower(),
+                        dbFaction.DiscordChannelID = await _discord.CreateChannelAsync(
+                            channelName,
                             _config.Discord.FactionCategoryId,
-                            faction.DiscordRoleID // Pass roleID for permission setup
+                            dbFaction.DiscordRoleID
                         );
 
-                        if (faction.DiscordChannelID > 0)
+                        if (dbFaction.DiscordChannelID > 0)
                         {
+                            dbFaction.DiscordChannelName = channelName;
                             LoggerUtil.LogSuccess(
-                                $"[FACTION_SYNC] Created channel {faction.Name} (ID: {faction.DiscordChannelID})"
+                                "[FACTION_SYNC] Created channel "
+                                    + channelName
+                                    + " (ID: "
+                                    + dbFaction.DiscordChannelID
+                                    + ")"
                             );
                         }
                         else
                         {
                             LoggerUtil.LogWarning(
-                                $"[FACTION_SYNC] Failed to create channel for {faction.Name}"
+                                "[FACTION_SYNC] Failed to create channel for " + gameFaction.Name
                             );
                         }
                     }
 
-                    // Save faction to database
-                    _db.SaveFaction(faction);
+                    // ============================================================
+                    // Create forum and voice channels if enabled (same name lowcase, same role)
+                    // ============================================================
+                    string lowcaseName = (gameFaction.Name != null ? gameFaction.Name : dbFaction.Tag).ToLower();
+                    ulong? catId = _config.Discord.FactionCategoryId;
+                    ulong? roleId = dbFaction.DiscordRoleID > 0 ? (ulong?)dbFaction.DiscordRoleID : null;
 
-                    // Log the result
-                    if (faction.DiscordRoleID > 0 && faction.DiscordChannelID > 0)
+                    if (_config.Faction.AutoCreateForum && dbFaction.DiscordForumID == 0)
                     {
+                        try
+                        {
+                            var forumId = await _discord.CreateForumChannelAsync(lowcaseName, catId, roleId);
+                            if (forumId > 0)
+                            {
+                                dbFaction.DiscordForumID = forumId;
+                                dbFaction.DiscordForumName = lowcaseName;
+                                if (dbFaction.ChannelsCreated == null) dbFaction.ChannelsCreated = new List<DiscordChannelCreated>();
+                                dbFaction.ChannelsCreated.Add(new DiscordChannelCreated { ChannelID = forumId, ChannelName = lowcaseName, ChannelType = "Forum", CreatedAt = DateTime.UtcNow });
+                                LoggerUtil.LogSuccess("[FACTION_SYNC] Created forum: " + lowcaseName + " (ID: " + forumId + ")");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError("[FACTION_SYNC] Forum channel creation failed (Discord API may not support Forum in this version): " + ex.Message);
+                        }
+                    }
+
+                    if (_config.Faction.AutoCreateVoice && dbFaction.DiscordVoiceChannelID == 0)
+                    {
+                        var voiceId = await _discord.CreateVoiceChannelAsync(lowcaseName, catId, roleId);
+                        if (voiceId > 0)
+                        {
+                            dbFaction.DiscordVoiceChannelID = voiceId;
+                            dbFaction.DiscordVoiceChannelName = lowcaseName;
+                            if (dbFaction.ChannelsCreated == null) dbFaction.ChannelsCreated = new List<DiscordChannelCreated>();
+                            dbFaction.ChannelsCreated.Add(new DiscordChannelCreated { ChannelID = voiceId, ChannelName = lowcaseName, ChannelType = "Voice", CreatedAt = DateTime.UtcNow });
+                            LoggerUtil.LogSuccess("[FACTION_SYNC] Created voice: " + lowcaseName + " (ID: " + voiceId + ")");
+                        }
+                    }
+
+                    // Update sync status metadata
+                    if (dbFaction.DiscordRoleID > 0 && dbFaction.DiscordChannelID > 0)
+                    {
+                        dbFaction.SyncStatus = "Synced";
+                        dbFaction.SyncedAt = DateTime.UtcNow;
                         LoggerUtil.LogInfo(
-                            $"[FACTION_SYNC] Faction ready: {faction.Tag} - {faction.Name} (Role: {faction.DiscordRoleID}, Channel: {faction.DiscordChannelID})"
+                            "[FACTION_SYNC] Faction ready: "
+                                + dbFaction.Tag
+                                + " - "
+                                + gameFaction.Name
+                                + " (Role: "
+                                + dbFaction.DiscordRoleID
+                                + ", Channel: "
+                                + dbFaction.DiscordChannelID
+                                + ")"
                         );
+                    }
+
+                    // Save faction to database
+                    try
+                    {
+                        _db.SaveFaction(dbFaction);
+                        LoggerUtil.LogSuccess($"[FACTION_SYNC] ✓ Saved faction: {dbFaction.Tag}");
+
+                        // Sync Discord roles for verified players in this faction
+                        await SyncFactionRolesForVerifiedPlayersAsync(dbFaction);
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[FACTION_SYNC] Failed to save faction: {ex.Message}");
                     }
 
                     // ============================================================
                     // Sync faction members (add them to faction)
+                    // Use players from game faction (current session)
                     // ============================================================
-                    if (faction.Players != null && faction.Players.Count > 0)
+                    if (gameFaction.Players != null && gameFaction.Players.Count > 0)
                     {
-                        foreach (var player in faction.Players)
+                        foreach (var player in gameFaction.Players)
                         {
                             // Create synced nickname with faction tag
-                            player.SyncedNick = "[" + faction.Tag + "] " + player.OriginalNick;
+                            player.SyncedNick = "[" + dbFaction.Tag + "] " + player.OriginalNick;
 
                             // Create player model for database
                             var playerModel = new PlayerModel
@@ -322,7 +441,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                                 SteamID = player.SteamID,
                                 OriginalNick = player.OriginalNick,
                                 SyncedNick = player.SyncedNick,
-                                FactionID = faction.FactionID,
+                                FactionID = dbFaction.FactionID,
                                 DiscordUserID = player.DiscordUserID,
                             };
 
@@ -331,7 +450,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                         }
 
                         LoggerUtil.LogDebug(
-                            $"[FACTION_SYNC] Synced {faction.Players.Count} players for {faction.Tag}"
+                            "[FACTION_SYNC] Synced "
+                                + gameFaction.Players.Count
+                                + " players for "
+                                + dbFaction.Tag
                         );
                     }
                 }
@@ -340,7 +462,9 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError($"[FACTION_SYNC] Sync error: {ex.Message}\n{ex.StackTrace}");
+                LoggerUtil.LogError(
+                    "[FACTION_SYNC] Sync error: " + ex.Message + "\n" + ex.StackTrace
+                );
             }
         }
 
@@ -370,13 +494,20 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                             );
                         }
 
-                        // Delete Discord channel
                         if (faction.DiscordChannelID != 0)
                         {
                             await _discord.DeleteChannelAsync(faction.DiscordChannelID);
-                            LoggerUtil.LogInfo(
-                                $"[FACTION_SYNC] Deleted Discord channel for: {faction.Name}"
-                            );
+                            LoggerUtil.LogInfo($"[FACTION_SYNC] Deleted Discord channel for: {faction.Name}");
+                        }
+                        if (faction.DiscordForumID != 0)
+                        {
+                            await _discord.DeleteChannelAsync(faction.DiscordForumID);
+                            LoggerUtil.LogInfo($"[FACTION_SYNC] Deleted forum for: {faction.Name}");
+                        }
+                        if (faction.DiscordVoiceChannelID != 0)
+                        {
+                            await _discord.DeleteChannelAsync(faction.DiscordVoiceChannelID);
+                            LoggerUtil.LogInfo($"[FACTION_SYNC] Deleted voice for: {faction.Name}");
                         }
                     }
                 }
@@ -390,6 +521,716 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 LoggerUtil.LogError($"[FACTION_SYNC] Reset error: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// NEW: Resync a specific faction by deleting and recreating its Discord channel and role
+        /// </summary>
+        public async Task ResyncFactionAsync(string factionTag)
+        {
+            try
+            {
+                LoggerUtil.LogInfo($"[FACTION_SYNC] Starting resync for faction: {factionTag}");
+
+                // Find faction by tag
+                var faction = _db?.GetAllFactions()?.FirstOrDefault(f => f.Tag == factionTag);
+                if (faction == null)
+                {
+                    LoggerUtil.LogError($"[FACTION_SYNC] Faction not found: {factionTag}");
+                    throw new Exception($"Faction not found: {factionTag}");
+                }
+
+                // Delete existing Discord channel and role
+                if (faction.DiscordChannelID != 0 && _discord != null)
+                {
+                    try
+                    {
+                        await _discord.DeleteChannelAsync(faction.DiscordChannelID);
+                        LoggerUtil.LogSuccess(
+                            $"[FACTION_SYNC] Deleted old channel for {factionTag}"
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogWarning(
+                            $"[FACTION_SYNC] Error deleting old channel: {ex.Message}"
+                        );
+                    }
+                }
+
+                if (faction.DiscordRoleID != 0 && _discord != null)
+                {
+                    try
+                    {
+                        await _discord.DeleteRoleAsync(faction.DiscordRoleID);
+                        LoggerUtil.LogSuccess($"[FACTION_SYNC] Deleted old role for {factionTag}");
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogWarning(
+                            $"[FACTION_SYNC] Error deleting old role: {ex.Message}"
+                        );
+                    }
+                }
+
+                // Recreate faction role
+                var newRoleId = await _discord.CreateRoleAsync(factionTag);
+                if (newRoleId == 0)
+                {
+                    LoggerUtil.LogError(
+                        $"[FACTION_SYNC] Failed to create new role for {factionTag}"
+                    );
+                    throw new Exception("Failed to create new role");
+                }
+
+                // Update faction with new role ID
+                faction.DiscordRoleID = newRoleId;
+
+                // Recreate faction channel
+                var newChannelId = await _discord.CreateChannelAsync(
+                    faction.Name.ToLower().Replace(" ", "-"),
+                    _config.Discord.FactionCategoryId
+                );
+
+                if (newChannelId == 0)
+                {
+                    LoggerUtil.LogError(
+                        $"[FACTION_SYNC] Failed to create new channel for {factionTag}"
+                    );
+                    throw new Exception("Failed to create new channel");
+                }
+
+                // Update faction with new channel ID
+                faction.DiscordChannelID = newChannelId;
+
+                // Assign role to faction players
+                if (faction.Players != null && faction.Players.Count > 0)
+                {
+                    foreach (var player in faction.Players)
+                    {
+                        try
+                        {
+                            var verifiedPlayer = _db?.GetVerifiedPlayer(player.SteamID);
+                            if (verifiedPlayer != null)
+                            {
+                                await _discord.AssignRoleToUserAsync(
+                                    verifiedPlayer.DiscordUserID,
+                                    newRoleId
+                                );
+                                LoggerUtil.LogDebug(
+                                    $"[FACTION_SYNC] Assigned new role to {verifiedPlayer.DiscordUsername}"
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogWarning(
+                                $"[FACTION_SYNC] Error assigning role to player {player.SteamID}: {ex.Message}"
+                            );
+                        }
+                    }
+                }
+
+                // Save updated faction to database
+                _db?.SaveFaction(faction);
+
+                LoggerUtil.LogSuccess(
+                    $"[FACTION_SYNC] Resync complete for {factionTag} (Channel: {newChannelId}, Role: {newRoleId})"
+                );
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[FACTION_SYNC] Resync failed for {factionTag}: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:check
+        /// Check status of all faction syncs
+        /// </summary>
+        public string AdminSyncCheck()
+        {
+            try
+            {
+                LoggerUtil.LogInfo("[ADMIN:SYNC:CHECK] Executed");
+
+                var allFactions = _db.GetAllFactions();
+                if (allFactions == null || allFactions.Count == 0)
+                {
+                    return "No factions in database";
+                }
+
+                var result = new System.Text.StringBuilder();
+                result.AppendLine("[SYNC STATUS CHECK]");
+                result.AppendLine();
+
+                int synced = 0, orphaned = 0, failed = 0, pending = 0;
+
+                foreach (var faction in allFactions)
+                {
+                    if (faction.SyncStatus == "Synced")
+                    {
+                        result.AppendLine($"✓ {faction.Tag}: SYNCED");
+                        result.AppendLine($"    Role ID: {faction.DiscordRoleID}");
+                        result.AppendLine($"    Channel: {faction.DiscordChannelName} (ID: {faction.DiscordChannelID})");
+                        result.AppendLine($"    Synced at: {faction.SyncedAt}");
+                        synced++;
+                    }
+                    else if (faction.SyncStatus == "Orphaned")
+                    {
+                        result.AppendLine($"⚠ {faction.Tag}: ORPHANED - {faction.ErrorMessage}");
+                        orphaned++;
+                    }
+                    else if (faction.SyncStatus == "Failed")
+                    {
+                        result.AppendLine($"❌ {faction.Tag}: FAILED - {faction.ErrorMessage}");
+                        failed++;
+                    }
+                    else
+                    {
+                        result.AppendLine($"⏳ {faction.Tag}: PENDING");
+                        pending++;
+                    }
+                }
+
+                result.AppendLine();
+                result.AppendLine($"Summary: Synced={synced}, Pending={pending}, Orphaned={orphaned}, Failed={failed}");
+
+                LoggerUtil.LogInfo($"[ADMIN:SYNC:CHECK] Result: {synced} synced, {pending} pending, {orphaned} orphaned, {failed} failed");
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[ADMIN:SYNC:CHECK] Error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:undo <faction_tag>
+        /// Delete Discord role and channel for a faction
+        /// </summary>
+        public async Task<string> AdminSyncUndo(string factionTag)
+        {
+            try
+            {
+                LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Executing for faction: {factionTag}");
+
+                var faction = _db.GetFactionByTag(factionTag);
+                if (faction == null)
+                {
+                    LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Faction not found: {factionTag}");
+                    return $"Faction '{factionTag}' not found in database";
+                }
+
+                var result = new System.Text.StringBuilder();
+                result.AppendLine($"[UNDO] {factionTag}");
+
+                // Delete Discord role
+                if (faction.DiscordRoleID > 0)
+                {
+                    try
+                    {
+                        bool roleDeleted = await _discord.DeleteRoleAsync(faction.DiscordRoleID);
+                        if (roleDeleted)
+                        {
+                            result.AppendLine($"✓ Deleted Discord role: {faction.DiscordRoleName}");
+                            LoggerUtil.LogSuccess($"[ADMIN:SYNC:UNDO] Deleted role: {faction.DiscordRoleName}");
+                            faction.DiscordRoleID = 0;
+                            faction.DiscordRoleName = "";
+                        }
+                        else
+                        {
+                            result.AppendLine($"⚠ Discord role not found or already deleted: {faction.DiscordRoleName}");
+                            LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Role not found: {faction.DiscordRoleName}");
+                            faction.DiscordRoleID = 0;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Failed to delete role: {ex.Message}");
+                        return $"Failed to delete role: {ex.Message}";
+                    }
+                }
+
+                // Delete Discord channels (text, forum, voice)
+                if (faction.DiscordChannelID > 0)
+                {
+                    try
+                    {
+                        bool channelDeleted = await _discord.DeleteChannelAsync(faction.DiscordChannelID);
+                        if (channelDeleted)
+                        {
+                            result.AppendLine($"✓ Deleted Discord channel: {faction.DiscordChannelName}");
+                            LoggerUtil.LogSuccess($"[ADMIN:SYNC:UNDO] Deleted channel: {faction.DiscordChannelName}");
+                            faction.DiscordChannelID = 0;
+                            faction.DiscordChannelName = "";
+                        }
+                        else
+                        {
+                            result.AppendLine($"⚠ Discord channel not found or already deleted: {faction.DiscordChannelName}");
+                            LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Channel not found: {faction.DiscordChannelName}");
+                            faction.DiscordChannelID = 0;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Failed to delete channel: {ex.Message}");
+                        return $"Failed to delete channel: {ex.Message}";
+                    }
+                }
+
+                if (faction.DiscordForumID > 0)
+                {
+                    try
+                    {
+                        await _discord.DeleteChannelAsync(faction.DiscordForumID);
+                        result.AppendLine($"✓ Deleted forum: {faction.DiscordForumName}");
+                        faction.DiscordForumID = 0;
+                        faction.DiscordForumName = "";
+                    }
+                    catch (Exception ex) { LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Forum delete: {ex.Message}"); faction.DiscordForumID = 0; }
+                }
+                if (faction.DiscordVoiceChannelID > 0)
+                {
+                    try
+                    {
+                        await _discord.DeleteChannelAsync(faction.DiscordVoiceChannelID);
+                        result.AppendLine($"✓ Deleted voice: {faction.DiscordVoiceChannelName}");
+                        faction.DiscordVoiceChannelID = 0;
+                        faction.DiscordVoiceChannelName = "";
+                    }
+                    catch (Exception ex) { LoggerUtil.LogWarning($"[ADMIN:SYNC:UNDO] Voice delete: {ex.Message}"); faction.DiscordVoiceChannelID = 0; }
+                }
+
+                // Remove faction record from XML storage to avoid duplicate syncs on next run
+                _db.DeleteFaction(faction.FactionID);
+                LoggerUtil.LogDebug(
+                    $"[ADMIN:SYNC:UNDO] Removed faction {factionTag} (ID: {faction.FactionID}) from database"
+                );
+
+                result.AppendLine($"✓ Undo completed for {factionTag} (role, channel, and DB entry removed)");
+                LoggerUtil.LogSuccess($"[ADMIN:SYNC:UNDO] Completed for {factionTag}");
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[ADMIN:SYNC:UNDO] Error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:cleanup
+        /// Delete all orphaned Discord roles and channels
+        /// </summary>
+        public async Task<string> AdminSyncCleanup()
+        {
+            try
+            {
+                LoggerUtil.LogWarning("[ADMIN:SYNC:CLEANUP] Executing cleanup of orphaned syncs");
+
+                var allFactions = _db.GetAllFactions();
+                var orphaned = allFactions?.Where(f => f.SyncStatus == "Orphaned").ToList();
+
+                if (orphaned == null || orphaned.Count == 0)
+                {
+                    LoggerUtil.LogInfo("[ADMIN:SYNC:CLEANUP] No orphaned syncs to clean");
+                    return "No orphaned syncs to clean up";
+                }
+
+                var result = new System.Text.StringBuilder();
+                result.AppendLine($"[CLEANUP] Found {orphaned.Count} orphaned syncs");
+
+                int cleaned = 0;
+
+                foreach (var faction in orphaned)
+                {
+                    try
+                    {
+                        // Delete role if exists
+                        if (faction.DiscordRoleID > 0)
+                        {
+                            bool deleted = await _discord.DeleteRoleAsync(faction.DiscordRoleID);
+                            if (deleted)
+                            {
+                                result.AppendLine($"✓ Deleted orphaned role: {faction.DiscordRoleName}");
+                                LoggerUtil.LogSuccess($"[ADMIN:SYNC:CLEANUP] Deleted role: {faction.DiscordRoleName}");
+                            }
+                        }
+
+                        // Delete channel if exists
+                        if (faction.DiscordChannelID > 0)
+                        {
+                            bool deleted = await _discord.DeleteChannelAsync(faction.DiscordChannelID);
+                            if (deleted)
+                            {
+                                result.AppendLine($"✓ Deleted orphaned channel: {faction.DiscordChannelName}");
+                                LoggerUtil.LogSuccess($"[ADMIN:SYNC:CLEANUP] Deleted channel: {faction.DiscordChannelName}");
+                            }
+                        }
+
+                        // Reset faction status
+                        faction.SyncStatus = "Pending";
+                        faction.DiscordRoleID = 0;
+                        faction.DiscordChannelID = 0;
+                        faction.DiscordRoleName = "";
+                        faction.DiscordChannelName = "";
+                        faction.SyncedAt = null;
+                        faction.ErrorMessage = "";
+                        _db.SaveFaction(faction);
+
+                        cleaned++;
+                    }
+                    catch (Exception ex)
+                    {
+                        result.AppendLine($"❌ Failed to clean {faction.Tag}: {ex.Message}");
+                        LoggerUtil.LogError($"[ADMIN:SYNC:CLEANUP] Failed to clean {faction.Tag}: {ex.Message}");
+                    }
+                }
+
+                result.AppendLine($"✓ Cleanup complete: {cleaned} factions cleaned");
+                LoggerUtil.LogSuccess($"[ADMIN:SYNC:CLEANUP] Completed: {cleaned} factions");
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[ADMIN:SYNC:CLEANUP] Error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:undo_all
+        /// Delete Discord roles and channels for ALL factions and clear faction records from XML.
+        /// This is similar to a scoped reset only for faction-related data.
+        /// </summary>
+        public async Task<string> AdminSyncUndoAll()
+        {
+            try
+            {
+                LoggerUtil.LogWarning("[ADMIN:SYNC:UNDO_ALL] Executing full faction undo (all factions)");
+
+                var allFactions = _db.GetAllFactions();
+                if (allFactions == null || allFactions.Count == 0)
+                {
+                    LoggerUtil.LogInfo("[ADMIN:SYNC:UNDO_ALL] No factions found in database");
+                    return "No factions in database to undo.";
+                }
+
+                var result = new System.Text.StringBuilder();
+                result.AppendLine("[UNDO_ALL] Starting full faction undo");
+                result.AppendLine("Total factions: " + allFactions.Count);
+
+                foreach (var faction in allFactions)
+                {
+                    result.AppendLine();
+                    result.AppendLine("Faction: " + faction.Tag + " (" + faction.Name + ")");
+
+                    // Delete role if exists
+                    if (faction.DiscordRoleID > 0)
+                    {
+                        try
+                        {
+                            bool deletedRole = await _discord.DeleteRoleAsync(faction.DiscordRoleID);
+                            if (deletedRole)
+                            {
+                                result.AppendLine("  ✓ Deleted role ID: " + faction.DiscordRoleID);
+                                LoggerUtil.LogSuccess(
+                                    "[ADMIN:SYNC:UNDO_ALL] Deleted role for faction " + faction.Tag
+                                );
+                            }
+                            else
+                            {
+                                result.AppendLine(
+                                    "  ⚠ Role not found or already deleted (ID: "
+                                        + faction.DiscordRoleID
+                                        + ")"
+                                );
+                                LoggerUtil.LogWarning(
+                                    "[ADMIN:SYNC:UNDO_ALL] Role not found for faction " + faction.Tag
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            result.AppendLine(
+                                "  ❌ Failed to delete role (ID: "
+                                    + faction.DiscordRoleID
+                                    + "): "
+                                    + ex.Message
+                            );
+                            LoggerUtil.LogError(
+                                "[ADMIN:SYNC:UNDO_ALL] Failed to delete role for "
+                                    + faction.Tag
+                                    + ": "
+                                    + ex.Message
+                            );
+                        }
+                    }
+                    else
+                    {
+                        result.AppendLine("  ℹ No Discord role stored for this faction.");
+                    }
+
+                    // Delete channel if exists
+                    if (faction.DiscordChannelID > 0)
+                    {
+                        try
+                        {
+                            bool deletedChannel = await _discord.DeleteChannelAsync(
+                                faction.DiscordChannelID
+                            );
+                            if (deletedChannel)
+                            {
+                                result.AppendLine(
+                                    "  ✓ Deleted channel ID: " + faction.DiscordChannelID
+                                );
+                                LoggerUtil.LogSuccess(
+                                    "[ADMIN:SYNC:UNDO_ALL] Deleted channel for faction " + faction.Tag
+                                );
+                            }
+                            else
+                            {
+                                result.AppendLine(
+                                    "  ⚠ Channel not found or already deleted (ID: "
+                                        + faction.DiscordChannelID
+                                        + ")"
+                                );
+                                LoggerUtil.LogWarning(
+                                    "[ADMIN:SYNC:UNDO_ALL] Channel not found for faction " + faction.Tag
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            result.AppendLine(
+                                "  ❌ Failed to delete channel (ID: "
+                                    + faction.DiscordChannelID
+                                    + "): "
+                                    + ex.Message
+                            );
+                            LoggerUtil.LogError(
+                                "[ADMIN:SYNC:UNDO_ALL] Failed to delete channel for "
+                                    + faction.Tag
+                                    + ": "
+                                    + ex.Message
+                            );
+                        }
+                    }
+                    else
+                    {
+                        result.AppendLine("  ℹ No Discord channel stored for this faction.");
+                    }
+
+                    // Finally, remove faction record from XML
+                    _db.DeleteFaction(faction.FactionID);
+                    result.AppendLine(
+                        "  ✓ Removed faction record from XML (ID: " + faction.FactionID + ")"
+                    );
+                    LoggerUtil.LogDebug(
+                        "[ADMIN:SYNC:UNDO_ALL] Removed faction "
+                            + faction.Tag
+                            + " (ID: "
+                            + faction.FactionID
+                            + ") from database"
+                    );
+                }
+
+                result.AppendLine();
+                result.AppendLine("[UNDO_ALL] Completed for all factions.");
+                LoggerUtil.LogSuccess("[ADMIN:SYNC:UNDO_ALL] Completed full faction undo.");
+
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError("[ADMIN:SYNC:UNDO_ALL] Error: " + ex.Message);
+                return "Error: " + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// Admin command: /tds admin:sync:status
+        /// Show summary of sync status
+        /// </summary>
+        public string AdminSyncStatus()
+        {
+            try
+            {
+                LoggerUtil.LogInfo("[ADMIN:SYNC:STATUS] Executed");
+
+                var allFactions = _db.GetAllFactions();
+                if (allFactions == null || allFactions.Count == 0)
+                {
+                    return "No factions in database";
+                }
+
+                int synced = allFactions.Count(f => f.SyncStatus == "Synced");
+                int pending = allFactions.Count(f => f.SyncStatus == "Pending");
+                int failed = allFactions.Count(f => f.SyncStatus == "Failed");
+                int orphaned = allFactions.Count(f => f.SyncStatus == "Orphaned");
+                int total = allFactions.Count;
+
+                string status = $"Sync Status: {synced}/{total} synced | {pending} pending | {failed} failed | {orphaned} orphaned";
+
+                LoggerUtil.LogInfo($"[ADMIN:SYNC:STATUS] {status}");
+                return status;
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[ADMIN:SYNC:STATUS] Error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        
+        /// <summary>
+        /// Synchronize Discord roles for verified players in a faction
+        /// - Adds faction role to verified players who are in the faction
+        /// - Removes faction role from verified players who are no longer in the faction
+        /// </summary>
+        private async Task SyncFactionRolesForVerifiedPlayersAsync(FactionModel dbFaction)
+        {
+            try
+            {
+                // Get all verified players
+                var verifiedPlayers = _db.GetAllVerifiedPlayers();
+                if (verifiedPlayers == null || verifiedPlayers.Count == 0)
+                {
+                    LoggerUtil.LogDebug("[FACTION_ROLE_SYNC] No verified players to sync");
+                    return;
+                }
+
+                // Get faction member Steam IDs
+                var steamIdsInFaction = new HashSet<long>(dbFaction.Players.Select(p => p.SteamID));
+
+                // Get Discord bot service
+                var botService = _discord.GetBotService();
+                if (botService == null)
+                {
+                    LoggerUtil.LogDebug("[FACTION_ROLE_SYNC] DiscordBotService not available");
+                    return;
+                }
+
+                // Get Discord client (SocketDiscordClient - has GetUser support)
+                var client = botService.GetClient();
+                if (client == null)
+                {
+                    LoggerUtil.LogDebug("[FACTION_ROLE_SYNC] Discord client not available");
+                    return;
+                }
+
+                // Get guild (SocketGuild - has GetUser support)
+                var guild = client.GetGuild(_config.Discord.GuildID);
+                if (guild == null)
+                {
+                    LoggerUtil.LogDebug("[FACTION_ROLE_SYNC] Discord guild not found");
+                    return;
+                }
+
+                // Get faction role
+                var role = guild.GetRole(dbFaction.DiscordRoleID);
+                if (role == null)
+                {
+                    LoggerUtil.LogDebug(
+                        $"[FACTION_ROLE_SYNC] Role not found for faction {dbFaction.Tag}"
+                    );
+                    return;
+                }
+
+                LoggerUtil.LogInfo(
+                    $"[FACTION_ROLE_SYNC] Syncing roles for faction {dbFaction.Tag} ({dbFaction.Players.Count} members)"
+                );
+
+                // ============================================================
+                // PART 1: Add faction role to verified players in this faction
+                // ============================================================
+                foreach (var vp in verifiedPlayers)
+                {
+                    // Check if this verified player is in this faction
+                    if (!steamIdsInFaction.Contains(vp.SteamID))
+                        continue;
+
+                    // Get Discord user from guild by ID (SocketGuild supports GetUser)
+                    var user = guild.GetUser(vp.DiscordUserID);
+                    if (user == null)
+                    {
+                        LoggerUtil.LogDebug(
+                            $"[FACTION_ROLE_SYNC] Discord user not found for {vp.DiscordUsername} (ID: {vp.DiscordUserID})"
+                        );
+                        continue;
+                    }
+
+                    // Check if user already has the role (use Roles collection, not RoleIds)
+                    if (user.Roles.Contains(role))
+                    {
+                        LoggerUtil.LogDebug(
+                            $"[FACTION_ROLE_SYNC] SKIP {vp.DiscordUsername} - already has {dbFaction.Tag}"
+                        );
+                        continue;
+                    }
+
+                    // Add role to user
+                    try
+                    {
+                        await user.AddRoleAsync(role);
+                        LoggerUtil.LogSuccess(
+                            $"[FACTION_ROLE_SYNC] Added {dbFaction.Tag} to {vp.DiscordUsername}"
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError(
+                            $"[FACTION_ROLE_SYNC] Failed to add role to {vp.DiscordUsername}: {ex.Message}"
+                        );
+                    }
+                }
+
+                // ============================================================
+                // PART 2: Remove faction role from verified players NOT in this faction
+                // ============================================================
+                foreach (var vp in verifiedPlayers)
+                {
+                    // Check if this verified player is IN this faction
+                    if (steamIdsInFaction.Contains(vp.SteamID))
+                        continue; // Player is in faction, don't remove role
+
+                    // Get Discord user from guild by ID (SocketGuild supports GetUser)
+                    var user = guild.GetUser(vp.DiscordUserID);
+                    if (user == null)
+                        continue;
+
+                    // Check if user has the faction role (use Roles collection, not RoleIds)
+                    if (user.Roles.Contains(role))
+                    {
+                        // Remove role from user
+                        try
+                        {
+                            await user.RemoveRoleAsync(role);
+                            LoggerUtil.LogSuccess(
+                                $"[FACTION_ROLE_SYNC] Removed {dbFaction.Tag} from {vp.DiscordUsername} (no longer in faction)"
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerUtil.LogError(
+                                $"[FACTION_ROLE_SYNC] Failed to remove role from {vp.DiscordUsername}: {ex.Message}"
+                            );
+                        }
+                    }
+                }
+
+                LoggerUtil.LogSuccess($"[FACTION_ROLE_SYNC] Completed for faction {dbFaction.Tag}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError(
+                    $"[FACTION_ROLE_SYNC] Error syncing roles: {ex.Message}\n{ex.StackTrace}"
+                );
+            }
+        }
+
 
         /// <summary>
         /// Retrieves the display name for a player by their identity ID.

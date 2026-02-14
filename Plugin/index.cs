@@ -1,6 +1,7 @@
 // Plugin/index.cs
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Timers;
 using Discord.WebSocket;
@@ -111,6 +112,20 @@ namespace mamba.TorchDiscordSync
                 _db = new DatabaseService();
                 LoggerUtil.LogSuccess("Database service initialized (XML-based)");
 
+                /*
+                // Initialize SQLite database (optional, for future use)
+                var sqliteDb = new SQLiteDatabaseService();
+                if (sqliteDb.Initialize())
+                {
+                    LoggerUtil.LogSuccess("[INIT] SQLite database initialized");
+                }
+                else
+                {
+                    LoggerUtil.LogWarning("[INIT] SQLite database initialization failed (non-critical)");
+                }
+                //*/
+
+
                 // Initialize Discord bot service
                 _discordBot = new DiscordBotService(_discordBotConfig);
                 Task.Run(
@@ -138,12 +153,16 @@ namespace mamba.TorchDiscordSync
 
                 try
                 {
-                    _damageTracking = new DamageTrackingService();
-                    LoggerUtil.LogInfo("[INIT] DamageTrackingService instance created (Init deferred to session load)");
+                    _damageTracking = new DamageTrackingService(_config); 
+                    LoggerUtil.LogInfo(
+                        "[INIT] DamageTrackingService instance created (Init deferred to session load)"
+                    );
                 }
                 catch (Exception ex)
                 {
-                    LoggerUtil.LogError($"[INIT] Failed to create DamageTrackingService: {ex.Message}");
+                    LoggerUtil.LogError(
+                        $"[INIT] Failed to create DamageTrackingService: {ex.Message}"
+                    );
                     _damageTracking = null;
                 }
 
@@ -171,16 +190,12 @@ namespace mamba.TorchDiscordSync
                     _torch,
                     _deathLog,
                     _config,
-                    _deathMessageHandler  // ← NOW it's NOT NULL!
+                    _deathMessageHandler // ← NOW it's NOT NULL!
                 );
                 LoggerUtil.LogDebug("[INIT] PlayerTrackingService initialized");
 
                 // Initialize faction sync service
-                _factionSync = new FactionSyncService(
-                    _db,
-                    _discordWrapper,
-                    _config
-                );
+                _factionSync = new FactionSyncService(_db, _discordWrapper, _config);
 
                 // Initialize chat sync service
                 _chatSync = new ChatSyncService(_discordWrapper, _config, _db);
@@ -190,27 +205,41 @@ namespace mamba.TorchDiscordSync
                 {
                     _discordBot.OnMessageReceivedEvent += async msg =>
                     {
-                        // Only process messages from the configured chat channel
-                        if (
-                            msg.Channel is SocketTextChannel textChannel
-                            && textChannel.Id == _config.Discord.ChatChannelId
-                        )
-                        {
-                            // Skip bot messages and commands (prevent loops)
-                            if (
-                                msg.Author.IsBot
-                                || msg.Content.StartsWith(_config.Discord.BotPrefix)
-                            )
-                                return;
+                        if (msg.Author.IsBot || msg.Content.StartsWith(_config.Discord.BotPrefix))
+                            return;
 
-                            // Forward to ChatSyncService to send to game chat
-                            await _chatSync.SendDiscordMessageToGameAsync(
-                                msg.Author.Username,
-                                msg.Content
-                            );
-                            LoggerUtil.LogDebug(
-                                $"[DISCORD›GAME] Forwarded message from {msg.Author.Username}"
-                            );
+                        if (msg.Channel is SocketTextChannel textChannel)
+                        {
+                            ulong channelId = textChannel.Id;
+                            // Global chat channel → game global
+                            if (channelId == _config.Discord.ChatChannelId)
+                            {
+                                await _chatSync.SendDiscordMessageToGameAsync(
+                                    msg.Author.Username,
+                                    msg.Content
+                                );
+                                LoggerUtil.LogDebug(
+                                    $"[DISCORD›GAME] Forwarded message from {msg.Author.Username}"
+                                );
+                                return;
+                            }
+                            // Faction channel (synced) → game faction only (secure)
+                            var factions = _db?.GetAllFactions();
+                            if (factions != null)
+                            {
+                                var faction = factions.FirstOrDefault(f => f.DiscordChannelID == channelId);
+                                if (faction != null)
+                                {
+                                    await _chatSync.SendDiscordMessageToFactionInGameAsync(
+                                        faction.FactionID,
+                                        msg.Author.Username,
+                                        msg.Content
+                                    );
+                                    LoggerUtil.LogDebug(
+                                        $"[DISCORD›FACTION] {faction.Tag} from {msg.Author.Username}"
+                                    );
+                                }
+                            }
                         }
                     };
                 }
@@ -244,19 +273,21 @@ namespace mamba.TorchDiscordSync
                     _eventLog,
                     _orchestrator,
                     _verification,
-                    _verificationCommandHandler 
+                    _verificationCommandHandler
                 );
-                LoggerUtil.LogInfo("[INIT] CommandProcessor created with VerificationCommandHandler");
+                LoggerUtil.LogInfo(
+                    "[INIT] CommandProcessor created with VerificationCommandHandler"
+                );
 
                 _eventManager = new EventManager(_config, _discordWrapper, _eventLog);
                 _chatModerator = new ChatModerator(_config, _discordWrapper, _db);
-                
+
                 LoggerUtil.LogSuccess("All services initialized");
 
                 // Hook Discord bot verification event
                 if (_discordBot != null)
                 {
-                    _discordBot.OnVerificationAttempt += delegate (
+                    _discordBot.OnVerificationAttempt += delegate(
                         string code,
                         ulong discordID,
                         string discordUsername
@@ -352,8 +383,8 @@ namespace mamba.TorchDiscordSync
                     return;
 
                 string channelName = msg.Channel.ToString() ?? "Unknown";
-
-                LoggerUtil.LogDebug($"[CHAT] Channel: {channelName}, Message: {msg.Message}");
+                if (channelName.IndexOf("Faction", StringComparison.OrdinalIgnoreCase) >= 0)
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Incoming chat: Channel=\"{channelName}\" Author=\"{msg.Author}\" SteamId={msg.AuthorSteamId} Message=\"{msg.Message}\"");
 
                 // PRIORITY 1: Check for /tds commands FIRST (before any filtering)
                 // This ensures commands work in ALL channels (Global and Faction)
@@ -379,11 +410,51 @@ namespace mamba.TorchDiscordSync
                     return; // Stop processing - private chat stays private
                 }
 
-                // PRIORITY 3: Filter out faction chat (security - don't leak to Discord)
+                // PRIORITY 3: Faction chat → forward to synced Discord faction channel (map GameFactionChatId)
                 if (channelName.StartsWith("Faction") || channelName == "Faction")
                 {
-                    LoggerUtil.LogDebug("[CHAT] Skipping faction chat (not forwarded to Discord)");
-                    return; // Stop processing - faction chat stays private
+                    long gameChatId = 0;
+                    if (channelName.Length > 8)
+                    {
+                        int colonIdx = channelName.IndexOf(':');
+                        if (colonIdx >= 0 && colonIdx < channelName.Length - 1)
+                        {
+                            string idPart = channelName.Substring(colonIdx + 1).Trim();
+                            long.TryParse(idPart, out gameChatId);
+                        }
+                    }
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Faction channel raw: channelName=\"{channelName}\" gameChatId={gameChatId} authorSteamId={msg.AuthorSteamId} author=\"{msg.Author}\"");
+
+                    if (_db != null && _chatSync != null)
+                    {
+                        var faction = gameChatId != 0 ? _db.GetFactionByGameChatId(gameChatId) : null;
+                        if (faction == null && msg.AuthorSteamId.HasValue)
+                        {
+                            long authorSteamId = (long)msg.AuthorSteamId.Value;
+                            var player = _db.GetPlayerBySteamID(authorSteamId);
+                            if (player != null)
+                                faction = _db.GetFaction(player.FactionID);
+                            if (faction == null)
+                            {
+                                var allFactions = _db.GetAllFactions();
+                                faction = allFactions?.FirstOrDefault(f => f.Players != null && f.Players.Any(p => p.SteamID == authorSteamId));
+                            }
+                            if (faction != null && faction.DiscordChannelID != 0 && gameChatId != 0)
+                            {
+                                faction.GameFactionChatId = gameChatId;
+                                _db.SaveFaction(faction);
+                                LoggerUtil.LogInfo($"[CHAT] Mapped faction chat {gameChatId} → {faction.Tag}");
+                            }
+                        }
+                        if (faction != null && faction.DiscordChannelID != 0)
+                        {
+                            _ = _chatSync.SendGameFactionMessageToDiscordAsync(faction, msg.Author, msg.Message);
+                            LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction → Discord: forwarded {faction.Tag} \"{msg.Author}: {msg.Message}\"");
+                        }
+                        else
+                            LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction → Discord: skip (faction=" + (faction != null ? "ok" : "null") + " DiscordChannelID=" + (faction?.DiscordChannelID ?? 0) + ")");
+                    }
+                    return;
                 }
 
                 // PRIORITY 4: Filter out Server-authored messages
@@ -451,7 +522,7 @@ namespace mamba.TorchDiscordSync
             return Task.FromResult(0);
         }
 
-        // Handles verification attempts from Discord users
+        // Handles verification attempts from Discord users. Sends DM first, then in-game notification.
         private Task HandleVerificationAsync(string code, ulong discordID, string discordUsername)
         {
             if (_verificationCommandHandler != null)
@@ -462,41 +533,150 @@ namespace mamba.TorchDiscordSync
                     {
                         try
                         {
-                            // Get the verification result message
-                            string resultMessage = t.Result;
-                            LoggerUtil.LogInfo("[VERIFY] Verification result: " + resultMessage);
+                            var result = t.Result;
+                            LoggerUtil.LogInfo("[VERIFY] Verification result: " + result.Message);
 
-                            // Send result back to Discord user
+                            bool isSuccess = result.IsSuccess;
+                            var verifiedPlayer = isSuccess ? _db?.GetVerifiedPlayerByDiscordID(discordID) : null;
+
+                            if (isSuccess && verifiedPlayer != null)
+                            {
+                                if (_discordBot != null)
+                                {
+                                    ulong verifiedRoleId =
+                                        await _discordBot.GetOrCreateVerifiedRoleAsync();
+                                    if (verifiedRoleId != 0)
+                                    {
+                                        _config.Discord.VerifiedRoleId = verifiedRoleId;
+                                        _config.Save();
+
+                                        var discordClient = _discordBot.GetClient();
+                                        if (discordClient != null)
+                                        {
+                                            var discordUser = await discordClient.GetUserAsync(discordID);
+                                            if (discordUser != null)
+                                            {
+                                                bool roleAssigned =
+                                                    await _discordBot.AssignVerifiedRoleAsync(
+                                                        discordUser,
+                                                        verifiedRoleId
+                                                    );
+                                                if (roleAssigned)
+                                                    LoggerUtil.LogSuccess(
+                                                        $"[VERIFY] Assigned Verified role to {discordUsername}"
+                                                    );
+                                            }
+                                        }
+                                    }
+
+                                    if (_db != null)
+                                    {
+                                        var playerFaction = _db.GetAllFactions()
+                                            ?.FirstOrDefault(f =>
+                                                f.Players != null
+                                                && f.Players.Any(p => p.SteamID == verifiedPlayer.SteamID)
+                                            );
+
+                                        if (playerFaction != null)
+                                        {
+                                            var discordClient = _discordBot.GetClient();
+                                            if (discordClient != null)
+                                            {
+                                                var discordUser = await discordClient.GetUserAsync(discordID);
+                                                if (discordUser != null)
+                                                {
+                                                    bool factionRoleAssigned =
+                                                        await _discordBot.AssignFactionRoleAsync(
+                                                            discordUser,
+                                                            playerFaction.Tag
+                                                        );
+                                                    if (factionRoleAssigned)
+                                                        LoggerUtil.LogSuccess(
+                                                            $"[VERIFY] Assigned faction role '{playerFaction.Tag}' to {discordUsername}"
+                                                        );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 1) Send result DM to Discord user first
                             if (_discordBot != null)
                             {
-                                // Check if verification was successful
-                                bool isSuccess =
-                                    resultMessage.Contains("successful")
-                                    || resultMessage.Contains("Successful");
-
-                                // Send result DM to user
                                 await _discordBot.SendVerificationResultDMAsync(
                                     discordUsername,
                                     discordID,
-                                    resultMessage,
+                                    result.Message,
                                     isSuccess
                                 );
-
                                 LoggerUtil.LogDebug(
                                     "[VERIFY] Sent verification result DM to " + discordUsername
+                                );
+                            }
+
+                            // 2) Then send in-game private message to player (success or error when we have SteamID)
+                            if (result.SteamIdForNotify.HasValue && !string.IsNullOrEmpty(result.GamePlayerName))
+                            {
+                                SendInGameNotification(
+                                    result.SteamIdForNotify.Value,
+                                    result.GamePlayerName,
+                                    isSuccess,
+                                    result.Message
                                 );
                             }
                         }
                         catch (Exception ex)
                         {
                             LoggerUtil.LogError(
-                                "[VERIFY] Error sending verification result DM: " + ex.Message
+                                "[VERIFY] Error in HandleVerificationAsync: " + ex.Message
                             );
                         }
                     });
             }
 
             return Task.FromResult(0);
+        }
+
+        /// <summary>
+        /// NEW: Send in-game notification to player about verification result
+        /// </summary>
+        private void SendInGameNotification(
+            long steamID,
+            string playerName,
+            bool isSuccess,
+            string message
+        )
+        {
+            try
+            {
+                var players = new System.Collections.Generic.List<VRage.Game.ModAPI.IMyPlayer>();
+                MyAPIGateway.Players.GetPlayers(players);
+
+                var player = players.FirstOrDefault(p => (long)p.SteamUserId == steamID);
+                if (player == null)
+                    return;
+
+                var character = player.Character;
+                if (character == null)
+                    return;
+
+                string notificationMsg = isSuccess
+                    ? "✅ Verification successful! Discord account linked."
+                    : $"❌ Verification failed: {message}";
+
+                Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
+                    notificationMsg,
+                    "TDS",
+                    character.EntityId,
+                    "Blue"
+                );
+                LoggerUtil.LogSuccess($"[VERIFY_NOTIFY] Sent to {playerName}");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[VERIFY_NOTIFY] Error: {ex.Message}");
+            }
         }
 
         private void OnSessionStateChanged(ITorchSession session, TorchSessionState state)
@@ -513,19 +693,22 @@ namespace mamba.TorchDiscordSync
                     LoggerUtil.LogSuccess("=== Server session LOADED ===");
                     _serverStartupLogged = false;
 
-
                     // 1. Initialize DamageTrackingService (if not already initialized)
                     if (_damageTracking != null && !_damageTrackingInitialized)
                     {
                         try
                         {
                             _damageTracking.Init();
-                            _damageTrackingInitialized = true;  // ← KORISTI flag!
-                            LoggerUtil.LogSuccess("[DAMAGE_TRACK] DamageTrackingService initialized");
+                            _damageTrackingInitialized = true; // ← KORISTI flag!
+                            LoggerUtil.LogSuccess(
+                                "[DAMAGE_TRACK] DamageTrackingService initialized"
+                            );
                         }
                         catch (Exception ex)
                         {
-                            LoggerUtil.LogError($"[DAMAGE_TRACK] Failed to initialize: {ex.Message}");
+                            LoggerUtil.LogError(
+                                $"[DAMAGE_TRACK] Failed to initialize: {ex.Message}"
+                            );
                         }
                     }
 
@@ -539,7 +722,9 @@ namespace mamba.TorchDiscordSync
                         }
                         catch (Exception ex)
                         {
-                            LoggerUtil.LogError($"[KILLER_DETECTION] Failed to initialize: {ex.Message}");
+                            LoggerUtil.LogError(
+                                $"[KILLER_DETECTION] Failed to initialize: {ex.Message}"
+                            );
                         }
                     }
 
@@ -611,12 +796,16 @@ namespace mamba.TorchDiscordSync
                         {
                             _monitoringService = new MonitoringService(_config, _discordBot);
                             _monitoringService.Initialize();
-                            LoggerUtil.LogSuccess("[MONITORING] MonitoringService initialized after session load");
+                            LoggerUtil.LogSuccess(
+                                "[MONITORING] MonitoringService initialized after session load"
+                            );
                         }
                     }
                     catch (Exception ex)
                     {
-                        LoggerUtil.LogError($"[MONITORING] Failed to initialize MonitoringService: {ex.Message}");
+                        LoggerUtil.LogError(
+                            $"[MONITORING] Failed to initialize MonitoringService: {ex.Message}"
+                        );
                     }
 
                     // OPTIMIZED: Get simulation speed using helper method
@@ -704,7 +893,9 @@ namespace mamba.TorchDiscordSync
                         if (_orchestrator != null)
                         {
                             await _orchestrator.CheckServerStatusAsync(stableSimSpeed);
-                            LoggerUtil.LogSuccess($"[STARTUP] Post-load status reported. SimSpeed: {stableSimSpeed:F2}");
+                            LoggerUtil.LogSuccess(
+                                $"[STARTUP] Post-load status reported. SimSpeed: {stableSimSpeed:F2}"
+                            );
                         }
                     }
                     catch (Exception ex)

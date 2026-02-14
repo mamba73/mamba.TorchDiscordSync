@@ -1,14 +1,9 @@
 // Plugin/Services/KillerDetectionService.cs
-// ============================================================================
-// File: Services/KillerDetectionService.cs
-// FINAL VERSION: Integrated oxygen/fall/collision detection with DamageTracking
-// Date: 2026-02-07
-// ============================================================================
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using mamba.TorchDiscordSync.Plugin.Config;
 using mamba.TorchDiscordSync.Plugin.Utils;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
@@ -38,8 +33,11 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         private readonly Dictionary<long, DamageRecord> _localDamageBuffer = new Dictionary<long, DamageRecord>();
         private bool _isHooked = false;
         private DateTime _lastCleanup = DateTime.Now;
-        private const int CLEANUP_INTERVAL_SECONDS = 30;
-        private const int BUFFER_RETENTION_SECONDS = 10;
+        //private const int CLEANUP_INTERVAL_SECONDS = 30;
+        //private const int BUFFER_RETENTION_SECONDS = 10;
+        private readonly MainConfig _config;
+        private int CleanupIntervalSeconds => _config.CleanupIntervalSeconds;
+        private int BufferRetentionSeconds => _config.DamageHistoryMaxSeconds;
 
         /// <summary>
         /// Local damage record for tracking DamageType
@@ -56,8 +54,14 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             }
         }
 
-        public KillerDetectionService(DamageTrackingService damageTracking = null)
+        /// <summary>
+        /// Initialize KillerDetectionService with MainConfig
+        /// </summary>
+        /// <param name="config">MainConfig for cleanup intervals</param>
+        /// <param name="damageTracking">Optional damage tracking service</param>
+        public KillerDetectionService(MainConfig config, DamageTrackingService damageTracking = null)
         {
+            _config = config ?? new MainConfig();
             this.damageTracking = damageTracking;
         }
 
@@ -93,10 +97,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 lock (_localDamageBuffer)
                 {
                     // Periodic cleanup every 30 seconds
-                    if ((DateTime.Now - _lastCleanup).TotalSeconds < CLEANUP_INTERVAL_SECONDS)
+                    if ((DateTime.Now - _lastCleanup).TotalSeconds < CleanupIntervalSeconds)
                         return;
 
-                    var cutoffTime = DateTime.Now.AddSeconds(-BUFFER_RETENTION_SECONDS);
+                    var cutoffTime = DateTime.Now.AddSeconds(-BufferRetentionSeconds);
                     var keysToRemove = _localDamageBuffer
                         .Where(x => x.Value.Timestamp < cutoffTime)
                         .Select(x => x.Key)

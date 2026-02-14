@@ -1,10 +1,4 @@
 // Plugin/Handlers/DeathMessageHandler.cs
-// ============================================================================
-// File: Handlers/DeathMessageHandler.cs
-// Purpose: Generate and send death messages to game and Discord
-// Status: COMPLETE with DamageTracking integration and KillerDetectionService
-// ============================================================================
-
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -65,7 +59,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
             // Store DamageTracking reference and pass to KillerDetectionService
             _damageTracking = damageTracking;
-            _killerDetector = new KillerDetectionService(_damageTracking);
+            _killerDetector = new KillerDetectionService(config, _damageTracking);
             _locationService = new DeathLocationService(config);
 
             LoggerUtil.LogInfo(

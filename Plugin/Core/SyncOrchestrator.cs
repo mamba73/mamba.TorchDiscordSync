@@ -1,7 +1,4 @@
 // Plugin/Core/SyncOrchestrator.cs
-// Core/SyncOrchestrator.cs - UPDATED
-// Removed FactionReaderService dependency (merged into FactionSyncService)
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,6 +44,7 @@ namespace mamba.TorchDiscordSync.Plugin.Core
 
         /// <summary>
         /// Execute full synchronization of factions, players, and Discord objects
+        /// KORAK 1: Check database first, sync only factions not in database
         /// </summary>
         public async Task ExecuteFullSyncAsync(List<FactionModel> factions)
         {
@@ -60,7 +58,22 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                 {
                     if (faction.Tag.Length == 3)
                     {
-                        _db.SaveFaction(faction);
+                        // KORAK 1: Check if faction exists in database before saving
+                        if (_db.FactionExists(faction.FactionID))
+                        {
+                            LoggerUtil.LogDebug(
+                                $"[ORCHESTRATOR] Faction {faction.Tag} already in database - skipping save",
+                                _config != null && _config.Debug
+                            );
+                        }
+                        else
+                        {
+                            LoggerUtil.LogDebug(
+                                $"[ORCHESTRATOR] Faction {faction.Tag} not in database - saving and syncing",
+                                _config != null && _config.Debug
+                            );
+                            _db.SaveFaction(faction);
+                        }
                     }
                 }
 

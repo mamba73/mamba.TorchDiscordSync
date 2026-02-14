@@ -2,6 +2,7 @@
 /// Utility class for logging messages to console and file
 using System;
 using System.IO;
+using mamba.TorchDiscordSync.Plugin.Config;
 
 namespace mamba.TorchDiscordSync.Plugin.Utils
 {
@@ -11,8 +12,6 @@ namespace mamba.TorchDiscordSync.Plugin.Utils
     public static class LoggerUtil
     {
         private const string PREFIX = "[mamba.TorchDiscordSync.Plugin]";
-        private static readonly string LOG_DIR_NAME = "mambaTorchDiscordSync";
-        private static readonly string LOG_SUBDIR_NAME = "log";
         private static readonly object _lock = new object();
         private static bool _debugMode = false;
         private static string _currentLogFile = null;
@@ -22,8 +21,8 @@ namespace mamba.TorchDiscordSync.Plugin.Utils
             // Check if debug mode is enabled
             try
             {
-                string instancePath = GetInstancePath();
-                string configPath = Path.Combine(instancePath, LOG_DIR_NAME, "MainConfig.xml");
+                string dataDir = MainConfig.GetDataDirectory();
+                string configPath = Path.Combine(dataDir, "MainConfig.xml");
                 if (File.Exists(configPath))
                 {
                     string configContent = File.ReadAllText(configPath);
@@ -33,29 +32,7 @@ namespace mamba.TorchDiscordSync.Plugin.Utils
             catch
             {
                 // Ignore errors in debug mode detection
-            }
-        }
-
-        /// <summary>
-        /// Get the instance path for Torch server
-        /// </summary>
-        private static string GetInstancePath()
-        {
-            try
-            {
-                // Get instance directory from environment or use default
-                string instancePath = Environment.GetEnvironmentVariable("TORCH_INSTANCE_PATH");
-                if (string.IsNullOrEmpty(instancePath))
-                {
-                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                    instancePath = Path.Combine(baseDir, "Instance");
-                }
-                return instancePath;
-            }
-            catch
-            {
-                // Fallback to current directory
-                return AppDomain.CurrentDomain.BaseDirectory;
+                LogWarning("Failed to determine debug mode from config. Defaulting to false.");
             }
         }
 
@@ -66,34 +43,24 @@ namespace mamba.TorchDiscordSync.Plugin.Utils
         {
             try
             {
-                string instancePath = GetInstancePath();
-                string pluginLogDir = Path.Combine(instancePath, LOG_DIR_NAME);
-                string logSubDir = Path.Combine(pluginLogDir, LOG_SUBDIR_NAME);
-                
-                // Ensure directories exist
-                if (!Directory.Exists(pluginLogDir))
-                {
-                    Directory.CreateDirectory(pluginLogDir);
-                }
-                
+                string logDir = MainConfig.GetLogDirectory();
+                string logSubDir = Path.Combine(logDir, "archive");
                 if (!Directory.Exists(logSubDir))
                 {
                     Directory.CreateDirectory(logSubDir);
                 }
-                
                 // Create new log file with timestamp if not already created
                 if (string.IsNullOrEmpty(_currentLogFile))
                 {
                     string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
                     _currentLogFile = Path.Combine(logSubDir, $"{timestamp}_TDS_plugin.log");
                 }
-                
                 return _currentLogFile;
             }
             catch
             {
                 // Fallback to temp directory
-                string tempLogDir = Path.Combine(Path.GetTempPath(), "mambaTorchDiscordSync", "log");
+                string tempLogDir = Path.Combine(Path.GetTempPath(), "mambaSaveData", "log");
                 if (!Directory.Exists(tempLogDir))
                 {
                     Directory.CreateDirectory(tempLogDir);

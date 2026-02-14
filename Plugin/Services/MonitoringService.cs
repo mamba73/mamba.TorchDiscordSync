@@ -1,7 +1,4 @@
 // Plugin/Services/MonitoringService.cs
-// Services/MonitoringService.cs - FIXED
-// Dodano: SimSpeed alert cooldown (ne spammira više)
-
 using System;
 using System.Threading.Tasks;
 using System.Timers;
@@ -28,6 +25,9 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
         // NOVO: Cooldown za SimSpeed alert - ne spam-uje više
         private DateTime _lastSimSpeedAlertTime = DateTime.MinValue;
+
+        // NEW: Do not send SimSpeed alerts on very first check (server still starting)
+        private bool _simSpeedAlertsReady = false;
 
         public MonitoringService(MainConfig config, DiscordBotService discordBot)
         {
@@ -200,7 +200,8 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 // NOVO: Send alert sa COOLDOWN check-om!
                 // ============================================================
                 if (
-                    simSpeed < _config.Monitoring.SimSpeedThreshold
+                    _simSpeedAlertsReady
+                    && simSpeed < _config.Monitoring.SimSpeedThreshold
                     && _config.Monitoring.EnableSimSpeedAlerts
                 )
                 {
@@ -234,6 +235,15 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                             $"[MONITORING] SimSpeed alert on cooldown ({remainingSeconds:F0}s remaining)"
                         );
                     }
+                }
+
+                // After first successful update, enable SimSpeed alerts for subsequent checks
+                if (!_simSpeedAlertsReady)
+                {
+                    _simSpeedAlertsReady = true;
+                    LoggerUtil.LogDebug(
+                        "[MONITORING_SIMSPEED] Initial SimSpeed check completed, alerts now enabled for next interval"
+                    );
                 }
             }
             catch (Exception ex)

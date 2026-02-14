@@ -13,49 +13,12 @@ namespace mamba.TorchDiscordSync.Plugin.Config
     [XmlRoot("BlacklistConfig")]
     public class BlacklistConfig
     {
-        private static readonly string CONFIG_DIR_NAME = "mambaTorchDiscordSync";
-
-        // Property to get correct config path
+        /// <summary>
+        /// Get correct config path using centralized MainConfig
+        /// </summary>
         private static string ConfigPath
         {
-            get
-            {
-                string instancePath = GetInstancePath();
-                string pluginConfigDir = Path.Combine(instancePath, CONFIG_DIR_NAME);
-
-                // Ensure directory exists
-                if (!Directory.Exists(pluginConfigDir))
-                {
-                    try
-                    {
-                        Directory.CreateDirectory(pluginConfigDir);
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerUtil.LogError(
-                            "Failed to create config directory "
-                                + pluginConfigDir
-                                + ": "
-                                + ex.Message
-                        );
-                    }
-                }
-
-                return Path.Combine(pluginConfigDir, "BlacklistConfig.xml");
-            }
-        }
-
-        private static string GetInstancePath()
-        {
-            string instancePath = Environment.GetEnvironmentVariable("TORCH_INSTANCE_PATH");
-
-            if (string.IsNullOrEmpty(instancePath))
-            {
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                instancePath = Path.Combine(baseDir, "Instance");
-            }
-
-            return instancePath;
+            get { return Path.Combine(MainConfig.GetConfigDirectory(), "BlacklistConfig.xml"); }
         }
 
         /// <summary>

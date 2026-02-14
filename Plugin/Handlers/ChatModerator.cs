@@ -1,6 +1,7 @@
 // Plugin/Handlers/ChatModerator.cs
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using mamba.TorchDiscordSync.Plugin.Config;
 using mamba.TorchDiscordSync.Plugin.Services;
 using mamba.TorchDiscordSync.Plugin.Utils;
@@ -25,17 +26,52 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         private readonly DiscordService _discordService;
         private readonly DatabaseService _db;
         
+        // ========== NEW - TASK 2 ==========
+        /// <summary>
+        /// Blacklist configuration loaded from separate BlacklistConfig.xml file
+        /// Instead of using _config.Chat.BlacklistedWords (which no longer exists)
+        /// </summary>
+        private readonly BlacklistConfig _blacklistConfig;
+        // ========== END NEW ==========
+        
         // Dictionary for tracking user violations
         private Dictionary<ulong, UserViolationRecord> _userViolations = new Dictionary<ulong, UserViolationRecord>();
         private object _lockObject = new object();
         private static Dictionary<int, DateTime> _lastMessages = new Dictionary<int, DateTime>();
         private const int DEFAULT_DEDUP_WINDOW = 3; // seconds
 
+        /// <summary>
+        /// Constructor - Initialize ChatModerator with config, services, and load BlacklistConfig
+        /// 
+        /// BEFORE:
+        /// public ChatModerator(MainConfig config, DiscordService discordService, DatabaseService db)
+        /// {
+        ///     _config = config;
+        ///     _discordService = discordService;
+        ///     _db = db;
+        /// }
+        /// 
+        /// AFTER (Updated for TASK 2):
+        /// </summary>
         public ChatModerator(MainConfig config, DiscordService discordService, DatabaseService db)
         {
             _config = config;
             _discordService = discordService;
             _db = db;
+            
+            // ========== NEW - TASK 2 ==========
+            // Load BlacklistConfig from separate BlacklistConfig.xml file
+            try
+            {
+                _blacklistConfig = BlacklistConfig.Load();
+                LoggerUtil.LogSuccess($"[CHAT_MODERATOR] Loaded blacklist with {_blacklistConfig.GetWordsArray().Length} words");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[CHAT_MODERATOR] Failed to load BlacklistConfig: {ex.Message}");
+                _blacklistConfig = new BlacklistConfig();  // Fallback to default
+            }
+            // ========== END NEW ==========
         }
 
         // Process Discord message with moderation
@@ -265,25 +301,94 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             return record;
         }
 
-        // Check for blacklisted words
+        // ========== UPDATED METHOD - TASK 2 ==========
+        /// <summary>
+        /// Check for blacklisted words using BlacklistConfig instead of MainConfig
+        /// 
+        /// BEFORE (Old - using MainConfig.Chat.BlacklistedWords):
+        /// private bool ContainsBlacklistedWords(string message, out string foundWord)
+        /// {
+        ///     foundWord = null;
+        ///     if (_config.Chat.BlacklistedWords == null || _config.Chat.BlacklistedWords.Length == 0)
+        ///         return false;
+        ///
+        ///     string lowerMessage = message.ToLower();
+        ///     for (int i = 0; i < _config.Chat.BlacklistedWords.Length; i++)
+        ///     {
+        ///         string word = _config.Chat.BlacklistedWords[i].ToLower();
+        ///         if (lowerMessage.Contains(word))
+        ///         {
+        ///             foundWord = word;
+        ///             return true;
+        ///         }
+        ///     }
+        ///     return false;
+        /// }
+        /// 
+        /// AFTER (New - using BlacklistConfig):
+        /// </summary>
         private bool ContainsBlacklistedWords(string message, out string foundWord)
         {
             foundWord = null;
-            if (_config.Chat.BlacklistedWords == null || _config.Chat.BlacklistedWords.Length == 0)
+            
+            // Get words from BlacklistConfig instead of MainConfig
+            var words = _blacklistConfig.GetWordsArray();
+            if (words == null || words.Length == 0)
                 return false;
 
-            string lowerMessage = message.ToLower();
-            for (int i = 0; i < _config.Chat.BlacklistedWords.Length; i++)
+            // Determine message to check based on case sensitivity setting
+            string messageToCheck = _blacklistConfig.CaseSensitive 
+                ? message 
+                : message.ToLower();
+            
+            for (int i = 0; i < words.Length; i++)
             {
-                string word = _config.Chat.BlacklistedWords[i].ToLower();
-                if (lowerMessage.Contains(word))
+                // Apply case sensitivity setting
+                string word = _blacklistConfig.CaseSensitive 
+                    ? words[i] 
+                    : words[i].ToLower();
+                
+                if (_blacklistConfig.PartialMatch)
                 {
-                    foundWord = word;
-                    return true;
+                    // Match partial word: "hack" matches "hacking"
+                    if (messageToCheck.Contains(word))
+                    {
+                        foundWord = word;
+                        return true;
+                    }
+                }
+                else
+                {
+                    // Match whole word only: "hack" does NOT match "hacking"
+                    if (ContainsWholeWord(messageToCheck, word))
+                    {
+                        foundWord = word;
+                        return true;
+                    }
                 }
             }
             return false;
         }
+
+        /// <summary>
+        /// Helper method to check if message contains a whole word (not partial)
+        /// Used when PartialMatch is disabled in BlacklistConfig
+        /// </summary>
+        private bool ContainsWholeWord(string message, string word)
+        {
+            try
+            {
+                // Use regex for whole word matching with word boundaries
+                string pattern = @"\b" + Regex.Escape(word) + @"\b";
+                return Regex.IsMatch(message, pattern);
+            }
+            catch
+            {
+                // Fallback to simple contains if regex fails
+                return message.Contains(word);
+            }
+        }
+        // ========== END UPDATED METHOD ==========
 
         // Check for attachments or links
         private bool ContainsAttachmentsOrLinks(string message)
@@ -514,7 +619,6 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             {
                 LoggerUtil.LogError($"[CHAT_MOD] Error cleaning cache: {ex.Message}");
             }
-}
-
+        }
     }
 }

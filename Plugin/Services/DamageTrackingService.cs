@@ -1,15 +1,10 @@
 // Plugin/Services/DamageTrackingService.cs
-// ============================================================================
-// File: Services/DamageTrackingService.cs
-// Purpose: Real-time damage tracking service
-// Status: COMPLETE - Ready to copy-paste
-// ============================================================================
-
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml.Serialization;
+using mamba.TorchDiscordSync.Plugin.Config;
 using mamba.TorchDiscordSync.Plugin.Utils;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
@@ -90,10 +85,14 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         private const int BUFFER_SIZE = 20;
 
         /// <summary>How often to cleanup old records (seconds)</summary>
-        private const int CLEANUP_INTERVAL_SECONDS = 30;
+        //private const int CLEANUP_INTERVAL_SECONDS = 30;
 
         /// <summary>Maximum age for records to keep (seconds)</summary>
-        private const int MAX_HISTORY_SECONDS = 15;
+        //private const int MAX_HISTORY_SECONDS = 15;
+
+        private readonly MainConfig _config;
+        private int CleanupIntervalSeconds => _config.CleanupIntervalSeconds;
+        private int MaxHistorySeconds => _config.DamageHistoryMaxSeconds;
 
         // ════════════════════════════════════════════════════════════════════════
         // FIELDS
@@ -114,6 +113,9 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         /// <summary>Whether to log damage to XML file</summary>
         private readonly bool _enableLogging;
 
+        /// <summary>Main configuration - for dynamic config values</summary>
+        // private readonly MainConfig _config;
+
         /// <summary>Last cleanup timestamp</summary>
         private DateTime _lastCleanup = DateTime.Now;
 
@@ -124,20 +126,18 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         /// <summary>
         /// Initialize DamageTrackingService
         /// </summary>
+        /// <param name="config">MainConfig for cleanup intervals</param>
         /// <param name="enableLogging">Whether to log damage to XML file (optional)</param>
-        public DamageTrackingService(bool enableLogging = false)
+        public DamageTrackingService(MainConfig config, bool enableLogging = false)
         {
+            _config = config ?? new MainConfig();
             _damageHistory = new Dictionary<long, DamageRecord[]>();
             _bufferIndices = new Dictionary<long, int>();
             _enableLogging = enableLogging;
 
             // Setup logging path
-            string instancePath = Environment.GetEnvironmentVariable("TORCH_INSTANCE_PATH")
-                ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Instance");
-            string pluginDir = Path.Combine(instancePath, "mambaTorchDiscordSync");
-            if (!Directory.Exists(pluginDir))
-                Directory.CreateDirectory(pluginDir);
-            _damageLogPath = Path.Combine(pluginDir, "DamageHistory.xml");
+            string dataDir = MainConfig.GetDataDirectory();
+            _damageLogPath = Path.Combine(dataDir, "DamageHistory.xml");
         }
 
         // ════════════════════════════════════════════════════════════════════════
@@ -189,7 +189,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                     return;
 
                 // Periodic cleanup of old records
-                if ((DateTime.Now - _lastCleanup).TotalSeconds > CLEANUP_INTERVAL_SECONDS)
+                if ((DateTime.Now - _lastCleanup).TotalSeconds > CleanupIntervalSeconds)
                 {
                     CleanupOldRecords();
                     _lastCleanup = DateTime.Now;
@@ -355,7 +355,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
         /// <summary>
         /// Remove old records periodically to prevent memory buildup
-        /// Removes all records older than MAX_HISTORY_SECONDS
+        /// Removes all records older than MaxHistorySeconds
         /// Called automatically by OnDamageReceived
         /// </summary>
         private void CleanupOldRecords()
@@ -365,7 +365,7 @@ namespace mamba.TorchDiscordSync.Plugin.Services
                 lock (_lock)
                 {
                     // Records older than this are removed
-                    var cutoffTime = DateTime.Now.AddSeconds(-MAX_HISTORY_SECONDS);
+                    var cutoffTime = DateTime.Now.AddSeconds(-MaxHistorySeconds);
                     var keysToRemove = new List<long>();
 
                     // Go through each victim's history

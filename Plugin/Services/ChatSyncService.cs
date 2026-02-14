@@ -174,6 +174,136 @@ namespace mamba.TorchDiscordSync.Plugin.Services
         }
 
         ///
+        /// Send Discord message to game faction only (secure: only synced faction members receive it as PM).
+        /// Called when message is received in a faction's Discord channel.
+        ///
+        public async Task SendDiscordMessageToFactionInGameAsync(
+            int factionId,
+            string discordUsername,
+            string message
+        )
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(discordUsername) || string.IsNullOrWhiteSpace(message))
+                {
+                    LoggerUtil.LogInfo("[CHAT_DEBUG] Discord→Faction: skip (empty user or message)");
+                    return;
+                }
+                var faction = _db?.GetFaction(factionId);
+                if (faction?.Players == null || faction.Players.Count == 0)
+                {
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: faction {factionId} has no players");
+                    return;
+                }
+                string gameMessage = FormatDiscordMessageForGame(discordUsername, message);
+                string factionMsg = $"[Discord] {discordUsername}: {message}";
+                var players = new List<VRage.Game.ModAPI.IMyPlayer>();
+                MyAPIGateway.Players.GetPlayers(players);
+                int sent = 0;
+                LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sending to {faction.Players.Count} faction members");
+                foreach (var fp in faction.Players)
+                {
+                    var player = players.FirstOrDefault(p => (long)p.SteamUserId == fp.SteamID);
+                    if (player == null)
+                    {
+                        LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: SteamID {fp.SteamID} not in game - skip");
+                        continue;
+                    }
+                    try
+                    {
+                        long targetId = 0;
+                        if (player.Character != null)
+                            targetId = player.Character.EntityId;
+                        if (targetId == 0 && player.IdentityId != 0)
+                            targetId = player.IdentityId;
+                        if (targetId == 0)
+                        {
+                            LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: SteamID {fp.SteamID} no Character/Identity - skip");
+                            continue;
+                        }
+                        Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
+                            factionMsg,
+                            "TDS",
+                            targetId,
+                            "Blue"
+                        );
+                        sent++;
+                        LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sent to SteamID {fp.SteamID} targetId={targetId}");
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerUtil.LogError($"[CHAT_DEBUG] Discord→Faction: SendChatMessage failed for SteamID {fp.SteamID}: {ex.Message}");
+                    }
+                }
+                if (sent > 0)
+                {
+                    if (_config?.Faction?.FactionDiscordToGlobalFallback == true)
+                    {
+                        try
+                        {
+                            string broadcastMsg = $"[{faction.Tag} Discord] {discordUsername}: {message}";
+                            if (broadcastMsg.Length > 200) broadcastMsg = broadcastMsg.Substring(0, 197) + "...";
+                            Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(broadcastMsg, "TDS", 0, "Blue");
+                        }
+                        catch { /* ignore */ }
+                    }
+                    LoggerUtil.LogInfo($"[CHAT] Discord → Faction {faction.Tag}: {discordUsername}: {message} (sent to {sent} members)");
+                }
+                else
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Discord→Faction: sent=0 (no in-game player received)");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[CHAT] Faction message error: {ex.Message}");
+            }
+            await Task.CompletedTask;
+        }
+
+        ///
+        /// Send in-game faction chat to Discord faction channel (Game → Discord).
+        /// Called when player sends message in faction chat and we have mapped GameFactionChatId to synced faction.
+        ///
+        public async Task SendGameFactionMessageToDiscordAsync(
+            FactionModel faction,
+            string authorName,
+            string message
+        )
+        {
+            try
+            {
+                if (faction == null)
+                {
+                    LoggerUtil.LogInfo("[CHAT_DEBUG] Game Faction→Discord: skip (faction null)");
+                    return;
+                }
+                if (faction.DiscordChannelID == 0)
+                {
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction→Discord: skip (DiscordChannelID=0 for {faction.Tag})");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(authorName) || string.IsNullOrWhiteSpace(message))
+                {
+                    LoggerUtil.LogInfo("[CHAT_DEBUG] Game Faction→Discord: skip (empty author or message)");
+                    return;
+                }
+                string discordText = $"{authorName}: {message}";
+                if (discordText.Length > 2000) discordText = discordText.Substring(0, 1990) + "...";
+                LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction→Discord: sending to channel {faction.DiscordChannelID} ({faction.Tag}): \"{discordText}\"");
+                bool sent = await _discord.SendLogAsync(faction.DiscordChannelID, discordText);
+                if (sent)
+                    LoggerUtil.LogInfo($"[CHAT] Game Faction {faction.Tag} → Discord: {authorName}: {message}");
+                else
+                    LoggerUtil.LogInfo($"[CHAT_DEBUG] Game Faction→Discord: SendLogAsync returned false");
+            }
+            catch (Exception ex)
+            {
+                LoggerUtil.LogError($"[CHAT] Game faction → Discord error: {ex.Message}");
+            }
+            await Task.CompletedTask;
+        }
+
+        ///
         /// Format game chat message for Discord display
         ///
         private string FormatGameMessageForDiscord(string playerName, string message)

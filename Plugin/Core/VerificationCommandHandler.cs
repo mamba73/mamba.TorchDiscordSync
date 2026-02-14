@@ -2,6 +2,7 @@
 using System;
 using System.Threading.Tasks;
 using mamba.TorchDiscordSync.Plugin.Config;
+using mamba.TorchDiscordSync.Plugin.Models;
 using mamba.TorchDiscordSync.Plugin.Services;
 using mamba.TorchDiscordSync.Plugin.Utils;
 
@@ -15,21 +16,31 @@ namespace mamba.TorchDiscordSync.Plugin.Core
         private readonly DiscordBotService _discordBot;
         private readonly DiscordBotConfig _discordBotConfig;
 
-        public VerificationCommandHandler(VerificationService verification, EventLoggingService evtLog, MainConfig config, DiscordBotService bot, DiscordBotConfig botConfig)
+        public VerificationCommandHandler(
+            VerificationService verification,
+            EventLoggingService evtLog,
+            MainConfig config,
+            DiscordBotService bot,
+            DiscordBotConfig botConfig
+        )
         {
             _verification = verification;
             _eventLog = evtLog;
             _config = config;
             _discordBot = bot;
-            _discordBotConfig = botConfig;  
+            _discordBotConfig = botConfig;
         }
 
         /// <summary>
         /// Handle in-game /tds verify @DiscordUsername command
-        /// Generates verification code and sends DM to Discord user
+        /// Creates pending verification and sends DM to Discord user
+        /// KORAK 2: Create pending verification without marking as verified immediately
         /// </summary>
-        public async Task<string> HandleVerifyCommandAsync(long playerSteamID,
-            string playerName, string discordUsername)
+        public async Task<string> HandleVerifyCommandAsync(
+            long playerSteamID,
+            string playerName,
+            string discordUsername
+        )
         {
             try
             {
@@ -41,35 +52,83 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                 if (discordUsername.Length < 2 || discordUsername.Length > 32)
                     return "Error: Invalid Discord username length (2-32 characters)";
 
-                string code = _verification.GenerateVerificationCode(playerSteamID, playerName, discordUsername);
+                LoggerUtil.LogDebug(
+                    $"[VERIFY_CMD] HandleVerifyCommandAsync: SteamID={playerSteamID}, Player={playerName}, Discord={discordUsername}"
+                );
 
-                if (code == null)
-                    return "Error: You already have a pending verification code. It expires in 15 minutes.";
+                // KORAK 2.1: Create pending verification (generates code and stores in XML)
+                bool pendingCreated = _verification.CreatePendingVerification(
+                    playerSteamID,
+                    discordUsername,
+                    playerName
+                );
 
+                if (!pendingCreated)
+                    return "Error: Could not create pending verification. Please try again.";
+
+                // KORAK 2.2: Get the generated code from pending verification
+                var pending = _verification.GetPendingVerificationByDiscord(
+                    discordUsername,
+                    playerSteamID
+                );
+                if (pending == null)
+                    return "Error: Verification code not found. Please try again.";
+
+                string code = pending.VerificationCode;
+
+                // KORAK 2.3: Send verification code via Discord DM
+                LoggerUtil.LogDebug(
+                    $"[VERIFY_CMD] Sending DM to {discordUsername} with code: {code}"
+                );
                 bool dmSent = await _discordBot.SendVerificationDMAsync(discordUsername, code);
 
                 if (!dmSent)
                 {
-                    return "Error: Could not find Discord user '" + discordUsername + "' or send DM.\n" +
-                           "Make sure:\n" +
-                           "  - Username is correct\n" +
-                           "  - User is in the Discord server\n" +
-                           "  - Bot has DM permissions";
+                    LoggerUtil.LogWarning($"[VERIFY_CMD] Failed to send DM to {discordUsername}");
+                    return "Error: Could not find Discord user '"
+                        + discordUsername
+                        + "' or send DM.\n"
+                        + "Make sure:\n"
+                        + "  - Username is correct\n"
+                        + "  - User is in the Discord server\n"
+                        + "  - Bot has DM permissions";
                 }
 
-                await _eventLog.LogAsync("VerificationRequest",
-                    playerName + " (" + playerSteamID + ") requested verification as " + discordUsername + ". DM sent.");
+                await _eventLog.LogAsync(
+                    "VerificationRequest",
+                    playerName
+                        + " ("
+                        + playerSteamID
+                        + ") requested verification as "
+                        + discordUsername
+                        + ". DM sent with code: "
+                        + code
+                );
 
-                string message = "Verification code sent to " + discordUsername + " via DM!\n" +
-                                "Check your Discord private messages\n" +
-                                "Code expires in " + _discordBotConfig.VerificationCodeExpirationMinutes + " minutes";
+                LoggerUtil.LogSuccess(
+                    "[VERIFY_CMD] "
+                        + playerName
+                        + ": "
+                        + discordUsername
+                        + " - Code: "
+                        + code
+                        + " - DM sent successfully"
+                );
 
-                LoggerUtil.LogInfo("[VERIFY] " + playerName + ": " + discordUsername + " - Code: " + code + " - DM sent");
+                string message =
+                    "Verification code sent to "
+                    + discordUsername
+                    + " via DM!\n"
+                    + "Check your Discord private messages\n"
+                    + "Code expires in "
+                    + _discordBotConfig.VerificationCodeExpirationMinutes
+                    + " minutes";
+
                 return message;
             }
             catch (Exception ex)
             {
-                LoggerUtil.LogError("[VERIFY] Command error: " + ex.Message);
+                LoggerUtil.LogError("[VERIFY_CMD] Command error: " + ex.Message);
                 return "Error: " + ex.Message;
             }
         }
@@ -78,26 +137,33 @@ namespace mamba.TorchDiscordSync.Plugin.Core
         /// Handle verification from Discord bot (!verify CODE command)
         /// Called when user completes verification on Discord
         /// </summary>
-        public Task<string> VerifyFromDiscordAsync(string code, ulong discordId, string discordUsername)
+        public async Task<VerificationResult> VerifyFromDiscordAsync(
+            string code,
+            ulong discordId,
+            string discordUsername
+        )
         {
             if (string.IsNullOrEmpty(code))
             {
-                return Task.FromResult("Invalid verification code");
+                return new VerificationResult { Message = "Invalid verification code", IsSuccess = false };
             }
 
             if (_verification != null)
             {
-                return _verification.VerifyAsync(code, discordId, discordUsername);
+                return await _verification.VerifyAsync(code, discordId, discordUsername);
             }
 
-            return Task.FromResult("Verification service unavailable");
+            return new VerificationResult { Message = "Verification service unavailable", IsSuccess = false };
         }
 
         /// <summary>
         /// Handle /tds unverify STEAMID [reason] command (admin only)
         /// Removes verification link for a player
         /// </summary>
-        public async Task<string> HandleUnverifyCommandAsync(long steamID, string reason = "Admin removal")
+        public async Task<string> HandleUnverifyCommandAsync(
+            long steamID,
+            string reason = "Admin removal"
+        )
         {
             try
             {
@@ -105,8 +171,10 @@ namespace mamba.TorchDiscordSync.Plugin.Core
 
                 if (success)
                 {
-                    await _eventLog.LogAsync("VerificationRemoved",
-                        "SteamID " + steamID + " unverified: " + reason);
+                    await _eventLog.LogAsync(
+                        "VerificationRemoved",
+                        "SteamID " + steamID + " unverified: " + reason
+                    );
 
                     LoggerUtil.LogSuccess("[VERIFY] Unverified SteamID " + steamID + ": " + reason);
                     return "Verification removed";

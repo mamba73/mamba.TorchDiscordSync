@@ -1,6 +1,8 @@
 # Build artifacts
 bin/
 obj/
+build_archive/
+build_staging/
 *.zip
 
 # Visual Studio
@@ -8,24 +10,20 @@ obj/
 *.user
 *.suo
 
-# Dependencies
-Dependencies/*.dll
-Dependencies/*
+# Dependencies (KLJUČNO!)
 Dependencies/
-tmp/*
 tmp/
-doc/*.txt
-build_archive/
-build_staging/
 
-# Logs
+# Logs & Config
+logs/
 *.log
+config_sync.ini
+temp_msg.txt
 
-# Config
-*.config
-*.ini
+# Documentation (za javni master će skripta ovo maknuti)
+# doc/ 
 
-# Environment files
+# Environment & Cache
 *.env
 *.local
 *.cache
@@ -34,23 +32,5 @@ build_staging/
 *.orig
 *.tmp
 *.swp
-*.DS_Store
-# *.class
+.DS_Store
 *.pyc
-*.egg-info/
-
-# Documentation files
-.inspect/
-.inspect/*
-logs/
-logs/*
-tmp/
-tmp/*
-# doc/
-# *.py
-# *.md
-# *.txt
-# LICENSE
-# README.md
-# TODO.md
-# CHANGELOG.md

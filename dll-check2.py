@@ -10,20 +10,17 @@ script_full_path = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_full_path)
 script_base_name = os.path.splitext(os.path.basename(__file__))[0]
 # config_file = os.path.join(script_dir, f"{script_base_name}.ini")
-config_file = os.path.join(script_dir, f"check2.ini")
+config_file = os.path.join(script_dir, f"config_check.ini")
 
 config = configparser.ConfigParser()
 
 def load_config():
-    # Define current required defaults
     defaults = {
         'DefaultPath': os.path.join(script_dir, "Dependencies"),
-        'FilterKeywords': "Torch,Sandbox,VRage,SpaceEngineers",
+        'FilterKeywords': "Torch,Sandbox,VRage,SpaceEngineers,Discord",
         'LogDir': ".inspect",
-        'LogBaseName': "inspect_results",
         'VSCodePath': r"c:\dev\VSCode\bin\code.cmd"
     }
-    
     updated = False
     if not os.path.exists(config_file):
         config['SETTINGS'] = defaults
@@ -31,22 +28,12 @@ def load_config():
     else:
         config.read(config_file)
         if 'SETTINGS' not in config:
-            config['SETTINGS'] = {}
-            updated = True
-        
-        # Check for missing keys and inject them
+            config['SETTINGS'] = {}; updated = True
         for key, value in defaults.items():
             if not config.has_option('SETTINGS', key):
-                config.set('SETTINGS', key, value)
-                print(f"[CONFIG] Added missing key: {key} (Default: {value})")
-                updated = True
-    
+                config.set('SETTINGS', key, value); updated = True
     if updated:
-        with open(config_file, 'w') as f:
-            config.write(f)
-        print(f"[CONFIG] Configuration file updated/created at: {config_file}")
-        print(f"[CONFIG] PLEASE VERIFY 'VSCodePath' in the .ini file if you are using a portable version!\n")
-
+        with open(config_file, 'w') as f: config.write(f)
     return {
         'path': config.get('SETTINGS', 'DefaultPath'), 
         'keywords': config.get('SETTINGS', 'FilterKeywords').split(','), 
@@ -55,6 +42,15 @@ def load_config():
     }
 
 cfg = load_config()
+
+def get_unique_log_path(directory, base_name):
+    """Increments file name if it already exists (e.g. results_1.txt, results_2.txt)"""
+    counter = 0
+    full_path = os.path.join(directory, f"{base_name}.txt")
+    while os.path.exists(full_path):
+        counter += 1
+        full_path = os.path.join(directory, f"{base_name}_{counter}.txt")
+    return full_path
 
 def format_type_name(t):
     if t is None: return "void"
@@ -135,8 +131,7 @@ def main():
     search_term = sys.argv[sys.argv.index("-s")+1] if ("-s" in sys.argv and sys.argv.index("-s")+1 < len(sys.argv)) else None
     member_filter = sys.argv[sys.argv.index("-f")+1] if ("-f" in sys.argv and sys.argv.index("-f")+1 < len(sys.argv)) else None
 
-    print(f"--- .NET DLL Inspector v2.28 ---")
-    print(f"Switches: -s <term>, -f <member>, -e (Props), -d (Deep), -y (DefaultPath), -o (Open VSCode)")
+    print(f"--- .NET DLL Inspector v2.30 ---")
     
     target_dir = os.path.abspath(cfg['path']) if use_default else input(f"Path (Enter for {os.path.basename(cfg['path'])}): ").strip() or cfg['path']
     if not os.path.isdir(target_dir): return
@@ -145,29 +140,37 @@ def main():
     all_dlls = [f for f in os.listdir(target_dir) if f.lower().endswith('.dll')]
     dll_files = [f for f in all_dlls if any(k.strip().lower() in f.lower() for k in cfg['keywords'])] if cfg['keywords'] else all_dlls
 
+    # Generate incremental log name
     clean_s = re.sub(r'[^\w]', '', search_term) if search_term else "All"
-    clean_f = f"_filter_{re.sub(r'[^\w]', '', member_filter)}" if member_filter else ""
+    clean_f = f"_f_{re.sub(r'[^\w]', '', member_filter)}" if member_filter else ""
     log_dir_full = os.path.join(script_dir, cfg['log_dir'])
     if not os.path.exists(log_dir_full): os.makedirs(log_dir_full)
-    log_path = os.path.join(log_dir_full, f"inspect_{clean_s}{clean_f}.txt")
+    
+    base_log_name = f"inspect_{clean_s}{clean_f}"
+    log_path = get_unique_log_path(log_dir_full, base_log_name)
 
+    total_matches = 0
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(f"REPORT: {target_dir}\nSEARCH: {search_term} | FILTER: {member_filter}\n" + "="*40 + "\n")
         for index, dll in enumerate(dll_files, start=1):
             print(f"\r[{index}/{len(dll_files)}] Analyzing {dll[:30].ljust(30)}", end="", flush=True)
             v, matches = inspect_dll(os.path.join(target_dir, dll), search_term, member_filter, ext_mode, deep_mode)
             if matches:
+                total_matches += 1
                 f.write(f"\nFILE: {dll} (v{v})\n" + "="*40 + "\n" + "\n".join(matches) + "\n")
+        
+        if total_matches == 0:
+            f.write("\nNo results found for the specified search/filter criteria.\n")
 
-    print(f"\n\nDONE! Results: {log_path}")
+    if total_matches == 0:
+        print(f"\n\n[!] No results found. (Log: {os.path.basename(log_path)})")
+    else:
+        print(f"\n\nDONE! Results saved: {os.path.basename(log_path)}")
     
     if open_vscode:
         vscode_cmd = cfg['vscode_path']
-        if os.path.exists(vscode_cmd):
-            subprocess.run([vscode_cmd, log_path], shell=True)
-        else:
-            print(f"[!] VSCode not found at: {vscode_cmd}")
-            os.startfile(log_path)
+        if os.path.exists(vscode_cmd): subprocess.run([vscode_cmd, log_path], shell=True)
+        else: os.startfile(log_path)
 
 if __name__ == "__main__":
     main()
