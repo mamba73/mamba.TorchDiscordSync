@@ -21,7 +21,7 @@ def load_config():
         'DevRemote': 'private',
         'ReleaseRemote': 'origin',
         'KeepLogsDays': '7',
-        'ScriptVersion': '1.1.2'
+        'ScriptVersion': '1.1.3'
     }
     updated = False
     if not os.path.exists(config_file):
@@ -83,7 +83,10 @@ def update_readme_version(version):
     if not os.path.exists(README_PATH): return
     with open(README_PATH, 'r', encoding='utf-8') as f:
         content = f.read()
-    new_content = re.sub(r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+', f'\\1{version}', content)
+    
+    # Fix: Use \g<1> to prevent digit collision in backreferences
+    new_content = re.sub(r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+', rf'\g<1>{version}', content)
+    
     with open(README_PATH, 'w', encoding='utf-8') as f:
         f.write(new_content)
     log_and_print(f"SUCCESS: README updated to {version}")
@@ -134,7 +137,7 @@ def create_zip(version, use_staging=False):
 def handle_dev(version, auto_yes):
     current_branch = run("git rev-parse --abbrev-ref HEAD")
     
-    # SAFETY CHECK: Only force checkout if we are not already on the dev branch
+    # SAFETY: Only switch/force if we are not on dev
     if current_branch != DEV_BRANCH:
         log_and_print(f"Switching from {current_branch} to {DEV_BRANCH}...")
         run(f"git checkout {DEV_BRANCH} -f")
@@ -167,7 +170,7 @@ def handle_release(version, auto_yes, do_zip, do_deploy):
     
     run(f"git checkout {RELEASE_BRANCH} -f")
     
-    # Strip development tools from the public branch
+    # Strip tools from master
     for f in ["sync.py", "build.py", "config_sync.ini", "config_check.ini"]:
         if os.path.exists(f): os.remove(f)
         
