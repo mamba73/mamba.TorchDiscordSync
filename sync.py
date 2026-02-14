@@ -6,7 +6,7 @@ import re
 import os
 import zipfile
 import configparser
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # --- CONFIGURATION & PATHS ---
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,10 +17,11 @@ def load_config():
     defaults = {
         'LogDir': 'logs',
         'VSCodePath': r"c:\dev\VSCode\bin\code.cmd",
-        'ProjectName': 'mambaTorchDiscordSync',
+        'ProjectName': 'mamba.TorchDiscordSync',
         'DevRemote': 'private',
         'ReleaseRemote': 'origin',
-        'KeepLogsDays': '7'
+        'KeepLogsDays': '7',
+        'ScriptVersion': '1.1.0'
     }
     updated = False
     if not os.path.exists(config_file):
@@ -40,152 +41,152 @@ def load_config():
 cfg = load_config()
 LOG_DIR = os.path.join(script_dir, cfg.get('LogDir'))
 VS_CODE_PATH = cfg.get('VSCodePath')
+SCRIPT_VER = cfg.get('ScriptVersion')
 
-# Constants
 MANIFEST_PATH = "manifest.xml"
 README_PATH = "README.md"
 DEV_BRANCH = "dev"
 RELEASE_BRANCH = "master"
+PUBLISH_DIR = "build_staging"
+# Files for SOURCE zip
 FILES_TO_ZIP = ["Plugin/", "mamba.TorchDiscordSync.csproj", "mamba.TorchDiscordSync.sln", "manifest.xml", "README.md"]
-
-HELP_DASHBOARD = """
-COMMIT CONVENTIONS:
-  feat:  New feature      fix:   Bug fix        refac: Cleanup
-  perf:  Optimization     chore: Build/Tooling  docs:  Readme/Docs
-======================================================================"""
 
 def log_and_print(message):
     print(message)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not os.path.exists(LOG_DIR): os.makedirs(LOG_DIR)
     with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
         f.write(f"[{ts}] {message}\n")
-
-def clean_old_logs():
-    if not os.path.exists(LOG_DIR): return
-    try:
-        days = int(cfg.get('KeepLogsDays', 7))
-        now = datetime.now()
-        for f in os.listdir(LOG_DIR):
-            f_path = os.path.join(LOG_DIR, f)
-            if os.path.isfile(f_path) and f.endswith(".log"):
-                f_time = datetime.fromtimestamp(os.path.getmtime(f_path))
-                if now - f_time > timedelta(days=days):
-                    os.remove(f_path)
-                    log_and_print(f"CLEANUP: Deleted old log {f}")
-    except Exception as e: print(f"Log cleanup failed: {e}")
 
 def run(cmd):
     log_and_print(f"EXECUTING: {cmd}")
     result = subprocess.run(cmd, shell=True, text=True, capture_output=True)
     if result.returncode != 0:
         log_and_print(f"ERROR: {result.stderr.strip()}")
-        # Forced open on error for debugging
-        open_log_file()
-        sys.exit(1)
+        return None
     return result.stdout.strip()
 
-def open_log_file():
-    log_path = os.path.abspath(LOG_FILE_PATH)
-    if os.path.exists(VS_CODE_PATH):
-        subprocess.run([VS_CODE_PATH, log_path], shell=True)
-    else:
-        os.startfile(log_path)
-
-def get_version():
+def get_project_version():
     try:
+        if not os.path.exists(MANIFEST_PATH):
+            sys.exit(f"CRITICAL: {MANIFEST_PATH} not found!")
         tree = ET.parse(MANIFEST_PATH)
-        return tree.getroot().find('Version').text
-    except: sys.exit("CRITICAL: Manifest error.")
+        root = tree.getroot()
+        version_node = root.find('Version')
+        if version_node is not None:
+            return version_node.text.strip()
+        sys.exit("CRITICAL: <Version> tag not found in manifest.xml")
+    except Exception as e:
+        sys.exit(f"CRITICAL: Error parsing manifest.xml: {e}")
 
 def update_readme(version):
     try:
+        if not os.path.exists(README_PATH): return
         with open(README_PATH, 'r', encoding='utf-8') as f: content = f.read()
-        pattern = r"(\*\*Version\*\*:\s*)(.*)"
-        new_content = re.sub(pattern, lambda m: f"{m.group(1)}{version}", content)
+        pattern = r"(?i)(\*?\*?version\*?\*?[:\s]+)([0-9\.]+)"
+        new_content = re.sub(pattern, r"\g<1>" + version, content)
         with open(README_PATH, 'w', encoding='utf-8') as f: f.write(new_content)
         log_and_print(f"SUCCESS: README updated to {version}")
-    except Exception as e: log_and_print(f"WARNING: README update failed: {e}")
+    except Exception as e:
+        log_and_print(f"WARNING: README update failed: {e}")
 
-def create_zip(version):
+def create_zip(version, use_staging=False):
     ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    zip_name = f"{ts}_PROJECT_{cfg.get('ProjectName')}_(v{version}).zip"
-    log_and_print(f"STARTING ARCHIVE: {zip_name}")
+    mode = "Release" if use_staging else "Source"
+    zip_name = f"{cfg.get('ProjectName')}_{mode}_v{version}_{ts}.zip"
+    
+    log_and_print(f"STARTING {mode} ARCHIVE: {zip_name}")
     try:
         with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for item in FILES_TO_ZIP:
-                if os.path.exists(item):
-                    if os.path.isdir(item):
-                        for r, d, files in os.walk(item):
-                            for file in files:
-                                fp = os.path.join(r, file)
-                                zipf.write(fp, fp)
-                    else: zipf.write(item)
-        log_and_print(f"SUCCESS: ZIP created: {os.path.abspath(zip_name)}")
-    except Exception as e: log_and_print(f"ERROR: ZIP failed: {e}"); sys.exit(1)
+            if use_staging:
+                # RELEASE ZIP (DLLs only)
+                if not os.path.exists(PUBLISH_DIR) or not os.listdir(PUBLISH_DIR):
+                    log_and_print(f"ERROR: {PUBLISH_DIR} is empty. Run build.py first!")
+                    return None
+                for file in os.listdir(PUBLISH_DIR):
+                    zipf.write(os.path.join(PUBLISH_DIR, file), file)
+            else:
+                # SOURCE ZIP (Full project)
+                for item in FILES_TO_ZIP:
+                    if os.path.exists(item):
+                        if os.path.isdir(item):
+                            for r, d, files in os.walk(item):
+                                for file in files:
+                                    fp = os.path.join(r, file)
+                                    zipf.write(fp, os.path.relpath(fp, os.getcwd()))
+                        else: zipf.write(item)
+        log_and_print(f"SUCCESS: {mode} ZIP created: {zip_name}")
+        return zip_name
+    except Exception as e: 
+        log_and_print(f"ERROR: ZIP failed: {e}")
+        return None
 
 def handle_dev(version, auto_yes):
-    branch = run("git rev-parse --abbrev-ref HEAD")
-    if branch != DEV_BRANCH:
-        if not auto_yes:
-            if input(f"On '{branch}', not '{DEV_BRANCH}'. Continue? (y/n): ").lower() != 'y': sys.exit("Aborted.")
-    
+    run(f"git checkout {DEV_BRANCH} -f")
     update_readme(version)
-    if auto_yes:
-        msg = "automatic dev sync"
-    else:
-        print(HELP_DASHBOARD)
-        msg = input(f"Enter dev commit message (v{version}) [Empty to Abort]: ").strip()
-        if not msg: 
-            log_and_print("ABORTED: No commit message provided.")
-            sys.exit(0)
-    
     run("git add .")
+    if not run("git diff --cached --name-status"):
+        log_and_print("INFO: No changes to sync.")
+        return
+
+    msg = "automatic dev sync" if auto_yes else input(f"Enter dev commit message (v{version}): ").strip()
+    if not msg: sys.exit("Aborted.")
+    
     run(f'git commit -m "v{version} | {msg}"')
     run(f"git push {cfg.get('DevRemote')} {DEV_BRANCH}")
-    log_and_print("FINISH: Dev push complete.")
 
-def handle_release(version, auto_yes):
-    log_and_print(f"CRITICAL: Release process v{version}")
-    if not auto_yes:
-        if input(f"Confirm SQUASH RELEASE to {cfg.get('ReleaseRemote')}? (y/n): ").lower() != 'y': sys.exit("Aborted.")
+def handle_release(version, auto_yes, do_zip, do_deploy):
+    log_and_print(f"CRITICAL: Starting Public Release Process v{version}")
+    if not auto_yes and input(f"Confirm PUBLIC RELEASE? (y/n): ").lower() != 'y': sys.exit("Aborted.")
 
-    update_readme(version)
-    run(f"git checkout {RELEASE_BRANCH}")
-    run(f"git merge {DEV_BRANCH} --squash --allow-unrelated-histories")
-    run("git rm --cached *.py --ignore-unmatch")
+    zip_path = None
+    if do_zip or do_deploy:
+        zip_path = create_zip(version, use_staging=True)
+        if not zip_path: sys.exit("ABORTED: Could not create distribution ZIP.")
+
+    run(f"git checkout {RELEASE_BRANCH} -f")
+    # Clean tools from master before merge
+    for f in ["sync.py", "build.py", "config_sync.ini", "config_check.ini"]:
+        if os.path.exists(f): os.remove(f)
+
+    run(f"git merge {DEV_BRANCH} --squash -X theirs")
+    # Final cleanup of master
+    run("git rm -rf build_staging/ build_archive/ logs/ Dependencies/ --ignore-unmatch")
+    run("git rm *.py *.ini --ignore-unmatch")
+    
     run(f'git commit -m "Release v{version}"')
-    run(f"git push {cfg.get('ReleaseRemote')} {RELEASE_BRANCH}")
-    run(f"git checkout {DEV_BRANCH}")
-    log_and_print(f"FINISH: Public release successful.")
+    run(f"git push {cfg.get('ReleaseRemote')} {RELEASE_BRANCH} --force")
+
+    if do_deploy and zip_path:
+        repo_url = run(f"git remote get-url {cfg.get('ReleaseRemote')}")
+        repo_name = repo_url.split("github.com/")[-1].replace(".git", "")
+        deploy_cmd = f'gh release create v{version} "{zip_path}" --repo {repo_name} --title "Release v{version}" --notes "Automated release."'
+        subprocess.run(deploy_cmd, shell=True)
+
+    run(f"git checkout {DEV_BRANCH} -f")
+    log_and_print(f"FINISH: Release v{version} complete.")
 
 if __name__ == "__main__":
-    if not os.path.exists(LOG_DIR): os.makedirs(LOG_DIR)
-    clean_old_logs()
-    
-    VER = get_version()
+    VER = get_project_version()
     LOG_FILE_PATH = os.path.join(LOG_DIR, f"{datetime.now().strftime('%Y-%m-%d_%H%M%S')}_{VER}_git.log")
 
-    parser = argparse.ArgumentParser(
-        description="MAMBA SYNC TOOL - Automation for Dev and Public repos.",
-        epilog=HELP_DASHBOARD,
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    parser.add_argument("--release", action="store_true", help="Squash merge dev to master and push to public origin")
-    parser.add_argument("--zip", action="store_true", help="Create project ZIP archive without git actions")
-    parser.add_argument("-y", "--yes", action="store_true", help="Automatic mode (skip prompts and confirmation)")
-    parser.add_argument("-o", "--open", action="store_true", help="Open the log file in VS Code/Editor after execution")
+    parser = argparse.ArgumentParser(description=f"MAMBA SYNC TOOL v{SCRIPT_VER}")
+    parser.add_argument("--release", action="store_true", help="Sync to public Master")
+    parser.add_argument("--zip", action="store_true", help="Create ZIP (Source if alone, Release if with --release)")
+    parser.add_argument("--deploy", action="store_true", help="Create Release ZIP and upload to GitHub")
+    parser.add_argument("-y", "--yes", action="store_true", help="Auto-confirm")
+    parser.add_argument("-o", "--open", action="store_true", help="Open log after finish")
     
     args = parser.parse_args()
 
-    if args.zip: 
-        create_zip(VER)
-    elif args.release: 
-        handle_release(VER, args.yes)
-    else: 
+    if args.release or args.deploy:
+        handle_release(VER, args.yes, args.zip, args.deploy)
+    elif args.zip:
+        create_zip(VER, use_staging=False)
+    else:
         handle_dev(VER, args.yes)
 
-    # Only open if explicitly requested via -o
     if args.open:
-        open_log_file()
-    else:
-        print(f"\nDONE! Log saved to: {os.path.relpath(LOG_FILE_PATH)}")
+        log_path = os.path.abspath(LOG_FILE_PATH)
+        if os.path.exists(VS_CODE_PATH): subprocess.run([VS_CODE_PATH, log_path], shell=True)
+        else: os.startfile(log_path)
