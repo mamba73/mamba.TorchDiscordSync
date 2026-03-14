@@ -12,7 +12,7 @@ Unlike simple chat relays, **TorchDiscordSync** focuses on *deep game integratio
 | **Torch** | v2.4.39.328-master (2.4.37+) |
 | **Space Engineers** | 1.208.15+ |
 | **Author** | mamba |
-| **Version** | 2.4.37 |
+| **Version** | 2.4.39 |
 
 ---
 
