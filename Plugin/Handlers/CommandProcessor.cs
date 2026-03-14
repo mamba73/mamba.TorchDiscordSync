@@ -34,7 +34,6 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         private readonly SyncOrchestrator _orchestrator;
         private readonly VerificationService _verification;
         private readonly VerificationCommandHandler _verificationCommandHandler;
-        private readonly TestCommandHandler _testHandler;
 
         // ---- optional services supplied after session load ----
         private readonly ChatSyncService _chatSync;
@@ -63,7 +62,6 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             _verificationCommandHandler = verificationCommandHandler;
             _chatSync = chatSync;
             _playerTracking = playerTracking;
-            _testHandler = new TestCommandHandler(_discordService);
 
             if (_verificationCommandHandler != null)
                 LoggerUtil.LogInfo("[COMMAND] VerificationCommandHandler successfully initialized");
@@ -400,13 +398,6 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 if (subcommand == "verify")
                 {
                     HandleVerifyCommand(playerSteamID, playerName, parts);
-                    return;
-                }
-
-                // ---- test commands ----
-                if (subcommand.StartsWith("test:"))
-                {
-                    _testHandler.HandleTestCommand(subcommand, playerSteamID, playerName, isAdmin);
                     return;
                 }
 
