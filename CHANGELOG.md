@@ -1,3 +1,36 @@
+## [2.4.47] - 2026-03-16
+
+- 17a3cd1 updated changelog
+- 5dac39d updated readme
+- 57938b9 updated readme
+- a010cd9 [2.4.46] | readme + changelog update
+- 99fb514 refactor config
+- 9a78064 bump
+- 48d9997 [2.4.39] | readme + changelog update
+- d114e41 [2.4.39] | readme + changelog update
+- 74f2250 updated readme
+- 477222e bump
+- 848c28b removed tests
+- e7914c0 sync
+- 6fc0cc9 [2.4.37] | readme + changelog update
+- 98ed1d9 update
+- 8f10f3e update
+- eb32a0c [2.4.37] | readme + changelog update
+- 854ec02 [2.4.37] | readme + changelog update
+- 10bb8bb readme
+- 72332bb sync 1.19.1
+- a73666b 2.4.37
+- 2569d5d SQLite dll
+- f8d4a0f fix: duplicating faction forum, voice channel
+- 5fb8999 Discord admin commands
+- ee78235 SQLite
+- a2e39bc [2.3.74] | readme + changelog update
+- aec02f7 fix: duplicate factions
+- ea0bfb4 fix: duplicated factions
+- becb834 error, argument missing in CommandProcessor.cs(1219,52)...
+- bf866d7 update
+- 8099933 sync up
+
 ## [2.4.46] - 2026-03-16
 
 - 99fb514 refactor config
@@ -172,3 +205,21 @@ Ako DLL-ovi nisu pronađeni, plugin automatski koristi XML storage bez greške.
 - v2.3.19 | update
 - sync updated
 
+## [2.3.16] - 2026-02-14
+- Release v2.3.16
+- v2.2.498 | chore: structural recovery, sync scripts update v1.1.2 and readme update
+- fix: resolve manifest conflict and restore latest code
+- v2.2.499 | update
+- v2.2.497 | automatic dev sync
+
+## [2.1.292] - 2026-02-05
+- Update KillerDetectionService.cs
+- fix: killer service
+- enhanced death system
+- simspeed fix
+
+## [2.0.1] - 2025-12-10
+- technical documentation and skeleton
+
+## [1.0.1] - 2025-08-15
+- first idea, lost plans

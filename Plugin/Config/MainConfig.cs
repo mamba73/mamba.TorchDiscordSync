@@ -12,7 +12,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         // ===================================================================
         // VERSION (Managed by build.py)
         // ===================================================================
-        public string PluginVersion { get; set; } = "2.4.46";
+        public string PluginVersion { get; set; } = "2.4.47";
 
         // Static field for instance-specific config directory name
         // ============================================================
