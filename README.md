@@ -231,23 +231,33 @@ Securely links a Space Engineers SteamID to a Discord UserID via a one-time code
 
 Zero external dependencies. Separate XML files per data type (factions, players, verifications, events). Automatic serialisation via `DatabaseService`.
 
-### SQLite (opt-in)
+### 📦 SQLite Storage (Opt-in)
 
-Enable with `config.DataStorage.UseSQLite = true` (automatically enabled when the DLLs are present).
+The plugin uses **XML** by default, but you can enable **SQLite** for better performance with large data sets. 
+To enable it, set `xml <UseSQLite>true</UseSQLite>` in your configuration file.
 
-> **⚠️ Installation note:** `SQLite.Core.dll` is a mixed-mode assembly and must **not** be placed in the plugin folder. Place the DLLs in the Torch server root:
->
-> ```
-> TorchServer\
->   ├── System.Data.SQLite.dll       ← managed wrapper
->   └── x64\
->       └── SQLite.Interop.dll       ← native SQLite engine
-> ```
->
-> Download from: https://system.data.sqlite.org  
-> Package: `sqlite-netFx48-binary-bundle-x64-2013-1.0.118.0.zip`
+> **⚠️ CRITICAL INSTALLATION NOTE:**
+> `cs System.Data.SQLite.dll` is a mixed-mode assembly. Due to how Torch handles dependencies, 
+> this file **MUST NOT** be placed in the plugin folder. It must be placed in the **Torch Server Root** directory.
 
-If the DLLs are absent, the plugin falls back to XML automatically without error.
+#### 1. Download verified driver
+Because the official SQLite website links are unstable, please use this verified mirror:
+* **Release Page:** https://github.com/mamba73/mamba.TorchDiscordSync/releases/tag/v2.4.47
+* **Direct Download:** https://github.com/mamba73/mamba.TorchDiscordSync/releases/download/v2.4.47/System.Data.SQLite_v1.0.118.zip
+
+#### 2. Simplified Installation
+1. **Shut down** your Torch server.
+2. Open the ZIP and copy `cs System.Data.SQLite.dll` into your **Torch root folder** (where Torch.Server.exe is).
+3. **Restart** Torch.
+
+**Note:** Since this is a **bundle version**, everything is packed into a single DLL. 
+You do **not** need to create a separate `x64` folder.
+
+#### 3. Automatic Fallback
+The plugin is designed with a "Safety-First" approach:
+* If the DLL is present and configured, it will automatically use SQLite.
+* If the DLL is missing, the plugin will **silently fall back to XML** storage without crashing, 
+  ensuring your server stays online.
 
 ---
 
