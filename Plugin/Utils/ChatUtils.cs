@@ -205,12 +205,7 @@ namespace mamba.TorchDiscordSync.Plugin.Utils
                     if ((long)p.SteamUserId != steamId)
                         continue;
 
-                    // Prefer Character EntityId; fall back to IdentityId
-                    if (p.Character != null && p.Character.EntityId != 0)
-                        return p.Character.EntityId;
-
-                    if (p.IdentityId != 0)
-                        return p.IdentityId;
+                    return p.IdentityId;  // SendChatMessage expects IdentityId, not Character.EntityId
                 }
             }
             catch (Exception ex)

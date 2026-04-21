@@ -1,3 +1,36 @@
+## [2.4.49] - 2026-04-21
+
+- 8d9738f fixed commands not working ingame
+- 13c2dec git log
+- 97c5d25 dev rules za AI
+- 34f1d00 [2.4.47] | readme + changelog update
+- 17a3cd1 updated changelog
+- 5dac39d updated readme
+- 57938b9 updated readme
+- a010cd9 [2.4.46] | readme + changelog update
+- 99fb514 refactor config
+- 9a78064 bump
+- 48d9997 [2.4.39] | readme + changelog update
+- d114e41 [2.4.39] | readme + changelog update
+- 74f2250 updated readme
+- 477222e bump
+- 848c28b removed tests
+- e7914c0 sync
+- 6fc0cc9 [2.4.37] | readme + changelog update
+- 98ed1d9 update
+- 8f10f3e update
+- eb32a0c [2.4.37] | readme + changelog update
+- 854ec02 [2.4.37] | readme + changelog update
+- 10bb8bb readme
+- 72332bb sync 1.19.1
+- a73666b 2.4.37
+- 2569d5d SQLite dll
+- f8d4a0f fix: duplicating faction forum, voice channel
+- 5fb8999 Discord admin commands
+- ee78235 SQLite
+- a2e39bc [2.3.74] | readme + changelog update
+- aec02f7 fix: duplicate factions
+
 ## [2.4.47] - 2026-03-16
 
 - 17a3cd1 updated changelog
