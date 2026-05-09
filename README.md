@@ -9,7 +9,7 @@ Unlike simple chat relays, **TorchDiscordSync** focuses on *deep game integratio
 | Property | Value |
 | :--- | :--- |
 | **C# / Runtime** | C# latest / .NET Framework 4.8 |
-| **Torch** | v2.4.49.328-master (2.4.37+) |
+| **Torch** | v2.4.50.328-master (2.4.49+) |
 | **Space Engineers** | 1.208.15+ |
 | **Author** | mamba |
 | **Version** | 2.4.49 |
@@ -19,25 +19,26 @@ Unlike simple chat relays, **TorchDiscordSync** focuses on *deep game integratio
 ## 📋 Table of Contents
 
 1. [Feature Overview](#feature-overview)
-2. [Smart Chat Relay](#smart-chat-relay)
-3. [Secure Faction Chat](#secure-faction-chat)
-4. [Faction Synchronisation](#faction-synchronisation)
-5. [Advanced Death Analysis](#advanced-death-analysis)
-6. [Player & Death Location](#player--death-location)
-7. [Server Health Monitoring](#server-health-monitoring)
-8. [Discord Admin Commands](#discord-admin-commands)
-9. [Player Verification System](#player-verification-system)
-10. [Data Storage (XML / SQLite)](#data-storage-xml--sqlite)
-11. [Event Logging](#event-logging)
-12. [In-Game Commands `/tds`](#in-game-commands-tds)
-13. [Configuration Overview](#configuration-overview)
-14. [Roadmap & Future Plans](#roadmap--future-plans)
-15. [Contributing](#contributing)
-16. [Support](#support)
+2. [Quick Start](#quick-start)
+3. [Smart Chat Relay](#smart-chat-relay)
+4. [Secure Faction Chat](#secure-faction-chat)
+5. [Faction Synchronisation](#faction-synchronisation)
+6. [Advanced Death Analysis](#advanced-death-analysis)
+7. [Player & Death Location](#player--death-location)
+8. [Server Health Monitoring](#server-health-monitoring)
+9. [Discord Admin Commands](#discord-admin-commands)
+10. [Player Verification System](#player-verification-system)
+11. [Data Storage](#data-storage)
+12. [Event Logging](#event-logging)
+13. [In-Game Commands](#in-game-commands)
+14. [Configuration Overview](#configuration-overview)
+15. [Roadmap & Future Plans](#roadmap--future-plans)
+16. [Contributing](#contributing)
+17. [Support](#support)
 
 ---
 
-## Feature Overview
+## 🌟 Feature Overview
 
 | Feature | Status | Notes |
 | :--- | :---: | :--- |
@@ -57,6 +58,121 @@ Unlike simple chat relays, **TorchDiscordSync** focuses on *deep game integratio
 | Data Storage – SQLite | ✅ | Opt-in; requires external DLL (see below) |
 | Event Logging | ✅ | Structured log to DB + Discord staff channel |
 | Security & Blacklist | ✅ | Sanitisation, content filtering, blacklist config |
+
+---
+
+## 🚀 Quick Start
+
+**Complete bot setup — from Discord Developer Portal to first message in-game.**
+
+---
+
+### Step 1 — Create the Discord bot
+
+1. Go to https://discord.com/developers/applications and click **New Application**.
+2. Give it a name (e.g. `MyServerBot`), then open the **Bot** tab.
+3. Click **Reset Token**, copy the token, and paste it into `MainConfig.xml`:
+   ```xml
+   <BotToken>PASTE_TOKEN_HERE</BotToken>
+   ```
+4. On the same Bot tab, scroll down to **Privileged Gateway Intents** and enable **both**:
+   - ✅ **Server Members Intent**
+   - ✅ **Message Content Intent**
+
+   > Without both intents the bot will connect and then immediately disconnect with a WebSocket error.
+
+---
+
+### Step 2 — Invite the bot to your Discord server
+
+1. In the Developer Portal, go to **OAuth2 → URL Generator**.
+2. Under **Scopes**, tick `bot`.
+3. Under **Bot Permissions**, tick at minimum:
+   - `Send Messages`
+   - `Read Message History`
+   - `Manage Roles`
+   - `Manage Channels`
+4. Copy the generated URL, open it in a browser, and invite the bot to your server.
+
+---
+
+### Step 3 — Get your IDs
+
+Enable **Developer Mode** in Discord: *Settings → Advanced → Developer Mode*.
+Then right-click any server, channel, or role and select **Copy ID**.
+
+You need at minimum:
+
+| What | Where to find it | Config field |
+| :--- | :--- | :--- |
+| Discord Server ID | Right-click your server name → Copy ID | `Discord.GuildID` |
+| Global chat channel | Right-click the channel → Copy ID | `Discord.ChatChannelId` |
+
+Optional but recommended:
+
+| What | Config field |
+| :--- | :--- |
+| Admin alert channel | `Discord.AdminAlertChannelId` |
+| Remote admin command channel | `Discord.AdminBotChannelId` |
+| SimSpeed display channel | `Discord.SimSpeedChannelId` |
+| Player count display channel | `Discord.PlayerCountChannelId` |
+
+---
+
+### Step 4 — Configure `MainConfig.xml`
+
+Minimum working configuration:
+
+```xml
+<Discord>
+  <BotToken>YOUR_BOT_TOKEN</BotToken>
+  <GuildID>YOUR_SERVER_ID</GuildID>
+  <ChatChannelId>YOUR_CHAT_CHANNEL_ID</ChatChannelId>
+</Discord>
+
+<Chat>
+  <Enabled>true</Enabled>
+  <ServerToDiscord>true</ServerToDiscord>  <!-- game → Discord -->
+  <BotToGame>true</BotToGame>              <!-- Discord → game -->
+</Chat>
+```
+
+Everything else defaults to `0` (disabled) and can be enabled later.
+
+---
+
+### Step 5 — Start Torch
+
+The bot runs **embedded inside Torch** — no separate hosting is needed.
+On server start, check the Torch log for these lines to confirm everything is working:
+
+```
+[SUCCESS] [DISCORD_BOT] Bot connection established
+[SUCCESS] [DISCORD_BOT] Bot is ready and listening!
+[SUCCESS] All services initialized
+```
+
+If you see repeated reconnection attempts, check that **both** Privileged Intents are enabled (Step 1) and that `GuildID` is not `0`.
+
+---
+
+### Step 6 — Test it
+
+| Test | How |
+| :--- | :--- |
+| Bot online | Should appear as online in your Discord server member list |
+| Server → Discord | Type anything in-game global chat → should appear in your Discord channel |
+| Discord → Game | Post a message in your Discord chat channel → should appear in-game as `[Discord] Name: message` |
+| Admin alerts | Server start/stop messages should appear in `AdminAlertChannelId` |
+| In-game commands | Type `/tds help` in-game — you should see the help text appear as a private message |
+
+---
+
+### Hot-reload
+
+Any time you change `MainConfig.xml` while the server is running, apply it without restarting:
+- **In-game:** `/tds reload`
+- **From Discord:** `!tds reload` (in the `AdminBotChannelId` channel)
 
 ---
 
@@ -126,30 +242,22 @@ Fully configurable templates in `DeathMessages.xml`. Four named placeholders are
 | `{killer}` | Name of the killer (player, NPC, or grid) |
 | `{victim}` | Name of the dead player |
 | `{weapon}` | Weapon or damage source label |
-| `{location}` | Classified location string |
+| `{location}` | Classified location string (appended automatically) |
 
-**Example templates:**
+**Example templates and their output:**
 
 ```
 PvP:         "{killer} showed {victim} no mercy with {weapon}"
+→ 🔥 orko showed mamba no mercy with Elite Automatic Rifle on the surface of Mars
+
 Turret:      "{victim} walked into {killer}'s {weapon}"
+→ ⚡ mamba walked into Space Pirates's Interior Turret at the edge of known space
+
 Environment: "{victim} discovered that space has no oxygen"
+→ 💀 mamba discovered that space has no oxygen in the darkness
 ```
 
-**An example of how the above template would look in the game:**
-```
-PvP:         "orko showed mamba no mercy with Elite Automatic Rifle on the surface of Mars"
-Turret:      "mamba walked into Space Pirates's Interior Turret at the edge of known space"
-Environment: "mamba discovered that space has no oxygen in the darkness"
-```
-- the location (random location text) is added at the end of the message. The exact coordinate of the event is never shown.
-
-**The message on Discord has the same text as the in-game one with the emoticon prefix added:**
-```
-PvP:         "🔥 orko showed mamba no mercy with Elite Automatic Rifle on the surface of Mars"
-Turret:      "⚡ mamba walked into Space Pirates's Interior Turret at the edge of known space"
-Environment: "💀 mamba discovered that space has no oxygen in the darkness"
-```
+The location text is appended automatically — exact coordinates are never shown. Discord messages receive the same text with a random emote prefix from `DeathMessageEmotes`.
 
 ---
 
@@ -178,8 +286,9 @@ Death history is persisted per-player and used to detect kill streaks and retali
 
 Continuous background monitoring via a configurable timer.
 
-- **SimSpeed Watchdog** — if simulation speed drops below the configured threshold for longer than the configured window (default 30 s), an immediate alert is posted to the configured Discord admin channel. An alert cooldown prevents spam.
-- **Player Count** — the Discord voice channel name is updated to reflect the current number of online players.
+- **SimSpeed Watchdog** — if simulation speed drops below the configured threshold, an alert is posted to the admin channel. A cooldown (default 20 min) prevents spam.
+- **Player Count** — a Discord voice channel name is updated to reflect the current number of online players.
+- **Server lifecycle alerts** — start, stop, restart, and crash events are posted to the admin channel.
 - **Startup grace** — no SimSpeed alerts are fired during the initial startup phase to avoid false positives.
 
 ---
@@ -188,7 +297,7 @@ Continuous background monitoring via a configurable timer.
 
 A dedicated Discord channel acts as a remote admin console. Post `!tds <subcommand>` in the configured admin bot channel to execute any admin command without logging into the game.
 
-**Flow:** channel + author validation → `⚙️ Executing…` acknowledgement → command execution → result embed (success / error / info).
+**Flow:** channel + author validation → `⚙️ Executing…` acknowledgement → command execution → result embed.
 
 | Command | Description |
 | :--- | :--- |
@@ -225,53 +334,42 @@ Securely links a Space Engineers SteamID to a Discord UserID via a one-time code
 
 ---
 
-## 💾 Data Storage (XML / SQLite)
+## 💾 Data Storage
 
 ### XML (default)
 
-Zero external dependencies. Separate XML files per data type (factions, players, verifications, events). Automatic serialisation via `DatabaseService`.
+Zero external dependencies. Separate XML files per data type (factions, players, verifications, events).
 
-### 📦 SQLite Storage (Opt-in)
+### SQLite (opt-in)
 
-The plugin uses **XML** by default, but you can enable **SQLite** for better performance with large data sets. 
-To enable it, set `xml <UseSQLite>true</UseSQLite>` in your configuration file.
+Enable with `<UseSQLite>true</UseSQLite>` in the `DataStorage` section of your config.
 
-> **⚠️ CRITICAL INSTALLATION NOTE:**
-> `cs System.Data.SQLite.dll` is a mixed-mode assembly. Due to how Torch handles dependencies, 
-> this file **MUST NOT** be placed in the plugin folder. It must be placed in the **Torch Server Root** directory.
+> **⚠️ Critical installation note:** `System.Data.SQLite.dll` is a mixed-mode assembly and must **not** be placed in the plugin folder. Place it in the **Torch server root** (where `Torch.Server.exe` lives).
 
-#### 1. Download verified driver
-Because the official SQLite website links are unstable, please use this verified mirror:
-* **Release Page:** https://github.com/mamba73/mamba.TorchDiscordSync/releases/tag/v2.4.47
-* **Direct Download:** https://github.com/mamba73/mamba.TorchDiscordSync/releases/download/v2.4.47/System.Data.SQLite_v1.0.118.zip
+**Download (verified bundle — single DLL, no `x64` folder needed):**
+- Release page: https://github.com/mamba73/mamba.TorchDiscordSync/releases/tag/v2.4.47
+- Direct: https://github.com/mamba73/mamba.TorchDiscordSync/releases/download/v2.4.47/System.Data.SQLite_v1.0.118.zip
 
-#### 2. Simplified Installation
-1. **Shut down** your Torch server.
-2. Open the ZIP and copy `cs System.Data.SQLite.dll` into your **Torch root folder** (where Torch.Server.exe is).
-3. **Restart** Torch.
+**Installation:**
+1. Shut down Torch.
+2. Copy `System.Data.SQLite.dll` from the ZIP into the Torch root folder.
+3. Restart Torch.
 
-**Note:** Since this is a **bundle version**, everything is packed into a single DLL. 
-You do **not** need to create a separate `x64` folder.
-
-#### 3. Automatic Fallback
-The plugin is designed with a "Safety-First" approach:
-* If the DLL is present and configured, it will automatically use SQLite.
-* If the DLL is missing, the plugin will **silently fall back to XML** storage without crashing, 
-  ensuring your server stays online.
+If the DLL is absent, the plugin falls back to XML silently — the server will not crash.
 
 ---
 
 ## 📋 Event Logging
 
-Structured log entries are written to the local database (XML or SQLite) and, optionally, to a Discord staff log channel (`config.Discord.StaffLog` channel ID).
+Structured log entries are written to the local database and optionally to a Discord staff log channel (`Discord.StaffLog` channel ID).
 
 Logged event types include: `VerificationAttempt`, `VerificationDeleted`, `UnverifyCommand`, `AdminCommand`, `CommandError`, and more.
 
 ---
 
-## 🎮 In-Game Commands `/tds`
+## 🎮 In-Game Commands
 
-All commands are entered in global game chat. The plugin consumes them before they reach Discord.
+All commands are typed in global game chat. The plugin consumes them before they reach Discord.
 
 ### Player Commands
 
@@ -307,56 +405,170 @@ All commands are entered in global game chat. The plugin consumes them before th
 
 ## ⚙️ Configuration Overview
 
-Configuration files are loaded from the plugin's data directory on startup and can be hot-reloaded with `/tds reload`.
+Configuration is stored in `MainConfig.xml` in the plugin's data directory.
+Hot-reload: `/tds reload` in-game or `!tds reload` from Discord.
+
+All channel/role/category IDs default to `0` (feature disabled). Set them to the real Discord ID to activate.
 
 | File | Purpose |
 | :--- | :--- |
-| `config.xml` | Discord token, channel IDs, admin SteamIDs, feature toggles, thresholds |
+| `MainConfig.xml` | All settings — token, channel IDs, feature toggles, thresholds |
 | `DeathMessages.xml` | Per-death-type message templates |
 | `Blacklist.xml` | Word/phrase blacklist for chat moderation |
 
-Key settings:
+---
 
-| Setting | Description |
-| :--- | :--- |
-| `Discord.BotToken` | Discord bot token |
-| `Discord.GlobalChannelId` | Channel for global chat relay |
-| `Discord.AdminChannelId` | Channel for SimSpeed and admin alerts |
-| `Discord.AdminBotChannelId` | Channel for `!tds` remote admin commands |
-| `Discord.StaffLog` | Channel for structured event logs |
-| `Chat.Enabled` | Enable/disable chat relay |
-| `Death.Enabled` | Enable/disable death notifications |
-| `SimSpeed.Threshold` | Minimum acceptable sim speed (default `0.9`) |
-| `SimSpeed.AlertWindowSeconds` | Duration below threshold before alert fires (default `30`) |
-| `VerificationCodeExpirationMinutes` | Code validity window (default `15`) |
-| `AdminSteamIDs` | List of Steam IDs with admin command access |
-| `DataStorage.UseSQLite` | Use SQLite instead of XML (default `true` when DLLs present) |
+### Root settings
+
+| Setting | Default | Description |
+| :--- | :---: | :--- |
+| `Enabled` | `true` | Master enable/disable switch for the entire plugin |
+| `Debug` | `false` | Enable verbose debug logging |
+| `AdminSteamIDs` | *(empty)* | List of SteamIDs with admin command access |
+| `CleanupIntervalSeconds` | `30` | How often orphaned data is cleaned up |
+| `DamageHistoryMaxSeconds` | `15` | How long damage events are kept in the tracking buffer |
+
+---
+
+### Discord section
+
+| Setting | Default | Description |
+| :--- | :---: | :--- |
+| `BotToken` | `YOUR_BOT_TOKEN` | **Required.** Discord bot token from the Developer Portal |
+| `GuildID` | `0` | **Required.** Your Discord server (guild) ID |
+| `BotPrefix` | `!` | Prefix for bot commands (e.g. `!verify`, `!tds`) |
+| `SyncIntervalSeconds` | `30` | How often faction sync runs (seconds) |
+| `EnableDMNotifications` | `true` | Send verification codes via Discord DM |
+| `VerificationCodeExpirationMinutes` | `15` | Verification code validity window |
+| `ChatChannelId` | `0` | Channel for **global in-game chat relay** (Game ↔ Discord) |
+| `StaffLog` | `0` | Channel for structured plugin event logs |
+| `StatusChannelId` | `0` | Channel for server status embeds |
+| `SimSpeedChannelId` | `0` | Voice channel whose **name** is updated with live SimSpeed |
+| `PlayerCountChannelId` | `0` | Voice channel whose **name** is updated with live player count |
+| `FactionCategoryId` | `0` | Discord category where faction channels are created |
+| `AdminAlertChannelId` | `0` | Channel for SimSpeed warnings and server lifecycle alerts |
+| `AdminBotChannelId` | `0` | Channel for `!tds` remote admin commands from Discord |
+| `VerifiedRoleId` | `0` | Role automatically assigned after successful verification |
+
+> **To get a channel or server ID:** enable Developer Mode in Discord settings → right-click any channel or server → **Copy ID**.
+
+---
+
+### Chat section
+
+Controls the chat relay and optional in-game chat moderation.
+
+| Setting | Default | Description |
+| :--- | :---: | :--- |
+| `Enabled` | `false` | Master toggle for the chat system |
+| `ServerToDiscord` | `false` | Forward in-game global chat to `ChatChannelId` |
+| `BotToGame` | `false` | Broadcast Discord messages into the game |
+| `UseFactionChat` | `false` | Enable faction chat routing (Game ↔ Discord faction channel) |
+| `GameToDiscordFormat` | `:rocket: **{p}**: {msg}` | Format for game→Discord messages |
+| `DiscordToGameFormat` | `[Discord] {p}: {msg}` | Format for Discord→game broadcasts |
+| `JoinMessage` | `:sunny: {p} joined` | Posted to Discord when a player joins |
+| `LeaveMessage` | `:new_moon: {p} left` | Posted to Discord when a player leaves |
+| `StripEmojisForInGameChat` | `true` | Remove Discord emoji before showing messages in-game |
+| `GlobalColor` | `White` | In-game chat colour for global relay messages |
+| `FactionColor` | `Green` | In-game chat colour for faction relay messages |
+| `EnableModeration` | `false` | Enable auto-moderation (blacklist, warn, mute, kick) |
+| `MaxWarningsBeforeMute` | `3` | Warnings before a player is muted |
+| `MuteDurationMinutes` | `10` | Duration of a mute |
+| `MaxMutesBeforeKick` | `2` | Mutes before a player is kicked |
+| `AdminLogChannelId` | `0` | Channel for moderation action logs |
+
+---
+
+### Death section
+
+| Setting | Default | Description |
+| :--- | :---: | :--- |
+| `Enabled` | `false` | Enable death detection and analysis |
+| `LogToDiscord` | `false` | Post death messages to `ChatChannelId` |
+| `AnnounceInGame` | `false` | Broadcast death message to all in-game players |
+| `DetectRetaliation` | `false` | Detect and highlight retaliation kills |
+| `RetaliationWindowMinutes` | `60` | Window for a kill to count as retaliation |
+| `EnableLocationZones` | `true` | Classify death location (surface / orbit / space) |
+| `GridDetectionEnabled` | `true` | Include the grid name in the death context |
+| `ShowGridName` | `true` | Show the grid name in death messages |
+| `DeathMessageEmotes` | `📢⚔️💀🔥⚡` | Pool of emotes randomly prepended to Discord death messages |
+| `MessageDeduplicationWindowSeconds` | `3` | Suppress duplicate death events within this window |
+| `InnerSystemMaxKm` | `5000` | Distance threshold for Inner System zone (km) |
+| `OuterSpaceMaxKm` | `10000` | Distance threshold for Outer Space zone (km) |
+| `PlanetProximityMultiplier` | `3` | Multiplier applied to planet radius for surface/orbit zones |
+
+---
+
+### Monitoring section
+
+| Setting | Default | Description |
+| :--- | :---: | :--- |
+| `Enabled` | `true` | Enable the monitoring service |
+| `StatusUpdateIntervalSeconds` | `30` | How often channel names and status are refreshed |
+| `EnableSimSpeedMonitoring` | `true` | Update `SimSpeedChannelId` channel name with live SimSpeed |
+| `SimSpeedThreshold` | `0.6` | SimSpeed below this value triggers a warning alert |
+| `SimSpeedChannelNameFormat` | `{emoji} SimSpeed: {ss}` | Channel name template (`{emoji}`, `{ss}`) |
+| `SimSpeedNormalEmoji` | `🔧` | Emoji shown when SimSpeed is healthy |
+| `SimSpeedWarningEmoji` | `⚠️` | Emoji shown when SimSpeed is below threshold |
+| `EnableSimSpeedAlerts` | `true` | Post alert to `AdminAlertChannelId` on SimSpeed drop |
+| `SimSpeedAlertCooldownSeconds` | `1200` | Minimum gap between SimSpeed alerts (default 20 min) |
+| `EnablePlayerCountMonitoring` | `true` | Update `PlayerCountChannelId` name with live player count |
+| `PlayerCountChannelNameFormat` | `👥 {p}/{pp} players` | Channel name template (`{p}` = online, `{pp}` = max) |
+| `EnableAdminAlerts` | `true` | Post server start/stop/crash notices to `AdminAlertChannelId` |
+| `ServerStartedMessage` | `✅ Server Started!` | Message posted when the session loads |
+| `ServerStoppedMessage` | `❌ Server Stopped!` | Message posted when the session unloads cleanly |
+| `ServerCrashedMessage` | `💥 CRITICAL: SERVER CRASHED` | Message posted on unexpected shutdown |
+
+---
+
+### Faction section
+
+| Setting | Default | Description |
+| :--- | :---: | :--- |
+| `Enabled` | `false` | Enable faction synchronisation to Discord |
+| `AutoCreateChannels` | `false` | Automatically create a text channel per faction |
+| `AutoCreateForum` | `false` | Automatically create a forum channel per faction |
+| `AutoCreateVoice` | `false` | Automatically create a voice channel per faction |
+| `FactionDiscordToGlobalFallback` | `true` | Fall back to the global channel if a faction has no Discord channel |
+
+---
+
+### DataStorage section
+
+| Setting | Default | Description |
+| :--- | :---: | :--- |
+| `UseSQLite` | `true` | Use SQLite as primary storage; falls back to XML if DLL is absent |
+| `SaveEventLogs` | `true` | Persist plugin event log entries to database |
+| `SaveDeathHistory` | `true` | Persist death history per player |
+| `SaveGlobalChat` | `false` | Persist global chat messages to database |
+| `SaveFactionChat` | `false` | Persist faction chat messages to database |
+| `SavePrivateChat` | `false` | Persist private/whisper messages to database |
 
 ---
 
 ## 🗺️ Roadmap & Future Plans
 
 ### Raid Alerts (Offline Protection)
-*Dependency: SQLite (already implemented)*  
-Notify faction members via Discord DM/ping when their base takes damage while they are offline. High-frequency damage events require SQLite throughput to avoid impacting SimSpeed.
+*Dependency: SQLite (already implemented)*
+Notify faction members via Discord DM/ping when their base takes damage while they are offline.
 
 ### Leaderboards & Statistics
-Weekly and monthly PvP rankings generated from accumulated kill data: K/D ratios, Most Active Faction, Top Ace Pilot, kill streak records.
+Weekly and monthly PvP rankings: K/D ratios, Most Active Faction, Top Ace Pilot, kill streak records.
 
 ### Bounty / Retaliation System
-Building on the existing retaliation-detection logic — players place bounties on others, tracked in the database and announced on Discord.
+Players place bounties on others, tracked in the database and announced on Discord.
 
 ### Discord-Driven Economy Readout
 Display live in-game economy data (credits, contracts, market prices) via the Discord admin console.
 
 ### Scheduled Server Announcements
-Configurable recurring Discord embeds (rules, event notices, maintenance windows) posted on a CRON-like schedule.
+Configurable recurring Discord embeds (rules, event notices, maintenance windows) on a CRON-like schedule.
 
 ### Faction War & Territory Tracking
 Detect sustained PvP between faction grids and post live "War Status" updates to Discord.
 
 ### Web Dashboard *(long-term)*
-A lightweight read-only web panel fed by SQLite: live stats, faction standings, kill history, verification status — no Discord required.
+Lightweight read-only web panel fed by SQLite: live stats, faction standings, kill history, verification status.
 
 ### Multi-Server Support
 Route one Discord bot across multiple Torch instances with per-server channel configuration.
@@ -365,15 +577,15 @@ Route one Discord bot across multiple Torch instances with per-server channel co
 
 ## 🤝 Contributing
 
-Pull requests are welcome.  
-Please maintain compatibility with **C# latest / .NET Framework 4.8**.  
+Pull requests are welcome.
+Please maintain compatibility with **C# latest / .NET Framework 4.8**.
 All code comments must be in **English**.
 
 ---
 
 ## ☕ Support
 
-If you like this project and want to support development:  
+If you like this project and want to support development:
 [Buy Me a Coffee ☕](https://buymeacoffee.com/mamba73)
 
 *Developed by [mamba73](https://github.com/mamba73). Feel free to submit issues or pull requests!*
