@@ -43,6 +43,21 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
         private object _lockObject = new object();
 
+        // ============================================================
+        // NPC FILTER
+        // Returns true when the player record belongs to an NPC and
+        // ShowNpcActivity is disabled (default).
+        // In SE, wolf/saberoid/drone entries from GetPlayers() have
+        // IsBot == true and SteamUserId == 0.
+        // ============================================================
+        private bool IsNpcFiltered(IMyPlayer player)
+        {
+            if (_config != null && _config.ShowNpcActivity)
+                return false;
+
+            return player.IsBot || player.SteamUserId == 0;
+        }
+
         public PlayerTrackingService(
             EventLoggingService eventLog,
             ITorchBase torch,
@@ -97,6 +112,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
 
             foreach (var player in allPlayers)
             {
+                // Skip NPC characters (wolves, saberiods, drones) unless ShowNpcActivity is enabled
+                if (IsNpcFiltered(player))
+                    continue;
+
                 if (player?.Character == null)
                     continue;
 
@@ -195,6 +214,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             var currentSteamIds = new HashSet<ulong>();
             foreach (var player in currentPlayers)
             {
+                // Skip NPC characters (wolves, saberiods, drones) unless ShowNpcActivity is enabled
+                if (IsNpcFiltered(player))
+                    continue;
+
                 currentSteamIds.Add(player.SteamUserId);
 
                 if (!_knownPlayers.Contains(player.SteamUserId))
@@ -251,6 +274,10 @@ namespace mamba.TorchDiscordSync.Plugin.Services
             foreach (var player in allPlayers)
             {
                 if (player?.Character == null)
+                    continue;
+
+                // Skip NPC characters (wolves, saberiods, drones) unless ShowNpcActivity is enabled
+                if (IsNpcFiltered(player))
                     continue;
 
                 string playerName = player.DisplayName;

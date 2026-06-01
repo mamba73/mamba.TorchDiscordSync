@@ -4,12 +4,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Timers;
+using System.Windows.Controls;
 using Discord.WebSocket;
 using mamba.TorchDiscordSync.Plugin.Config;
 using mamba.TorchDiscordSync.Plugin.Core;
 using mamba.TorchDiscordSync.Plugin.Handlers;
 using mamba.TorchDiscordSync.Plugin.Models;
 using mamba.TorchDiscordSync.Plugin.Services;
+using mamba.TorchDiscordSync.Plugin.UI;
 using mamba.TorchDiscordSync.Plugin.Utils;
 using Sandbox.Game.World;
 using Sandbox.ModAPI;
@@ -28,7 +30,7 @@ namespace mamba.TorchDiscordSync
     /// Features: faction sync, bidirectional chat relay, death logging, server
     /// monitoring, player verification, and admin commands.
     /// </summary>
-    public class MambaTorchDiscordSyncPlugin : TorchPluginBase
+    public class MambaTorchDiscordSyncPlugin : TorchPluginBase, IWpfPlugin
     {
         // ---- core services ----
         private DatabaseService             _db;
@@ -57,6 +59,9 @@ namespace mamba.TorchDiscordSync
         private MainConfig                  _config;
         private DiscordBotConfig            _discordBotConfig;
 
+        // ---- UI ----
+        private TdsSettingsControl          _settingsControl;
+
         /// <summary>Read-only access to the loaded plugin configuration.</summary>
         public MainConfig Config => _config;
 
@@ -67,6 +72,19 @@ namespace mamba.TorchDiscordSync
         private bool            _serverStartupLogged        = false;
         private bool            _playerTrackingInitialized  = false;
         private bool            _damageTrackingInitialized  = false;
+
+        // ============================================================
+        // WPF SETTINGS UI
+        // ============================================================
+
+        /// <summary>
+        /// Returns the WPF settings control shown in the Torch admin GUI.
+        /// Lazily created on first access so the plugin loads without WPF overhead.
+        /// </summary>
+        public UserControl GetControl()
+        {
+            return _settingsControl ?? (_settingsControl = new TdsSettingsControl(this));
+        }
 
         // ============================================================
         // INIT
@@ -93,6 +111,10 @@ namespace mamba.TorchDiscordSync
                     return;
                 }
                 LoggerUtil.LogInfo("Configuration loaded - Debug mode: " + _config.Debug);
+
+                // ---- initialize localization ----
+                // Loads [Language].ini from configs dir; falls back to built-in English silently.
+                Lang.Load(_config.Language ?? "en-US", MainConfig.GetConfigDirectory());
 
                 // Build a DiscordBotConfig shim from MainConfig for backward compat
                 _discordBotConfig = new DiscordBotConfig
@@ -801,8 +823,8 @@ namespace mamba.TorchDiscordSync
                     return;
 
                 string notificationMsg = isSuccess
-                    ? "[OK] Verification successful! Discord account linked."
-                    : "[FAIL] Verification failed: " + message;
+                    ? Lang.Get("InGame.VerifyOK")
+                    : string.Format(Lang.Get("InGame.VerifyFail"), message);
 
                 Sandbox.Game.MyVisualScriptLogicProvider.SendChatMessage(
                     notificationMsg, "TDS", player.Character.EntityId, "Blue");

@@ -406,7 +406,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 {
                     if (!isAdmin)
                     {
-                        ChatUtils.SendError("[!] Admin command – access denied", playerSteamID);
+                        ChatUtils.SendError(Lang.Get("Cmd.AdminDenied"), playerSteamID);
                         LoggerUtil.LogWarning(
                             string.Format(
                                 "[COMMAND] Non-admin {0} ({1}) tried admin:sync command: {2}",
@@ -452,7 +452,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                                 subcommand
                             )
                         );
-                        ChatUtils.SendError(string.Format("Command '{0}' requires admin privileges", subcommand, playerSteamID)
+                        ChatUtils.SendError(string.Format(Lang.Get("Cmd.NotAuthorized"), subcommand, playerSteamID)
                         );
                         return;
                     }
@@ -500,7 +500,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 }
 
                 ChatUtils.SendError(string.Format(
-                        "Unknown command: /tds {0}. Type /tds help for available commands.",
+                        Lang.Get("Cmd.Unknown"),
                         subcommand), playerSteamID
                 );
             }
@@ -594,7 +594,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                                 playerName
                             )
                         );
-                        ChatUtils.SendWarning("Running undo for ALL factions (Discord roles/channels + XML records)...", steamId
+                        ChatUtils.SendWarning(Lang.Get("AdminSync.UndoAllStart"), steamId
                         );
 
                         _ = _factionSync
@@ -625,7 +625,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                 case "cleanup":
                     {
-                        ChatUtils.SendWarning("[*] Cleaning up orphaned Discord roles/channels...", steamId);
+                        ChatUtils.SendWarning(Lang.Get("AdminSync.CleanupStart"), steamId);
                         LoggerUtil.LogWarning(
                             string.Format("[ADMIN:SYNC:CLEANUP] {0} starting cleanup", playerName)
                         );
@@ -669,7 +669,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     }
 
                 default:
-                    ChatUtils.SendError(string.Format("Unknown admin:sync subcommand: {0}", syncSubcommand, steamId)
+                    ChatUtils.SendError(string.Format(Lang.Get("AdminSync.UnknownSub"), syncSubcommand, steamId)
                     );
                     LoggerUtil.LogWarning(
                         string.Format(
@@ -700,57 +700,57 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 );
 
                 var sb = new System.Text.StringBuilder();
-                sb.AppendLine("===============================================");
-                sb.AppendLine("         TDS (Torch Discord Sync)");
-                sb.AppendLine("===============================================");
+                sb.AppendLine(Lang.Get("Help.Separator"));
+                sb.AppendLine(Lang.Get("Help.Title"));
+                sb.AppendLine(Lang.Get("Help.Separator"));
                 sb.AppendLine();
 
                 if (isAdmin)
                 {
-                    sb.AppendLine("[ADMIN] SYNC COMMANDS:");
+                    sb.AppendLine(Lang.Get("Help.Admin.SyncHeader"));
                     sb.AppendLine(
-                        "  /tds admin:sync:check      - Check status of all faction syncs"
+                        Lang.Get("Help.Admin.SyncCheck")
                     );
-                    sb.AppendLine("  /tds admin:sync:undo <tag> - Undo sync for faction");
+                    sb.AppendLine(Lang.Get("Help.Admin.SyncUndo"));
                     sb.AppendLine(
-                        "  /tds admin:sync:cleanup    - Delete orphaned Discord roles/channels"
+                        Lang.Get("Help.Admin.SyncCleanup")
                     );
-                    sb.AppendLine("  /tds admin:sync:status     - Show sync status summary");
+                    sb.AppendLine(Lang.Get("Help.Admin.SyncStatus"));
                     sb.AppendLine();
-                    sb.AppendLine("[ADMIN] GENERAL COMMANDS:");
-                    sb.AppendLine("  /tds sync      - Synchronize all factions to Discord");
-                    sb.AppendLine("  /tds reset     - Reset Discord (DELETE all roles/channels!)");
-                    sb.AppendLine("  /tds reload    - Reload configuration");
-                    sb.AppendLine("  /tds cleanup   - Clean orphaned Discord items");
+                    sb.AppendLine(Lang.Get("Help.Admin.GeneralHeader"));
+                    sb.AppendLine(Lang.Get("Help.Admin.Sync"));
+                    sb.AppendLine(Lang.Get("Help.Admin.Reset"));
+                    sb.AppendLine(Lang.Get("Help.Admin.Reload"));
+                    sb.AppendLine(Lang.Get("Help.Admin.Cleanup"));
                     sb.AppendLine();
-                    sb.AppendLine("[ADMIN] VERIFICATION COMMANDS:");
+                    sb.AppendLine(Lang.Get("Help.Admin.VerifyHeader"));
                     sb.AppendLine(
-                        "  /tds unverify <SteamID> [reason]   - Remove user verification"
+                        Lang.Get("Help.Admin.Unverify")
                     );
                     sb.AppendLine(
-                        "  /tds admin:verify:list              - List all verified users"
+                        Lang.Get("Help.Admin.VerifyList")
                     );
                     sb.AppendLine(
-                        "  /tds admin:verify:pending           - List pending verifications"
+                        Lang.Get("Help.Admin.VerifyPending")
                     );
                     sb.AppendLine(
-                        "  /tds admin:verify:delete <SteamID> - Delete verification record"
+                        Lang.Get("Help.Admin.VerifyDelete")
                     );
                     sb.AppendLine();
                 }
 
-                sb.AppendLine("[USER] VERIFICATION COMMANDS:");
-                sb.AppendLine("  /tds verify @DiscordName    - Link Discord account (by username)");
-                sb.AppendLine("  /tds verify <DiscordUserID> - Link Discord account (by ID)");
-                sb.AppendLine("  /tds verify:status          - Check your verification status");
-                sb.AppendLine("  /tds verify:delete          - Delete pending verification");
-                sb.AppendLine("  /tds verify:help            - Detailed verification guide");
+                sb.AppendLine(Lang.Get("Help.User.VerifyHeader"));
+                sb.AppendLine(Lang.Get("Help.User.VerifyByName"));
+                sb.AppendLine(Lang.Get("Help.User.VerifyById"));
+                sb.AppendLine(Lang.Get("Help.User.VerifyStatus"));
+                sb.AppendLine(Lang.Get("Help.User.VerifyDelete"));
+                sb.AppendLine(Lang.Get("Help.User.VerifyHelp"));
                 sb.AppendLine();
-                sb.AppendLine("[USER] INFO COMMANDS:");
-                sb.AppendLine("  /tds status - Show plugin status");
-                sb.AppendLine("  /tds help   - Show this help");
+                sb.AppendLine(Lang.Get("Help.User.InfoHeader"));
+                sb.AppendLine(Lang.Get("Help.User.Status"));
+                sb.AppendLine(Lang.Get("Help.User.Help"));
                 sb.AppendLine();
-                sb.AppendLine("===============================================");
+                sb.AppendLine(Lang.Get("Help.Separator"));
 
                 ChatUtils.SendHelpText(sb.ToString(), playerSteamID);
                 LoggerUtil.LogInfo(
@@ -786,9 +786,9 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 if (verified != null)
                 {
                     statusText = string.Format(
-                        "[VERIFIED] You are verified!\nDiscord: {0}\nVerified at: {1:yyyy-MM-dd HH:mm}",
+                        Lang.Get("VerifyStatus.Verified"),
                         verified.DiscordUsername,
-                        verified.VerifiedAt
+                        verified.VerifiedAt.ToString("yyyy-MM-dd HH:mm")
                     );
                 }
                 else if (pending != null && pending.ExpiresAt > DateTime.UtcNow)
@@ -799,15 +799,12 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                     if (timeLeft.TotalSeconds <= 0)
                     {
-                        statusText =
-                            "[EXPIRED] Your verification code has expired\n"
-                            + "Type /tds verify @DiscordName to generate a new code";
+                        statusText = Lang.Get("VerifyStatus.Expired");
                     }
                     else
                     {
                         statusText = string.Format(
-                            "[IN PROGRESS] Verification pending\n"
-                                + "Discord Username: {0}\nCode: {1}\nTime Remaining: {2}m {3}s",
+                            Lang.Get("VerifyStatus.Pending"),
                             pending.DiscordUsername,
                             pending.VerificationCode,
                             (int)timeLeft.TotalMinutes,
@@ -817,9 +814,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 }
                 else
                 {
-                    statusText =
-                        "[NOT VERIFIED] You have not started verification yet\n"
-                        + "Type /tds verify @DiscordName to begin";
+                    statusText = Lang.Get("VerifyStatus.NotVerified");
                 }
 
                 ChatUtils.SendInfo(statusText, playerSteamID);
@@ -844,7 +839,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             {
                 if (args.Length < 3)
                 {
-                    ChatUtils.SendError("Usage: /tds verify @DiscordName  OR  /tds verify <DiscordUserID>", playerSteamID);
+                    ChatUtils.SendError(Lang.Get("VerifyCmd.Usage"), playerSteamID);
                     return;
                 }
 
@@ -853,7 +848,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     LoggerUtil.LogError(
                         "[VERIFY_CMD] CRITICAL: VerificationCommandHandler is NULL!"
                     );
-                    ChatUtils.SendError("Verification system is not initialized. Contact an admin.", playerSteamID);
+                    ChatUtils.SendError(Lang.Get("VerifyCmd.NotInitialized"), playerSteamID);
                     return;
                 }
 
@@ -909,21 +904,21 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 var verified = _db?.GetVerifiedPlayer(playerSteamID);
                 if (verified != null)
                 {
-                    ChatUtils.SendWarning("[!] You are already verified!", playerSteamID);
-                    ChatUtils.SendInfo("Only administrators can remove your verification. Contact an admin.", playerSteamID);
+                    ChatUtils.SendWarning(Lang.Get("VerifyDelete.AlreadyVerified"), playerSteamID);
+                    ChatUtils.SendInfo(Lang.Get("VerifyDelete.ContactAdmin"), playerSteamID);
                     return;
                 }
 
                 var pending = _db?.GetPendingVerification(playerSteamID);
                 if (pending == null)
                 {
-                    ChatUtils.SendInfo("[I] You do not have any pending verification.", playerSteamID);
+                    ChatUtils.SendInfo(Lang.Get("VerifyDelete.NoPending"), playerSteamID);
                     return;
                 }
 
                 _db?.DeletePendingVerification(playerSteamID);
-                ChatUtils.SendSuccess("[OK] Pending verification deleted!", playerSteamID);
-                ChatUtils.SendInfo("You can start a new verification with /tds verify [DiscordID/Name]", playerSteamID);
+                ChatUtils.SendSuccess(Lang.Get("VerifyDelete.Deleted"), playerSteamID);
+                ChatUtils.SendInfo(Lang.Get("VerifyDelete.NewVerify"), playerSteamID);
 
                 _ = _eventLog.LogAsync(
                     "VerificationDeleted",
@@ -948,33 +943,36 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
         {
             try
             {
-                string helpText =
-                    "=== VERIFICATION GUIDE ===\n"
-                    + "[STEP 1] IN-GAME\n"
-                    + "  Type: /tds verify [DiscordID or DiscordName]\n"
-                    + "  Example 1: /tds verify mamba73 (username)\n"
-                    + "  Example 2: /tds verify 765540000000001234 (Discord ID)\n\n"
-                    + "[STEP 2] CHECK DISCORD DM\n"
-                    + "  You should receive a private message from the bot.\n"
-                    + "  Code format: 8 random letters, e.g. SYIXFNCE\n\n"
-                    + "[STEP 3] REPLY ON DISCORD\n"
-                    + "  In the bot's DM type:  !verify SYIXFNCE\n\n"
-                    + "[STEP 4] WAIT FOR CONFIRMATION\n"
-                    + "  Bot will respond with verification status.\n\n"
-                    + "[COMMANDS]\n"
-                    + "  /tds verify:status  – Check current verification status\n"
-                    + "  /tds verify:delete  – Delete pending verification\n"
-                    + "  /tds verify:help    – Show this help\n\n"
-                    + "[TROUBLESHOOTING]\n"
-                    + "  - Wrong username: Make sure your Discord username is correct.\n"
-                    + "  - Bot cannot find you: You must be in the Discord server.\n"
-                    + "  - Code expired: Codes expire after "
-                    + _config.VerificationCodeExpirationMinutes
-                    + " minutes.\n"
-                    + "  - Still not working: Contact an administrator.\n"
-                    + "=========================";
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine(Lang.Get("VerifyHelp.Header"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Step1Header"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Step1Line1"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Step1Line2"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Step1Line3"));
+                sb.AppendLine();
+                sb.AppendLine(Lang.Get("VerifyHelp.Step2Header"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Step2Line1"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Step2Line2"));
+                sb.AppendLine();
+                sb.AppendLine(Lang.Get("VerifyHelp.Step3Header"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Step3Line1"));
+                sb.AppendLine();
+                sb.AppendLine(Lang.Get("VerifyHelp.Step4Header"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Step4Line1"));
+                sb.AppendLine();
+                sb.AppendLine(Lang.Get("VerifyHelp.CmdHeader"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Cmd1"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Cmd2"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Cmd3"));
+                sb.AppendLine();
+                sb.AppendLine(Lang.Get("VerifyHelp.TroubleHeader"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Trouble1"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Trouble2"));
+                sb.AppendLine(string.Format(Lang.Get("VerifyHelp.Trouble3"), _config.VerificationCodeExpirationMinutes));
+                sb.AppendLine(Lang.Get("VerifyHelp.Trouble4"));
+                sb.AppendLine(Lang.Get("VerifyHelp.Footer"));
 
-                ChatUtils.SendHelpText(helpText, steamId);
+                ChatUtils.SendHelpText(sb.ToString(), steamId);
             }
             catch (Exception ex)
             {
@@ -993,8 +991,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             {
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds sync");
                 _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds sync");
-                ChatUtils.SendSuccess("Starting faction synchronization...", steamId);
-                ChatUtils.SendSuccess("Synchronization complete!", steamId);
+                ChatUtils.SendSuccess(Lang.Get("Cmd.Sync.Starting"), steamId);
+                ChatUtils.SendSuccess(Lang.Get("Cmd.Sync.Complete"), steamId);
             }
             catch (Exception ex)
             {
@@ -1012,10 +1010,10 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                     "[COMMAND] " + playerName + " executed: /tds reset (DESTRUCTIVE)"
                 );
                 _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds reset");
-                ChatUtils.SendWarning("Clearing Discord roles and channels...", steamId);
+                ChatUtils.SendWarning(Lang.Get("Cmd.Reset.Clearing"), steamId);
                 _ = _factionSync.ResetDiscordAsync();
                 _ = _eventLog.LogAsync("Command", "Discord reset executed by " + playerName);
-                ChatUtils.SendSuccess("Discord reset complete!", steamId);
+                ChatUtils.SendSuccess(Lang.Get("Cmd.Reset.Complete"), steamId);
             }
             catch (Exception ex)
             {
@@ -1031,8 +1029,8 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             {
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds cleanup");
                 _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds cleanup");
-                ChatUtils.SendWarning("Starting cleanup of orphaned Discord roles/channels...", steamId);
-                ChatUtils.SendSuccess("Cleanup simulation completed!", steamId);
+                ChatUtils.SendWarning(Lang.Get("Cmd.Cleanup.Starting"), steamId);
+                ChatUtils.SendSuccess(Lang.Get("Cmd.Cleanup.Complete"), steamId);
             }
             catch (Exception ex)
             {
@@ -1048,22 +1046,22 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             {
                 LoggerUtil.LogInfo("[COMMAND] " + playerName + " executed: /tds reload");
                 _ = _eventLog.LogAsync("AdminCommand", playerName + " executed: /tds reload");
-                ChatUtils.SendWarning("Reloading configuration and database...", steamId);
+                ChatUtils.SendWarning(Lang.Get("Cmd.Reload.Reloading"), steamId);
 
                 var newConfig = MainConfig.Load();
                 if (newConfig != null)
                 {
-                    ChatUtils.SendSuccess("Configuration reloaded successfully", steamId);
+                    ChatUtils.SendSuccess(Lang.Get("Cmd.Reload.Success"), steamId);
                     LoggerUtil.LogSuccess("[RELOAD] Configuration reloaded by " + playerName);
                 }
                 else
                 {
-                    ChatUtils.SendError("Failed to reload configuration – keeping old config", steamId);
+                    ChatUtils.SendError(Lang.Get("Cmd.Reload.Failed"), steamId);
                     LoggerUtil.LogError("[RELOAD] Failed to reload by " + playerName);
                     return;
                 }
 
-                ChatUtils.SendSuccess("Reload complete!", steamId);
+                ChatUtils.SendSuccess(Lang.Get("Cmd.Reload.Complete"), steamId);
             }
             catch (Exception ex)
             {
@@ -1078,14 +1076,14 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             {
                 if (args.Length < 3)
                 {
-                    ChatUtils.SendError("Usage: /tds unverify STEAMID [reason]", adminSteamID);
+                    ChatUtils.SendError(Lang.Get("Unverify.Usage"), adminSteamID);
                     return;
                 }
 
                 long targetSteamID;
                 if (!long.TryParse(args[2], out targetSteamID))
                 {
-                    ChatUtils.SendError("Invalid Steam ID format", adminSteamID);
+                    ChatUtils.SendError(Lang.Get("Unverify.InvalidId"), adminSteamID);
                     return;
                 }
 
@@ -1102,7 +1100,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 var pending = _db?.GetPendingVerification(targetSteamID);
                 if (verified == null && pending == null)
                 {
-                    ChatUtils.SendWarning("Verification not found for SteamID: " + targetSteamID, adminSteamID);
+                    ChatUtils.SendWarning(string.Format(Lang.Get("Unverify.NotFound"), targetSteamID), adminSteamID);
                     return;
                 }
 
@@ -1116,7 +1114,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                 ChatUtils.SendSuccess(
                     string.Format(
-                        "Verification removed for: {0} (SteamID: {1})",
+                        Lang.Get("Unverify.Removed"),
                         displayName,
                         targetSteamID
                     )
@@ -1146,11 +1144,11 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 var verified = _db?.GetAllVerifiedPlayers();
                 if (verified == null || verified.Count == 0)
                 {
-                    ChatUtils.SendInfo("No verified users found", steamId);
+                    ChatUtils.SendInfo(Lang.Get("AdminVerify.NoVerified"), steamId);
                     return;
                 }
 
-                var sb = new System.Text.StringBuilder("[VERIFIED USERS]\n");
+                var sb = new System.Text.StringBuilder(Lang.Get("AdminVerify.ListHeader") + "\n");
                 int i = 1;
                 foreach (var v in verified)
                 {
@@ -1181,11 +1179,11 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 var pending = _db?.GetAllPendingVerifications();
                 if (pending == null || pending.Count == 0)
                 {
-                    ChatUtils.SendInfo("No pending verifications", steamId);
+                    ChatUtils.SendInfo(Lang.Get("AdminVerify.NoPending"), steamId);
                     return;
                 }
 
-                var sb = new System.Text.StringBuilder("[PENDING VERIFICATIONS]\n");
+                var sb = new System.Text.StringBuilder(Lang.Get("AdminVerify.PendingHeader") + "\n");
                 int i = 1;
                 foreach (var p in pending)
                 {
@@ -1222,14 +1220,14 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
             {
                 if (args.Length < 3)
                 {
-                    ChatUtils.SendError("Usage: /tds admin:verify:delete STEAMID", steamId);
+                    ChatUtils.SendError(Lang.Get("AdminVerify.UsageDelete"), steamId);
                     return;
                 }
 
                 long targetSteamID;
                 if (!long.TryParse(args[3], out targetSteamID))
                 {
-                    ChatUtils.SendError("Invalid Steam ID format", steamId);
+                    ChatUtils.SendError(Lang.Get("AdminVerify.InvalidId"), steamId);
                     return;
                 }
 
@@ -1237,7 +1235,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                 var pending = _db?.GetPendingVerification(targetSteamID);
                 if (verified == null && pending == null)
                 {
-                    ChatUtils.SendWarning("Verification not found for SteamID: " + targetSteamID, steamId);
+                    ChatUtils.SendWarning(string.Format(Lang.Get("AdminVerify.NotFound"), targetSteamID), steamId);
                     return;
                 }
 
@@ -1251,7 +1249,7 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
 
                 ChatUtils.SendSuccess(
                     string.Format(
-                        "Verification deleted for: {0} (SteamID: {1})",
+                        Lang.Get("AdminVerify.Deleted"),
                         displayName,
                         targetSteamID
                     )
@@ -1291,23 +1289,23 @@ namespace mamba.TorchDiscordSync.Plugin.Handlers
                             totalPlayers += f.Players.Count;
 
                 string statusText =
-                    "=== TDS Plugin Status ===\n"
-                    + "Status: [OK] ONLINE\n"
-                    + string.Format("Factions: {0}\n", totalFactions)
-                    + string.Format("Players:  {0}\n", totalPlayers)
+                    Lang.Get("Status.Header") + "\n"
+                    + Lang.Get("Status.Online") + "\n"
+                    + string.Format(Lang.Get("Status.Factions"), totalFactions) + "\n"
+                    + string.Format(Lang.Get("Status.Players"),  totalPlayers) + "\n"
                     + string.Format(
-                        "Chat Sync:    {0}\n",
-                        _config?.Chat?.Enabled == true ? "[OK]" : "[FAIL]"
-                    )
+                        Lang.Get("Status.Chat"),
+                        _config?.Chat?.Enabled == true ? Lang.Get("Status.OK") : Lang.Get("Status.Fail")
+                    ) + "\n"
                     + string.Format(
-                        "Death Logging:{0}\n",
-                        _config?.Death?.Enabled == true ? "[OK]" : "[FAIL]"
-                    )
+                        Lang.Get("Status.Death"),
+                        _config?.Death?.Enabled == true ? Lang.Get("Status.OK") : Lang.Get("Status.Fail")
+                    ) + "\n"
                     + string.Format(
-                        "Verification: {0}\n",
-                        _config?.Discord != null ? "[OK]" : "[FAIL]"
-                    )
-                    + "=======================";
+                        Lang.Get("Status.Verify"),
+                        _config?.Discord != null ? Lang.Get("Status.OK") : Lang.Get("Status.Fail")
+                    ) + "\n"
+                    + Lang.Get("Status.Footer");
 
                 ChatUtils.SendHelpText(statusText, steamId);
             }

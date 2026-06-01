@@ -8,11 +8,11 @@ Unlike simple chat relays, **TorchDiscordSync** focuses on *deep game integratio
 
 | Property | Value |
 | :--- | :--- |
-| **C# / Runtime** | C# latest / .NET Framework 4.8 |
-| **Torch** | v2.4.50.328-master (2.4.49+) |
+| **C# / Runtime** | C# 6.0 / .NET Framework 4.8 Syntax |
+| **Torch** | v2.4.60.328-master (2.4.49+) |
 | **Space Engineers** | 1.208.15+ |
 | **Author** | mamba |
-| **Version** | 2.4.50 |
+| **Version** | 2.4.60 |
 
 ---
 
@@ -29,12 +29,13 @@ Unlike simple chat relays, **TorchDiscordSync** focuses on *deep game integratio
 9. [Discord Admin Commands](#discord-admin-commands)
 10. [Player Verification System](#player-verification-system)
 11. [Data Storage](#data-storage)
-12. [Event Logging](#event-logging)
-13. [In-Game Commands](#in-game-commands)
-14. [Configuration Overview](#configuration-overview)
-15. [Roadmap & Future Plans](#roadmap--future-plans)
-16. [Contributing](#contributing)
-17. [Support](#support)
+12. [Event Logging & Infrastructure](#event-logging--infrastructure)
+13. [Torch UI Configuration](#torch-ui-configuration)
+14. [In-Game Commands](#in-game-commands)
+15. [Configuration & Localization](#configuration--localization)
+16. [Roadmap & Future Plans](#roadmap--future-plans)
+17. [Contributing](#contributing)
+18. [Support](#support)
 
 ---
 
@@ -58,6 +59,8 @@ Unlike simple chat relays, **TorchDiscordSync** focuses on *deep game integratio
 | Data Storage – SQLite | ✅ | Opt-in; requires external DLL (see below) |
 | Event Logging | ✅ | Structured log to DB + Discord staff channel |
 | Security & Blacklist | ✅ | Sanitisation, content filtering, blacklist config |
+| Localization Engine | ✅ | Dedicated `Localization/` folder with `.ini` regional support |
+| Native Torch UI Interface | ✅ | Full visual configuration tab within Torch Server GUI |
 
 ---
 
@@ -132,12 +135,10 @@ Minimum working configuration:
 
 <Chat>
   <Enabled>true</Enabled>
-  <ServerToDiscord>true</ServerToDiscord>  <!-- game → Discord -->
-  <BotToGame>true</BotToGame>              <!-- Discord → game -->
-</Chat>
+  <ServerToDiscord>true</ServerToDiscord>  <BotToGame>true</BotToGame>              </Chat>
 ```
 
-Everything else defaults to `0` (disabled) and can be enabled later.
+Everything else defaults to `0` (disabled) and can be enabled later. Alternatively, use the visual interface inside Torch Server to change settings dynamically.
 
 ---
 
@@ -146,7 +147,7 @@ Everything else defaults to `0` (disabled) and can be enabled later.
 The bot runs **embedded inside Torch** — no separate hosting is needed.
 On server start, check the Torch log for these lines to confirm everything is working:
 
-```
+```txt
 [SUCCESS] [DISCORD_BOT] Bot connection established
 [SUCCESS] [DISCORD_BOT] Bot is ready and listening!
 [SUCCESS] All services initialized
@@ -173,6 +174,7 @@ If you see repeated reconnection attempts, check that **both** Privileged Intent
 Any time you change `MainConfig.xml` while the server is running, apply it without restarting:
 - **In-game:** `/tds reload`
 - **From Discord:** `!tds reload` (in the `AdminBotChannelId` channel)
+- **From Torch GUI:** Simply modify parameters directly on the interface tab and click the save/reload control handle.
 
 ---
 
@@ -233,6 +235,12 @@ Sophisticated, multi-layer system to determine the exact cause and context of ev
 - Maintains a rolling in-memory buffer of recent damage events per player.
 - Resolves the *real* cause of death when the native death event contains ambiguous data.
 
+### NPC Detection Fixes (Spiders & Wolves)
+A critical issue regarding native Environment/NPC death mapping has been resolved. In historical variations, non-grid wildlife sources (such as Space Spiders or Cyberwolves) could either generate empty references or crash calculation layers due to unstable object types during clean character cleanups. 
+
+The detection architecture now successfully patterns environmental creature attacks under explicit criteria. To complement this, a toggle has been added to the configuration system:
+- `<TrackNPCActivity>` (Checkbox in the GUI) enables or disables logging, tracking, or broadcasting deaths caused by or related to non-player animal/NPC interactions, eliminating clutter from public server feeds.
+
 ### Death Message Templates
 
 Fully configurable templates in `DeathMessages.xml`. Four named placeholders are available:
@@ -246,7 +254,7 @@ Fully configurable templates in `DeathMessages.xml`. Four named placeholders are
 
 **Example templates and their output:**
 
-```
+```txt
 PvP:         "{killer} showed {victim} no mercy with {weapon}"
 → 🔥 orko showed mamba no mercy with Elite Automatic Rifle on the surface of Mars
 
@@ -309,7 +317,7 @@ A dedicated Discord channel acts as a remote admin console. Post `!tds <subcomma
 | `!tds admin:verify:list` | List all verified players |
 | `!tds admin:verify:pending` | List pending verifications |
 | `!tds admin:verify:delete <steamid>` | Delete a verification record |
-| `!tds reload` | Reload plugin configuration |
+| `!tds reload` | Reload plugin configuration and translations |
 | `!tds status` | Show plugin status |
 
 ---
@@ -359,11 +367,37 @@ If the DLL is absent, the plugin falls back to XML silently — the server will 
 
 ---
 
-## 📋 Event Logging
+## 📋 Event Logging & Infrastructure
 
-Structured log entries are written to the local database and optionally to a Discord staff log channel (`Discord.StaffLog` channel ID).
+### LoggerUtil Architecture
+The plugin employs a dedicated internal pipeline wrapped within `LoggerUtil`. All internal diagnostic workflows utilize structured log hooks (`LogInfo`, `LogWarning`, `LogError`) to route outputs systematically to the server console, local text dumps, and active diagnostic data adapters without relying on generalized layout wrappers.
+
+Structured log entries are also cleanly appended to the local database backend and optionally broad-casted directly into the configured Discord staff log channel (`Discord.StaffLog` channel ID).
 
 Logged event types include: `VerificationAttempt`, `VerificationDeleted`, `UnverifyCommand`, `AdminCommand`, `CommandError`, and more.
+
+---
+
+## 🖥️ Torch UI Configuration
+
+The plugin embeds a rich visual configuration dashboard mapped into a dedicated **Torch Server GUI Tab** labeled `TorchDiscordSync`. This user interface replaces manual text serialization maintenance for daytime activities, giving administrators absolute control via structured WPF components.
+
+### UI Sections & Parameter Controls
+1. **Core Settings Layout:**
+   - **Enable Master Plugin:** Global checkbox bound directly to runtime engine lifecycle states.
+   - **Debug Mode Logging:** Activating this box instructs `LoggerUtil` to capture fine-grained trace context.
+
+2. **Discord API Connectivity Card:**
+   - **Bot Authorization Token:** Masked text field to insert private credentials. Includes manual visibility toggle controls.
+   - **Target Server Guild ID:** Text block validated against numerical formats to lock runtime execution into specific servers.
+   - **Global Chat & Staff Log Identifiers:** Independent input rows supporting automated clipboard evaluation to simplify raw numeric mapping.
+
+3. **Feature Automation Toggles:**
+   - Checkboxes are provided to switch functional frameworks natively: `Enable Chat Relay`, `Synchronize Server Factions`, `Execute SimSpeed Monitoring`.
+   - **Track NPC Activity Checkbox:** Explicit boolean state toggle to completely suppress or permit the logging and broadcasting of character updates and tracking vectors stemming from system wildlife scripts (Spiders / Wolves).
+
+4. **Dynamic Value Sliders:**
+   - Visual scroll nodes control timing configurations including validation intervals, damage logging retention thresholds, and SimSpeed trigger ceilings without requiring system hot-reloads.
 
 ---
 
@@ -387,7 +421,7 @@ All commands are typed in global game chat. The plugin consumes them before they
 
 | Command | Description |
 | :--- | :--- |
-| `/tds reload` | Reload configuration from disk |
+| `/tds reload` | Reload configuration and localization tables from disk |
 | `/tds sync` | Synchronise all factions to Discord |
 | `/tds reset` | **Destructive** — delete all Discord roles/channels and reset |
 | `/tds cleanup` | Remove orphaned Discord items |
@@ -403,7 +437,7 @@ All commands are typed in global game chat. The plugin consumes them before they
 
 ---
 
-## ⚙️ Configuration Overview
+## ⚙️ Configuration & Localization
 
 Configuration is stored in `MainConfig.xml` in the plugin's data directory.
 Hot-reload: `/tds reload` in-game or `!tds reload` from Discord.
@@ -415,6 +449,82 @@ All channel/role/category IDs default to `0` (feature disabled). Set them to the
 | `MainConfig.xml` | All settings — token, channel IDs, feature toggles, thresholds |
 | `DeathMessages.xml` | Per-death-type message templates |
 | `Blacklist.xml` | Word/phrase blacklist for chat moderation |
+
+### Localization Subsystem
+All active strings and translation dictionary layers are compiled systematically under a dedicated `Localization/` subdirectory inside the plugin's core data directory. The target mapping lookup is declared directly within the primary runtime profile parameter:
+
+```xml
+<Language>en-US</Language>
+```
+
+The translation system automatically isolates localization files based on formal BCP-47 language codes bundled with region qualifiers (`en-US`, `en-GB`, `hr-HR`). On initialization, missing regional dictionaries dynamically build a clean internal layout copy directly into the targeted platform path.
+
+#### 🇬🇧 English (US) Base Template (`Localization/en-US.ini`)
+```ini
+; ==============================================================================
+;   [X] DO NOT TRANSLATE THIS SECTION
+; ==============================================================================
+[Metadata]
+ConfigVersion = 1
+LanguageCode = en-US
+LanguageName = English (United States)
+
+; ==============================================================================
+;   [V] TRANSLATE EVERYTHING BELOW THIS LINE
+; ==============================================================================
+
+[Help]
+Help.Separator = ===============================================
+Help.Title =          TDS (Torch Discord Sync)
+Help.Admin.SyncHeader = [ADMIN] SYNC COMMANDS:
+Help.Admin.SyncCheck =   /tds admin:sync:check      - Check status of all faction syncs
+
+[Status]
+Status.Header = === TDS Plugin Status ===
+Status.Online = Status: [OK] ONLINE
+
+[Zone]
+ZoneSurface = on the surface of planet {planet}
+ZoneLowOrbit = in low orbit of planet {planet}
+```
+
+#### 🇬🇧 English (UK) Template (`Localization/en-GB.ini`)
+```ini
+[Metadata]
+ConfigVersion = 1
+LanguageCode = en-GB
+LanguageName = English (United Kingdom)
+
+[Help]
+Help.Separator = ===============================================
+Help.Title =          TDS (Torch Discord Sync)
+
+[Zone]
+ZoneSurface = on the surface of planet {planet}
+ZoneLowOrbit = in low orbit of planet {planet}
+```
+
+#### 🇭🇷 Hrvatski Paket (`Localization/hr-HR.ini`)
+```ini
+[Metadata]
+ConfigVersion = 1
+LanguageCode = hr-HR
+LanguageName = Hrvatski (Hrvatska)
+
+[Help]
+Help.Separator = ===============================================
+Help.Title =          TDS (Torch Discord Sync)
+Help.Admin.SyncHeader = [ADMIN] NAREDBE SINKRONIZACIJE:
+Help.Admin.SyncCheck =   /tds admin:sync:check      - Provjeri status sinkronizacije frakcija
+
+[Status]
+Status.Header = === TDS Status Dodatka ===
+Status.Online = Status: [OK] AKTIVAN
+
+[Zone]
+ZoneSurface = na povrsini planeta {planet}
+ZoneLowOrbit = u niskoj orbiti planeta {planet}
+```
 
 ---
 
@@ -496,6 +606,7 @@ Controls the chat relay and optional in-game chat moderation.
 | `InnerSystemMaxKm` | `5000` | Distance threshold for Inner System zone (km) |
 | `OuterSpaceMaxKm` | `10000` | Distance threshold for Outer Space zone (km) |
 | `PlanetProximityMultiplier` | `3` | Multiplier applied to planet radius for surface/orbit zones |
+| `TrackNPCActivity` | `true` | **New.** Toggle logging and broadcasting for non-player creature/wildlife (Spiders/Wolves) events |
 
 ---
 
@@ -577,9 +688,32 @@ Route one Discord bot across multiple Torch instances with per-server channel co
 
 ## 🤝 Contributing
 
-Pull requests are welcome.
-Please maintain compatibility with **C# latest / .NET Framework 4.8**.
-All code comments must be in **English**.
+Pull requests are welcome. Please adhere to the following standards to ensure project stability:
+
+*   **Syntax Compatibility**: Strictly maintain **C# 6.0 / .NET Framework 4.8** compatibility. Modern C# features (e.g., file-scoped namespaces, records, init-only setters) are not supported.
+*   **Language Standards**: All code, comments, and documentation must be written in **English**.
+*   **Zero Hardcoding**: All user-facing text (chat/logs/Discord) must be handled via dynamic configuration or localized modules.
+*   **Production Readiness**: Only submit 100% complete, functional code. Placeholders (`// TODO`, `// ...`) or partial implementations will not be accepted.
+
+---
+
+## 💡 Special Thanks & Acknowledgments
+
+A huge thank you to the community members who helped improve this plugin through their invaluable feedback, bug reports, and ideas:
+
+* **Owen [C#]** – For forking the plugin, porting it to Linux, and implementing a full configuration UI, which inspired the native Torch Admin settings panel interface.
+* **Ryunoske** – For extensive testing, pointing out configuration bottlenecks (SQLite setup/Discord Intents), reporting the in-game command registration bug, and suggesting UI status command optimizations.
+* **Daniel_Felipe [ECHO]** – For his massive contribution of over 1,200 lines of code in an attempt to localize the plugin, which served as the direct catalyst and inspiration for implementing our modular, configuration-based localization system. Daniel_Felipe also provided critical feedback on NPC entity handling in death messages.
+
+---
+
+## 💬 Getting Help & Feedback
+
+If you encounter a bug, have a feature request, or need assistance, please use the official support thread on the Torch Discord:
+
+*   **Support & Bug Reports**: [mamba.TorchDiscordSync.Plugin Support Forum](https://discord.com/channels/929141809769226271/1482305125451038781)
+
+Please check existing posts before asking to avoid duplicates. When reporting bugs, **always include the relevant log files** from `\Instance\mambaSaveData\logs\` so I can investigate the issue effectively.
 
 ---
 

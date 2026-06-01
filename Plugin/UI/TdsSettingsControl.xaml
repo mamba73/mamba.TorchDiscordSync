@@ -1,0 +1,366 @@
+<UserControl x:Class="mamba.TorchDiscordSync.Plugin.UI.TdsSettingsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinWidth="600" MinHeight="500">
+
+    <UserControl.Resources>
+        <Style TargetType="Label" x:Key="SectionLabel">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,8,0,2"/>
+        </Style>
+        <Style TargetType="TextBox" x:Key="FieldBox">
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="Padding" Value="4,2"/>
+        </Style>
+        <Style TargetType="CheckBox" x:Key="FieldCheck">
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Save / Reload buttons at the bottom -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="8">
+            <Button x:Name="BtnReload" Content="Reload from File"
+                    Width="130" Height="28" Margin="0,0,8,0"
+                    Click="BtnReload_Click"/>
+            <Button x:Name="BtnSave" Content="Save &amp; Apply"
+                    Width="130" Height="28"
+                    Click="BtnSave_Click"/>
+        </StackPanel>
+
+        <!-- Tab control fills remaining space -->
+        <TabControl x:Name="TabMain" Margin="8,8,8,0">
+
+            <!-- ==================== GENERAL ==================== -->
+            <TabItem Header="General">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <Label Content="Plugin" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="ChkEnabled"
+                                  Content="Plugin Enabled"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkDebug"
+                                  Content="Debug Mode (verbose logging)"
+                                  Style="{StaticResource FieldCheck}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Admin Steam IDs (comma-separated)" Style="{StaticResource SectionLabel}"/>
+                        <TextBox x:Name="TxtAdminSteamIDs" Style="{StaticResource FieldBox}"
+                                 ToolTip="Comma-separated list of Steam64 IDs that have admin access"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="NPC Activity" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="ChkShowNpcActivity"
+                                  Content="Show NPC Activity (wolf/saberoid join/leave/death in chat)"
+                                  Style="{StaticResource FieldCheck}"
+                                  ToolTip="When unchecked, wolves and saberiods are silently ignored"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Localization" Style="{StaticResource SectionLabel}"/>
+                        <Label Content="Language (BCP-47 code, e.g. en-US, hr-HR, de-DE)"
+                               Foreground="Gray" Padding="0" FontSize="11"/>
+                        <!-- <TextBox x:Name="TxtLanguage" Style="{StaticResource FieldBox}"
+                                 ToolTip="Requires matching .ini file in the configs folder"/> -->
+                        <ComboBox Name="CmbLanguage"
+                                Width="150"
+                                Height="23"
+                                Margin="5"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Timers" Style="{StaticResource SectionLabel}"/>
+                        <Label Content="Cleanup Interval (seconds)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtCleanupInterval" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Damage History Max Age (seconds)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtDamageHistoryMax" Style="{StaticResource FieldBox}"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ==================== DISCORD ==================== -->
+            <TabItem Header="Discord">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <Label Content="Bot" Style="{StaticResource SectionLabel}"/>
+                        <Label Content="Bot Token" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtBotToken" Style="{StaticResource FieldBox}"
+                                 ToolTip="Your Discord bot token (keep secret!)"/>
+                        <Label Content="Guild (Server) ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtGuildId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Bot Command Prefix" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtBotPrefix" Style="{StaticResource FieldBox}"/>
+                        <CheckBox x:Name="ChkEnableDm"
+                                  Content="Enable DM Notifications"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <Label Content="Sync Interval (seconds)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSyncInterval" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Verification Code Expiry (minutes)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtVerifyExpiry" Style="{StaticResource FieldBox}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Channel IDs" Style="{StaticResource SectionLabel}"/>
+                        <Label Content="Chat Channel ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtChatChannelId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Status Channel ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtStatusChannelId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="SimSpeed Channel ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSimSpeedChannelId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Player Count Channel ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtPlayerCountChannelId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Staff Log Channel ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtStaffLogId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Admin Alert Channel ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtAdminAlertChannelId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Admin Bot Channel ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtAdminBotChannelId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Faction Category ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtFactionCategoryId" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Verified Role ID" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtVerifiedRoleId" Style="{StaticResource FieldBox}"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ==================== CHAT ==================== -->
+            <TabItem Header="Chat">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <CheckBox x:Name="ChkChatEnabled"
+                                  Content="Chat Sync Enabled"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkServerToDiscord"
+                                  Content="Game -> Discord (forward in-game chat to Discord)"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkBotToGame"
+                                  Content="Discord -> Game (forward Discord messages to game)"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkUseFactionChat"
+                                  Content="Faction Chat (separate Discord channels per faction)"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkStripEmojis"
+                                  Content="Strip Emojis for In-Game Chat"
+                                  Style="{StaticResource FieldCheck}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Message Formats" Style="{StaticResource SectionLabel}"/>
+                        <Label Content="Game -> Discord Format ({p}=name, {msg}=message)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtGameToDiscord" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Discord -> Game Format" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtDiscordToGame" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Connect Message" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtConnectMsg" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Join Message" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtJoinMsg" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Leave Message" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtLeaveMsg" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Faction Chat Format (game)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtFactionChatFormat" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Faction Discord Format" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtFactionDiscordFormat" Style="{StaticResource FieldBox}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Colors" Style="{StaticResource SectionLabel}"/>
+                        <Label Content="Global Chat Color" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtGlobalColor" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Faction Chat Color" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtFactionColor" Style="{StaticResource FieldBox}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Moderation" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="ChkEnableModeration"
+                                  Content="Enable Chat Moderation"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <Label Content="Max Warnings Before Mute" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtMaxWarnings" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Mute Duration (minutes)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtMuteDuration" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Max Mutes Before Kick" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtMaxMutes" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Admin Log Channel ID (moderation log)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtChatAdminLogId" Style="{StaticResource FieldBox}"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ==================== DEATHS ==================== -->
+            <TabItem Header="Deaths">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <CheckBox x:Name="ChkDeathEnabled"
+                                  Content="Death Logging Enabled"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkDeathLogToDiscord"
+                                  Content="Log Deaths to Discord"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkDeathAnnounceIngame"
+                                  Content="Announce Deaths In-Game"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkDetectRetaliation"
+                                  Content="Detect Retaliation Kills"
+                                  Style="{StaticResource FieldCheck}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Detection" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="ChkEnableLocationZones"
+                                  Content="Enable Location Zones (EarthLike, Alien, etc.)"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkGridDetection"
+                                  Content="Enable Grid Detection"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkShowGridName"
+                                  Content="Show Grid Name in Death Message"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <Label Content="Retaliation Window (minutes)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtRetaliationWindow" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Old Revenge Window (hours)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtOldRevengeWindow" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Deduplication Window (seconds)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtDedupWindow" Style="{StaticResource FieldBox}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Zone Distances (km)" Style="{StaticResource SectionLabel}"/>
+                        <Label Content="Inner System Max (km)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtInnerSystemKm" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Outer Space Max (km)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtOuterSpaceKm" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Planet Proximity Multiplier" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtPlanetProxMult" Style="{StaticResource FieldBox}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Death Message Emotes (comma-separated Discord emojis)" Style="{StaticResource SectionLabel}"/>
+                        <TextBox x:Name="TxtDeathEmotes" Style="{StaticResource FieldBox}"
+                                 ToolTip="Used only in Discord messages, not in-game"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ==================== MONITORING ==================== -->
+            <TabItem Header="Monitoring">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <CheckBox x:Name="ChkMonEnabled"
+                                  Content="Monitoring Enabled"
+                                  Style="{StaticResource FieldCheck}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="SimSpeed" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="ChkSimSpeedMon"
+                                  Content="Enable SimSpeed Monitoring"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkSimSpeedAlerts"
+                                  Content="Enable SimSpeed Alerts"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <Label Content="SimSpeed Threshold (alert below this)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSimSpeedThreshold" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Alert Cooldown (seconds)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSimSpeedCooldown" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Channel Name Format ({emoji}, {ss})" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSimSpeedChannelFormat" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Alert Message ({ss}, {threshold})" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSimSpeedAlertMsg" Style="{StaticResource FieldBox}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Player Count" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="ChkPlayerCountMon"
+                                  Content="Enable Player Count Monitoring"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkPlayerCountAlerts"
+                                  Content="Enable Player Count Alerts"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <Label Content="Status Update Interval (seconds)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtStatusInterval" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Channel Name Format ({p}=online, {pp}=max)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtPlayerCountChannelFormat" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Alert Threshold (players)" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtPlayerCountThreshold" Style="{StaticResource FieldBox}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Server Lifecycle Messages" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="ChkAdminAlerts"
+                                  Content="Enable Admin Alerts (start/stop/crash)"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <Label Content="Server Started Message" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSrvStartMsg" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Server Stopped Message" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSrvStopMsg" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Server Restarted Message" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSrvRestartMsg" Style="{StaticResource FieldBox}"/>
+                        <Label Content="Server Crashed Message" Foreground="Gray" Padding="0" FontSize="11"/>
+                        <TextBox x:Name="TxtSrvCrashMsg" Style="{StaticResource FieldBox}"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ==================== FACTION ==================== -->
+            <TabItem Header="Faction">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <CheckBox x:Name="ChkFactionEnabled"
+                                  Content="Faction Sync Enabled"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkAutoCreateChannels"
+                                  Content="Auto-Create Text Channels"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkAutoCreateForum"
+                                  Content="Auto-Create Forum Channel"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkAutoCreateVoice"
+                                  Content="Auto-Create Voice Channel"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkFactionGlobalFallback"
+                                  Content="Faction Discord -> Global Fallback (re-post faction Discord messages to global in-game)"
+                                  Style="{StaticResource FieldCheck}"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ==================== STORAGE ==================== -->
+            <TabItem Header="Storage">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <CheckBox x:Name="ChkUseSqlite"
+                                  Content="Use SQLite (recommended; falls back to XML if unavailable)"
+                                  Style="{StaticResource FieldCheck}"/>
+
+                        <Separator Margin="0,6"/>
+                        <Label Content="Data to Save" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="ChkSaveEventLogs"
+                                  Content="Save Event Logs"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkSaveDeathHistory"
+                                  Content="Save Death History"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkSaveGlobalChat"
+                                  Content="Save Global Chat Messages"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkSaveFactionChat"
+                                  Content="Save Faction Chat Messages"
+                                  Style="{StaticResource FieldCheck}"/>
+                        <CheckBox x:Name="ChkSavePrivateChat"
+                                  Content="Save Private Chat Messages"
+                                  Style="{StaticResource FieldCheck}"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</UserControl>

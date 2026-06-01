@@ -45,12 +45,12 @@ namespace mamba.TorchDiscordSync.Plugin.Core
             try
             {
                 if (string.IsNullOrWhiteSpace(discordUsername))
-                    return "Error: Discord username is required. Usage: /tds verify @DiscordUsername";
+                    return Lang.Get("VerifyCmd.UsageError");
 
                 discordUsername = discordUsername.TrimStart('@').Trim();
 
                 if (discordUsername.Length < 2 || discordUsername.Length > 32)
-                    return "Error: Invalid Discord username length (2-32 characters)";
+                    return Lang.Get("VerifyCmd.InvalidLength");
 
                 LoggerUtil.LogDebug(
                     $"[VERIFY_CMD] HandleVerifyCommandAsync: SteamID={playerSteamID}, Player={playerName}, Discord={discordUsername}"
@@ -64,7 +64,7 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                 );
 
                 if (!pendingCreated)
-                    return "Error: Could not create pending verification. Please try again.";
+                    return Lang.Get("VerifyCmd.PendingFailed");
 
                 // KORAK 2.2: Get the generated code from pending verification
                 var pending = _verification.GetPendingVerificationByDiscord(
@@ -72,7 +72,7 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                     playerSteamID
                 );
                 if (pending == null)
-                    return "Error: Verification code not found. Please try again.";
+                    return Lang.Get("VerifyCmd.CodeNotFound");
 
                 string code = pending.VerificationCode;
 
@@ -85,13 +85,7 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                 if (!dmSent)
                 {
                     LoggerUtil.LogWarning($"[VERIFY_CMD] Failed to send DM to {discordUsername}");
-                    return "Error: Could not find Discord user '"
-                        + discordUsername
-                        + "' or send DM.\n"
-                        + "Make sure:\n"
-                        + "  - Username is correct\n"
-                        + "  - User is in the Discord server\n"
-                        + "  - Bot has DM permissions";
+                    return string.Format(Lang.Get("VerifyCmd.DmFailed"), discordUsername);
                 }
 
                 await _eventLog.LogAsync(
@@ -115,16 +109,11 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                         + " - DM sent successfully"
                 );
 
-                string message =
-                    "Verification code sent to "
-                    + discordUsername
-                    + " via DM!\n"
-                    + "Check your Discord private messages\n"
-                    + "Code expires in "
-                    + _discordBotConfig.VerificationCodeExpirationMinutes
-                    + " minutes";
-
-                return message;
+                return string.Format(
+                    Lang.Get("VerifyCmd.CodeSent"),
+                    discordUsername,
+                    _discordBotConfig.VerificationCodeExpirationMinutes
+                );
             }
             catch (Exception ex)
             {
@@ -145,7 +134,7 @@ namespace mamba.TorchDiscordSync.Plugin.Core
         {
             if (string.IsNullOrEmpty(code))
             {
-                return new VerificationResult { Message = "Invalid verification code", IsSuccess = false };
+                return new VerificationResult { Message = Lang.Get("VerifyDiscord.InvalidCode"), IsSuccess = false };
             }
 
             if (_verification != null)
@@ -153,7 +142,7 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                 return await _verification.VerifyAsync(code, discordId, discordUsername);
             }
 
-            return new VerificationResult { Message = "Verification service unavailable", IsSuccess = false };
+            return new VerificationResult { Message = Lang.Get("VerifyDiscord.Unavailable"), IsSuccess = false };
         }
 
         /// <summary>
@@ -177,11 +166,11 @@ namespace mamba.TorchDiscordSync.Plugin.Core
                     );
 
                     LoggerUtil.LogSuccess("[VERIFY] Unverified SteamID " + steamID + ": " + reason);
-                    return "Verification removed";
+                    return Lang.Get("Unverify.Done");
                 }
                 else
                 {
-                    return "Error: Verification not found for this Steam ID";
+                    return Lang.Get("Unverify.NotFoundSimple");
                 }
             }
             catch (Exception ex)

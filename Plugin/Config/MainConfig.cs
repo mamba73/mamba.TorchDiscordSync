@@ -1,4 +1,5 @@
 // Plugin/Config/MainConfig.cs
+// MAMBA CONFIGURATION MODULE
 using System;
 using System.IO;
 using System.Xml.Serialization;
@@ -12,9 +13,8 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         // ===================================================================
         // VERSION (Managed by build.py)
         // ===================================================================
-        public string PluginVersion { get; set; } = "2.4.50";
+        public string PluginVersion { get; set; } = "2.4.60";
 
-        // Static field for instance-specific config directory name
         // ============================================================
         // CENTRAL PATH MANAGEMENT - Single Point of Control
         // ============================================================
@@ -25,125 +25,61 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         /// </summary>
         public static readonly string PLUGIN_DIR_NAME = "mambaSaveData";
 
-        /// <summary>
-        /// Get the base instance directory (where Torch stores data)
-        /// Tries environment variable first, falls back to default
-        /// </summary>
         public static string GetInstancePath()
         {
-            // Try to get from environment variable set by Torch
             string instancePath = Environment.GetEnvironmentVariable("TORCH_INSTANCE_PATH");
-
-            // Fallback to default location if not set
             if (string.IsNullOrEmpty(instancePath))
             {
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 instancePath = Path.Combine(baseDir, "Instance");
             }
-
             return instancePath;
         }
 
-        /// <summary>
-        /// Get the plugin directory (for configs, data, logs)
-        /// Example: C:\Path\To\Torch\Instance\mambaTorchDiscordSync
-        /// </summary>
         public static string GetPluginDirectory()
         {
             string pluginDir = Path.Combine(GetInstancePath(), PLUGIN_DIR_NAME);
-
-            // Ensure directory exists
             if (!Directory.Exists(pluginDir))
             {
-                try
-                {
-                    Directory.CreateDirectory(pluginDir);
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError(
-                        $"Failed to create plugin directory {pluginDir}: {ex.Message}"
-                    );
-                }
+                try { Directory.CreateDirectory(pluginDir); }
+                catch (Exception ex) { LoggerUtil.LogError($"Failed to create plugin directory {pluginDir}: {ex.Message}"); }
             }
-
             return pluginDir;
         }
 
-        /// <summary>
-        /// Get the config directory (for XML configs)
-        /// Returns: [PluginDirectory]/configs
-        /// </summary>
         public static string GetConfigDirectory()
         {
             string configDir = Path.Combine(GetPluginDirectory(), "configs");
-
             if (!Directory.Exists(configDir))
             {
-                try
-                {
-                    Directory.CreateDirectory(configDir);
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError(
-                        $"Failed to create config directory {configDir}: {ex.Message}"
-                    );
-                }
+                try { Directory.CreateDirectory(configDir); }
+                catch (Exception ex) { LoggerUtil.LogError($"Failed to create config directory {configDir}: {ex.Message}"); }
             }
-
             return configDir;
         }
 
-        /// <summary>
-        /// Get the data directory (for database files, sync data)
-        /// Returns: [PluginDirectory]/data
-        /// </summary>
         public static string GetDataDirectory()
         {
             string dataDir = Path.Combine(GetPluginDirectory(), "data");
-
             if (!Directory.Exists(dataDir))
             {
-                try
-                {
-                    Directory.CreateDirectory(dataDir);
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError($"Failed to create data directory {dataDir}: {ex.Message}");
-                }
+                try { Directory.CreateDirectory(dataDir); }
+                catch (Exception ex) { LoggerUtil.LogError($"Failed to create data directory {dataDir}: {ex.Message}"); }
             }
-
             return dataDir;
         }
 
-        /// <summary>
-        /// Get the log directory (for plugin logs)
-        /// Returns: [PluginDirectory]/logs
-        /// </summary>
         public static string GetLogDirectory()
         {
             string logDir = Path.Combine(GetPluginDirectory(), "logs");
-
             if (!Directory.Exists(logDir))
             {
-                try
-                {
-                    Directory.CreateDirectory(logDir);
-                }
-                catch (Exception ex)
-                {
-                    LoggerUtil.LogError($"Failed to create log directory {logDir}: {ex.Message}");
-                }
+                try { Directory.CreateDirectory(logDir); }
+                catch (Exception ex) { LoggerUtil.LogError($"Failed to create log directory {logDir}: {ex.Message}"); }
             }
-
             return logDir;
         }
 
-        /// <summary>
-        /// Get correct config path (for backward compatibility)
-        /// </summary>
         private static string ConfigPath
         {
             get { return Path.Combine(GetConfigDirectory(), "MainConfig.xml"); }
@@ -158,7 +94,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
 
         /// <summary>
         /// Deprecated: moved to Discord.SyncIntervalSeconds.
-        /// Kept for backward XML compatibility – if non-zero, copied to Discord.SyncIntervalSeconds on load.
+        /// Kept for backward XML compatibility.
         /// </summary>
         [XmlElement]
         public int SyncIntervalSeconds { get; set; }
@@ -191,25 +127,43 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         [XmlElement]
         public int VerificationCodeExpirationMinutes { get; set; } = 15;
 
-        // ========== SERVICE CLEANUP INTERVALS (TASK 1) ==========
+        // ========== SERVICE CLEANUP INTERVALS ==========
         /// <summary>
-        /// Cleanup interval for services (in seconds)
-        /// Default: 30 seconds
+        /// Cleanup interval for services (in seconds). Default: 30
         /// </summary>
         [XmlElement]
         public int CleanupIntervalSeconds { get; set; } = 30;
 
         /// <summary>
-        /// Maximum age for damage history records (in seconds)
-        /// Default: 15 seconds
+        /// Maximum age for damage history records (in seconds). Default: 15
         /// </summary>
         [XmlElement]
         public int DamageHistoryMaxSeconds { get; set; } = 15;
 
-        // ========== DATA STORAGE SETTINGS (TASK 2) ==========
+        // ========== NPC ACTIVITY FILTER ==========
         /// <summary>
-        /// Data storage configuration - controls what data is saved to XML files
-        /// Includes event logging, death history, and chat message archiving
+        /// When false (default), NPC characters (wolves, saberiods, pirate drones)
+        /// are excluded from join/leave announcements and death messages.
+        /// NPCs are identified by IsBot == true or SteamUserId == 0.
+        /// Set to true only if you want NPC activity shown in chat and Discord.
+        /// </summary>
+        [XmlElement]
+        public bool ShowNpcActivity { get; set; }
+
+        // ========== LOCALIZATION ==========
+        /// <summary>
+        /// BCP-47 language code for the active translation profile.
+        /// The plugin looks for [Language].ini in the configs directory.
+        /// If the file is missing or the code is "en-US", built-in English strings are used.
+        /// Example values: en-US, hr-HR, de-DE, pt-BR
+        /// Default: en-US
+        /// </summary>
+        [XmlElement]
+        public string Language { get; set; }
+
+        // ========== DATA STORAGE SETTINGS ==========
+        /// <summary>
+        /// Data storage configuration - controls what data is saved to XML/SQLite
         /// </summary>
         [XmlElement]
         public DataStorageConfig DataStorage { get; set; }
@@ -219,19 +173,21 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             Enabled = true;
             Debug = false;
             SyncIntervalSeconds = 30;
-            AdminSteamIDs = new long[] { 
-                76561198020205461, // mamba's SteamID - replace with actual admin SteamIDs
-                76561198000000001  // Add actual admin SteamIDs here
-                };
+            AdminSteamIDs = new long[]
+            {
+                76561198020205461,
+                76561198000000001
+            };
             Discord = new DiscordConfig();
             Chat = new ChatConfig();
             Death = new DeathConfig();
             Monitoring = new MonitoringConfig();
             Faction = new FactionConfig();
             DataStorage = new DataStorageConfig();
+            ShowNpcActivity = false;
+            Language = "en-US";
         }
 
-        // Updated Load method to use correct path
         public static MainConfig Load()
         {
             try
@@ -244,16 +200,20 @@ namespace mamba.TorchDiscordSync.Plugin.Config
                         MainConfig config = (MainConfig)serializer.Deserialize(fs);
                         if (config == null) return new MainConfig();
 
-                        // Migration: root SyncIntervalSeconds → Discord.SyncIntervalSeconds
+                        // Migration: root SyncIntervalSeconds -> Discord.SyncIntervalSeconds
                         if (config.SyncIntervalSeconds > 0)
                         {
                             if (config.Discord == null) config.Discord = new DiscordConfig();
                             if (config.Discord.SyncIntervalSeconds <= 0)
                                 config.Discord.SyncIntervalSeconds = config.SyncIntervalSeconds;
-                            config.SyncIntervalSeconds = 0; // clear root field
+                            config.SyncIntervalSeconds = 0;
                         }
                         if (config.Discord != null && config.Discord.SyncIntervalSeconds <= 0)
                             config.Discord.SyncIntervalSeconds = 30;
+
+                        // Ensure Language has a default if missing from old XML
+                        if (string.IsNullOrEmpty(config.Language))
+                            config.Language = "en-US";
 
                         return config;
                     }
@@ -272,12 +232,10 @@ namespace mamba.TorchDiscordSync.Plugin.Config
             return new MainConfig();
         }
 
-        // Updated Save method to use correct path
         public void Save()
         {
             try
             {
-                // Use the updated ConfigPath property
                 string dir = Path.GetDirectoryName(ConfigPath);
                 if (!Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
@@ -300,10 +258,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
     [XmlType("DiscordConfig")]
     public class DiscordConfig
     {
-        /// <summary>
-        /// How often (in seconds) faction sync runs.
-        /// Default: 30 seconds.
-        /// </summary>
         [XmlElement]
         public int SyncIntervalSeconds { get; set; }
 
@@ -346,7 +300,6 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         /// <summary>
         /// Discord channel ID for admin bot commands (!tds ...).
         /// Only messages in this channel are processed as admin commands.
-        /// NOT visible to regular players.
         /// </summary>
         [XmlElement]
         public ulong AdminBotChannelId { get; set; }
@@ -377,7 +330,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
     // ========== CHAT SYNCHRONIZATION CONFIGURATION ==========
     [XmlType("ChatConfig")]
     public class ChatConfig
-    {  
+    {
         [XmlElement]
         public bool Enabled { get; set; }
 
@@ -642,8 +595,7 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         public bool AutoCreateVoice { get; set; }
 
         /// <summary>
-        /// When true, Discord faction messages are also sent to global chat with prefix [TAG Discord]
-        /// so they are visible. Use if PM/EntityId delivery does not show in your client.
+        /// When true, Discord faction messages are also sent to global chat.
         /// Default: true so Discord→faction messages are visible in-game.
         /// </summary>
         [XmlElement]
@@ -659,56 +611,33 @@ namespace mamba.TorchDiscordSync.Plugin.Config
         }
     }
 
-    // ========== DATA STORAGE CONFIGURATION (TASK 2) ==========
+    // ========== DATA STORAGE CONFIGURATION ==========
     [XmlType("DataStorageConfig")]
     public class DataStorageConfig
     {
         /// <summary>
         /// Use SQLite as primary database instead of XML.
-        /// XML files are kept as fallback if SQLite fails to initialize or encounters errors.
-        /// Default: true (SQLite is used when available)
+        /// Falls back to XML if SQLite DLL is absent.
+        /// Default: true
         /// </summary>
         [XmlElement]
         public bool UseSQLite { get; set; }
 
-        /// <summary>
-        /// Save event logs to EventData.xml
-        /// Default: true (events are logged)
-        /// </summary>
         [XmlElement]
         public bool SaveEventLogs { get; set; }
 
-        /// <summary>
-        /// Save death history to EventData.xml
-        /// Default: true (deaths are logged)
-        /// </summary>
         [XmlElement]
         public bool SaveDeathHistory { get; set; }
 
-        /// <summary>
-        /// Save global chat messages to ChatData.xml
-        /// Default: false (global chat not logged by default)
-        /// </summary>
         [XmlElement]
         public bool SaveGlobalChat { get; set; }
 
-        /// <summary>
-        /// Save faction chat messages to ChatData.xml
-        /// Default: false (faction chat not logged by default)
-        /// </summary>
         [XmlElement]
         public bool SaveFactionChat { get; set; }
 
-        /// <summary>
-        /// Save private chat messages to ChatData.xml
-        /// Default: false (private chat not logged by default for privacy)
-        /// </summary>
         [XmlElement]
         public bool SavePrivateChat { get; set; }
 
-        /// <summary>
-        /// Default constructor with recommended settings
-        /// </summary>
         public DataStorageConfig()
         {
             UseSQLite = true;
